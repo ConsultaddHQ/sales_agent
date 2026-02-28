@@ -1,0 +1,208 @@
+/* Main Container */
+.timeline-container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+    padding-bottom: 40px;
+}
+
+/* Timeline Item */
+.timeline-item {
+    display: flex;
+    gap: 20px;
+    position: relative;
+    padding-bottom: 30px;
+    opacity: 0.5;
+    transition: opacity 0.3s ease;
+}
+
+.timeline-item.active,
+.timeline-item.completed {
+    opacity: 1;
+}
+
+/* Connector Line */
+.timeline-item:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 15px; /* Center with marker (30px/2) */
+    top: 30px;
+    bottom: -10px; /* Connect to next item */
+    width: 2px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.timeline-item.completed:not(:last-child)::before {
+    background: var(--accent-0); /* Green line when done */
+    box-shadow: 0 0 8px rgba(70, 194, 255, 0.4);
+}
+
+
+/* Marker Circle */
+.timeline-marker {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    z-index: 1;
+    flex-shrink: 0;
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+}
+
+.timeline-item.active .timeline-marker {
+    background: var(--accent-0);
+    color: #081018;
+    box-shadow: 0 0 15px rgba(70, 194, 255, 0.5);
+    transform: scale(1.1);
+}
+
+.timeline-item.completed .timeline-marker {
+    background: #66f2c1;
+    color: #081018;
+    box-shadow: 0 0 10px rgba(102, 242, 193, 0.4);
+}
+
+/* Content Area */
+.timeline-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.timeline-content h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-0);
+    margin-bottom: 4px;
+}
+
+/* Step Body (Expandable) */
+.step-body {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 24px;
+    margin-top: 8px;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Specific Step Elements */
+.input-group {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.input-group input {
+    flex: 1;
+    min-width: 250px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 14px;
+    color: var(--text-0);
+    outline: none;
+    font-size: 15px;
+}
+
+.input-group input:focus {
+    border-color: var(--accent-0);
+    box-shadow: 0 0 0 2px rgba(70, 194, 255, 0.1);
+}
+
+.crawler-status {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.crawl-stat-item {
+    background: rgba(0,0,0,0.2);
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+.stat-label {
+    font-size: 11px;
+    color: var(--text-1);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.stat-value {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-0);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.preview-install-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+
+.preview-pane {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    background: radial-gradient(circle at center, rgba(70, 194, 255, 0.05) 0%, transparent 70%);
+}
+
+.install-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.script-box {
+    background: #0d1218;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: monospace;
+    font-size: 11px;
+    color: #a5b4fc;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    line-height: 1.4;
+}
+
+.action-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.card-title-group {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+@media (max-width: 768px) {
+    .preview-install-grid {
+        grid-template-columns: 1fr;
+    }
+}

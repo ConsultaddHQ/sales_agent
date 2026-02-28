@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Pop Widget Test</title>
+    <!-- Simulate host styles that might conflict -->
+    <style>
+        body { background-color: #f0f0f0; font-family: serif; }
+        button { background-color: red !important; padding: 50px; } /* Should NOT affect widget */
+    </style>
+</head>
+<body>
+    <h1>Host Website</h1>
+    <p>This is the host website content.</p>
+    <button>Host Button (Should be RED)</button>
+
+   <!-- The Widget -->
+<team-pop-agent></team-pop-agent>
+
+<script>
+  window.__TEAM_POP_AGENT_ID__ = "agent_3201kjj5r1bqexrb3rzgafq0s5nn";
+</script>
+
+<!-- Load the widget script -->
+<script src="./frontend/dist/widget.js"></script>
+
+</body>
+</html>
