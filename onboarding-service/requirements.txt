@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+requests
+supabase
+pillow
+sentence-transformers
+python-dotenv
