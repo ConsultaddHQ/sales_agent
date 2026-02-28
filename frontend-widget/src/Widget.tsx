@@ -1,6 +1,6 @@
 import { useConversation } from "@elevenlabs/react";
-import { useState, useEffect } from "react";
-import { Mic, Pause, Play, X } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Mic, Pause, Play, X, Send } from "lucide-react";
 import { motion } from "framer-motion";
 
 type Product = {
@@ -21,71 +21,77 @@ function Widget() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [textInput, setTextInput] = useState(""); // For text fallback
+  const isStarting = useRef(false); // Prevent double starts
 
   const conversation = useConversation({
     micMuted: isPaused,
     clientTools: {
       update_products: (params: { products: Product[] }) => {
-        console.log("update_products called with:", params);
-        const productsArray = params?.products ?? [];
-        console.log("Parsed products:", productsArray);
-        setProducts(
-          productsArray.filter((p: Product) => p && p.id && p.name && typeof p.price === "number")
-        );
+        setProducts(params.products || []);
       },
       highlight_product: (params: { product_id: string }) => {
         const el = document.getElementById(`product-${params.product_id}`);
-        if (el) {
-          el.classList.add("ring-4", "ring-green-400", "scale-105");
-          setTimeout(() => el.classList.remove("ring-4", "ring-green-400", "scale-105"), 4000);
-        }
+        if (el) el.classList.add("ring-4", "ring-green-400");
+        setTimeout(() => el?.classList.remove("ring-4", "ring-green-400"), 4000);
       },
       focus_product: (params: { product_id: string }) => {
-        document.getElementById(`product-${params.product_id}`)?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
+        document.getElementById(`product-${params.product_id}`)?.scrollIntoView({ behavior: "smooth" });
       },
     },
     onMessage: (msg) => {
-      if (msg.source === "user" || msg.source === "ai") {
-        setTranscription(msg.message ?? "");
-      }
+      if (msg.source === "user" || msg.source === "ai") setTranscription(msg.message ?? "");
     },
-    onError: (message, context) => {
-      console.error("Conversation error:", message, context);
-      setError(message);
-    },
+    onError: (message) => setError(message),
   });
 
-  const { status } = conversation;
+  const { status, sendUserMessage } = conversation;
 
+  // Start session with voice mode
   useEffect(() => {
-    if (isOpen && status === "disconnected" && agentId) {
+    if (isOpen && status === "disconnected" && agentId && !isStarting.current) {
+      isStarting.current = true;
       const start = async () => {
+        if (!agentId) {
+          setError("Missing agent ID");
+          isStarting.current = false;
+          return;
+        }
         try {
+          // Pre-request microphone permission to avoid repeated prompts
+          await navigator.mediaDevices.getUserMedia({ audio: true });
           await conversation.startSession({
             agentId,
-            connectionType: "webrtc",
-            dynamicVariables: {
-              store_id: storeId,           // ← very useful for your search_products tool
-            },
+            connectionType: "webrtc", // Use WebRTC for low-latency voice mode
+            dynamicVariables: { store_id: storeId },
           });
           setError(null);
         } catch (err: unknown) {
-          console.error("startSession failed:", err);
-          setError((err as Error).message || "Connection failed. Check agent ID and network.");
+          setError((err as Error).message || "Connection failed. Check microphone permissions and agent configuration.");
+        } finally {
+          isStarting.current = false;
         }
       };
       start();
     }
+  }, [isOpen, status, agentId, storeId, conversation]);
 
+  // Cleanup session on close/unmount
+  useEffect(() => {
     return () => {
-      if (status === "connected") {
+      if (status === "connected" || status === "connecting") {
         conversation.endSession().catch(console.error);
       }
     };
-  }, [isOpen, status, agentId, storeId, conversation]);
+  }, [status, conversation]);
+
+  // Send text input (fallback)
+  const handleSendText = () => {
+    if (textInput.trim()) {
+      sendUserMessage(textInput);
+      setTextInput("");
+    }
+  };
 
   const justify = position === "bottom-right" ? "justify-end" : "justify-start";
 
@@ -93,96 +99,64 @@ function Widget() {
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className={`fixed bottom-6 ${position === "bottom-left" ? "left-6" : "right-6"} w-14 h-14 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full shadow-xl flex items-center justify-center z-50 transition-all hover:scale-110 hover:shadow-2xl focus:outline-none focus:ring-4 focus:ring-purple-300/50`}
+        className={`fixed bottom-6 ${position === "bottom-left" ? "left-6" : "right-6"} w-14 h-14 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full shadow-lg flex items-center justify-center z-50 hover:scale-105 transition-all`}
       >
-        <Mic className="w-7 h-7 text-white" />
+        <Mic className="w-6 h-6 text-white" />
       </button>
 
       {isOpen && (
-        <div className={`fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-end ${justify} p-4`}>
+        <div className={`fixed inset-0 bg-black/50 z-50 flex items-end ${justify} p-4`}>
           <motion.div
-            initial={{ y: "100%", opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: "100%", opacity: 0 }}
-            transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="bg-white rounded-t-3xl w-full max-w-md h-[85vh] max-h-[580px] flex flex-col overflow-hidden shadow-2xl border border-gray-100"
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ duration: 0.3 }}
+            className="bg-white rounded-t-2xl w-full max-w-md h-[70vh] flex flex-col overflow-hidden shadow-xl"
           >
             {/* Header */}
-            <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-5 text-white flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 bg-white/25 rounded-full flex items-center justify-center ring-2 ring-white/30">
-                  <Mic className="w-6 h-6" />
-                </div>
+            <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Mic className="w-5 h-5" />
                 <div>
-                  <p className="font-bold text-lg">Shop Assistant</p>
-                  <p className="text-xs opacity-90 mt-0.5">
-                    {error ? `Error: ${error}` : status === "connected" ? "Connected • Listening" : "Connecting..."}
-                  </p>
+                  <p className="font-semibold">Shop Assistant</p>
+                  <p className="text-xs">{error || status}</p>
                 </div>
               </div>
-              <button
-                onClick={() => setIsOpen(false)}
-                className="p-2 hover:bg-white/20 rounded-full transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
+              <button onClick={() => setIsOpen(false)}><X className="w-5 h-5" /></button>
             </div>
 
             {/* Transcription */}
-            <div className="p-4 bg-gradient-to-b from-gray-50 to-white text-gray-800 text-sm border-b border-gray-200 min-h-[4rem] max-h-28 overflow-y-auto">
-              {transcription || (status === "connected" ? "I'm listening... say something!" : "Tap mic to start")}
+            <div className="p-4 bg-gray-100 text-sm flex-0 min-h-[60px]">
+              {transcription || "Speak or type..."}
             </div>
 
-            {/* Products - modern card style */}
-            <div className="flex-1 overflow-y-auto p-4 bg-gradient-to-b from-white to-gray-50">
-              {products.length > 0 ? (
-                <div className="space-y-4 pb-4">
-                  {products.map((p) => (
-                    <motion.div
-                      key={p.id}
-                      id={`product-${p.id}`}
-                      className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-all duration-300 border border-gray-100"
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.4 }}
-                    >
-                      <div className="flex">
-                        <img
-                          src={p.image_url}
-                          alt={p.name}
-                          className="w-24 h-24 object-cover"
-                        />
-                        <div className="p-3 flex-1">
-                          <h3 className="font-semibold text-base text-gray-900 line-clamp-2">{p.name}</h3>
-                          <p className="text-green-600 font-bold text-lg mt-1">${p.price.toFixed(2)}</p>
-                          <p className="text-sm text-gray-600 mt-1.5 line-clamp-2">{p.description}</p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
+            {/* Products */}
+            <div className="flex-1 overflow-auto p-4 space-y-4">
+              {products.length > 0 ? products.map((p) => (
+                <div key={p.id} id={`product-${p.id}`} className="bg-white p-3 rounded-lg shadow flex gap-3">
+                  <img src={p.image_url} alt={p.name} className="w-16 h-16 object-cover rounded" />
+                  <div>
+                    <p className="font-medium">{p.name}</p>
+                    <p className="text-green-600">${p.price}</p>
+                    <p className="text-xs text-gray-600">{p.description}</p>
+                  </div>
                 </div>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center px-6 text-gray-500">
-                  <Mic className="w-12 h-12 text-purple-400 mb-4 opacity-70" />
-                  <p className="font-medium text-lg">No products yet</p>
-                  <p className="mt-2">Ask me about anything — shirts, pants, colors, prices...</p>
-                </div>
-              )}
+              )) : <p className="text-center text-gray-500">Ask about products!</p>}
             </div>
 
-            {/* Controls */}
-            <div className="p-4 bg-white border-t border-gray-200 flex justify-center">
-              <button
-                onClick={() => setIsPaused(!isPaused)}
-                disabled={status !== "connected"}
-                className={`w-40 h-12 rounded-full font-medium text-white flex items-center justify-center gap-2 shadow-lg transition-all ${
-                  isPaused
-                    ? "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
-                    : "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-                } disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none`}
-              >
+            {/* Controls + Text Fallback */}
+            <div className="p-4 bg-white border-t flex gap-2">
+              <input
+                type="text"
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSendText()}
+                placeholder="Type your query (or speak)..."
+                className="flex-1 p-2 border rounded"
+              />
+              <button onClick={handleSendText} className="p-2 bg-purple-600 text-white rounded"><Send className="w-5 h-5" /></button>
+              <button onClick={() => setIsPaused(!isPaused)} disabled={status !== "connected"} className="p-2 bg-gray-200 rounded">
                 {isPaused ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
-                {isPaused ? "Resume" : "Pause"}
               </button>
             </div>
           </motion.div>
