@@ -206,7 +206,7 @@ function AvatarInner({
           console.error("Missing ElevenLabs agentId. Set a valid agent ID.");
           return;
         }
-        await navigator.mediaDevices.getUserMedia({ audio: true });
+        // await navigator.mediaDevices.getUserMedia({ audio: true });
         await conversation.startSession({
           agentId,
           connectionType: "webrtc",
