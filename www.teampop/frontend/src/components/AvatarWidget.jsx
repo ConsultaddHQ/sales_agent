@@ -13,7 +13,7 @@ const ShoppingCard = ({ product, isActive, highlightPrice, highlightDesc }) => {
       className={`shopping-card ${isActive ? "card-active" : "card-dimmed"}`}
     >
       <div className="shopping-card-info">
-        <div className="shopping-card-title">{product.title}</div>
+        <div className="shopping-card-title">{product.name}</div>
         {product.description && (
           <div className="flex flex-col gap-1">
             <div
@@ -35,7 +35,7 @@ const ShoppingCard = ({ product, isActive, highlightPrice, highlightDesc }) => {
           {product.price || "Check Price"}
         </div>
         <a 
-          href={product.url}
+          href={product.product_url}
           target="_blank"
           rel="noopener noreferrer"
           className="shopping-cta mt-3 text-center bg-white text-black px-6 py-2 rounded-full font-bold text-sm hover:bg-gray-200 transition"
@@ -134,16 +134,17 @@ function AvatarInner({
       console.error("ElevenLabs conversation error:", error);
     },
     clientTools: {
-      update_product: async (toolPayload) => {
-        console.log('Update tool called : ',toolPayload)
-        const products = Array.isArray(toolPayload?.parameters?.products)
-          ? toolPayload.parameters.products
-          : Array.isArray(toolPayload?.products)
-            ? toolPayload.products
-            : [];
+      update_products: async (parameters) => {
+        console.log('Update tool called : ', parameters);
+        
+        // Directly map the parameters object provided by ElevenLabs
+        const products = Array.isArray(parameters?.products)
+          ? parameters.products
+          : [];
 
         setLatestProducts(products);
-        setIsOpen(true);
+        // CRITICAL FIX: Ensure chat overlay is closed so isShoppingMode becomes true!
+        setIsOpen(false); 
         setActiveIndex(0);
         showTransientMessage(`Found ${products.length} products for you.`);
         return "UI updated successfully";
@@ -188,11 +189,7 @@ function AvatarInner({
     };
   }, []);
 
-  useEffect(() => {
-    return () => {
-      conversation.endSession().catch(() => {});
-    };
-  }, [conversation]);
+  // Removed the destructive cleanup useEffect that was causing the disconnect loop!
 
   const handleInteraction = async () => {
     if (isSessionTransitioningRef.current) return;
@@ -247,8 +244,8 @@ function AvatarInner({
             {latestProducts[activeIndex] && (
               <>
                 <img
-                  src={latestProducts[activeIndex].image || DUMMY_IMAGE}
-                  alt={latestProducts[activeIndex].title}
+                  src={latestProducts[activeIndex].image_url || DUMMY_IMAGE}
+                  alt={latestProducts[activeIndex].name}
                   className="w-full h-full object-cover"
                   onError={(e) => {
                     e.target.src = "https://placehold.co/400x400?text=Image+Unavailable";
@@ -263,7 +260,7 @@ function AvatarInner({
           {/* BOTTOM: The Interaction Zone */}
           <div className="flex-none w-full flex flex-col justify-end bg-black pb-4 px-4 z-10 pt-2 pointer-events-auto shrink-0">
             
-            {/* 1. Product Details (Title, Desc, Price, Shop Now) */}
+            {/* 1. Product Details (name,description,image_url,product_url,price) */}
             <div className="w-full mb-3">
               {latestProducts[activeIndex] && (
                 <ShoppingCard 
@@ -300,8 +297,8 @@ function AvatarInner({
                   onClick={() => setActiveIndex(idx)}
                 >
                   <img
-                    src={p.image || DUMMY_IMAGE}
-                    alt={p.title}
+                    src={p.image_url || DUMMY_IMAGE}
+                    alt={p.name}
                     className="w-full h-full object-cover"
                     onError={(e) => {
                       e.target.src = "https://placehold.co/400x400?text=Image+Unavailable";
@@ -437,7 +434,7 @@ function AvatarInner({
 
 export default function AvatarWidget({ agentId, preview = false }) {
   const resolvedAgentId =
-    agentId || window.__TEAM_POP_AGENT_ID__ || "YOUR_ELEVENLABS_AGENT_ID";
+    agentId || window.__TEAM_POP_AGENT_ID__ || "agent_3201kjj5r1bqexrb3rzgafq0s5nn";
   const [isOpen, setIsOpen] = useState(preview);
   const [latestProducts, setLatestProducts] = useState([]);
   const [activeIndex, setActiveIndex] = useState(0);
