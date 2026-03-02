@@ -9,16 +9,12 @@ const ShoppingCard = ({ product, isActive, highlightPrice, highlightDesc }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div
-      className={`shopping-card ${isActive ? "card-active" : "card-dimmed"}`}
-    >
+    <div className={`shopping-card ${isActive ? "card-active" : "card-dimmed"}`}>
       <div className="shopping-card-info">
         <div className="shopping-card-title">{product.name}</div>
         {product.description && (
           <div className="flex flex-col gap-1">
-            <div
-              className={`shopping-card-desc text-sm text-gray-600 transition-all ${isActive && highlightDesc ? "desc-highlight" : ""} ${!isExpanded ? "line-clamp-2" : ""}`}
-            >
+            <div className={`shopping-card-desc text-sm text-gray-600 transition-all ${isActive && highlightDesc ? "desc-highlight" : ""} ${!isExpanded ? "line-clamp-2" : ""}`}>
               {product.description}
             </div>
             <button 
@@ -29,9 +25,7 @@ const ShoppingCard = ({ product, isActive, highlightPrice, highlightDesc }) => {
             </button>
           </div>
         )}
-        <div
-          className={`shopping-card-price text-xl font-bold mt-2 ${isActive && highlightPrice ? "price-glow text-green-400" : "text-green-300"}`}
-        >
+        <div className={`shopping-card-price text-xl font-bold mt-2 ${isActive && highlightPrice ? "price-glow text-green-400" : "text-green-300"}`}>
           {product.price || "Check Price"}
         </div>
         <a 
@@ -61,8 +55,8 @@ const formatMessage = (text) => {
 // --- INNER COMPONENT ---
 function AvatarInner({
   agentId,
-  isOpen,
-  setIsOpen,
+  activeView,
+  setActiveView,
   latestProducts,
   setLatestProducts,
   activeIndex,
@@ -72,8 +66,7 @@ function AvatarInner({
   isProgrammaticScrollRef,
 }) {
   const [agentSubtitle, setAgentSubtitle] = useState("");
-  const [chatHistory, setChatHistory] = useState([]); // NEW: Chat history state
-  const [isProductsHidden, setIsProductsHidden] = useState(false); // NEW: Hide/Show products state
+  const [chatHistory, setChatHistory] = useState([]);
   const [transientMessage, setTransientMessage] = useState(null);
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [highlightPrice, setHighlightPrice] = useState(false);
@@ -82,12 +75,12 @@ function AvatarInner({
   const priceTimerRef = useRef(null);
   const subtitleTimerRef = useRef(null);
   const subtitleContainerRef = useRef(null);
-  const chatScrollRef = useRef(null); // NEW: Chat auto-scroll reference
+  const chatContainerRef = useRef(null); 
   const isSessionTransitioningRef = useRef(false);
 
   const showTransientMessage = useCallback(
     (text) => {
-      if (isOpen) return;
+      if (activeView !== 'NONE') return;
       if (transientTimeoutRef.current) clearTimeout(transientTimeoutRef.current);
 
       setIsFadingOut(false);
@@ -98,7 +91,7 @@ function AvatarInner({
         setTimeout(() => setTransientMessage(null), 300);
       }, 5000);
     },
-    [isOpen],
+    [activeView],
   );
 
   const conversation = useConversation({
@@ -114,7 +107,6 @@ function AvatarInner({
               : "";
 
       if (text) {
-        // Build the chat history safely (handles both unique and streaming chunks)
         setChatHistory((prev) => {
           const msgId = message?.id || message?.message_id;
           if (msgId) {
@@ -126,7 +118,6 @@ function AvatarInner({
             }
             return [...prev, { id: msgId, source, text }];
           }
-          // Fallback if no ID is present
           if (prev.length > 0 && prev[prev.length - 1].text === text) return prev;
           return [...prev, { id: Date.now(), source, text }];
         });
@@ -138,35 +129,21 @@ function AvatarInner({
         subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 3000);
 
         const lower = text.toLowerCase();
-        if (
-          lower.includes("price") ||
-          lower.includes("₹") ||
-          lower.includes("rupees") ||
-          lower.includes("cost")
-        ) {
+        if (lower.includes("price") || lower.includes("₹") || lower.includes("rupees") || lower.includes("cost")) {
           if (priceTimerRef.current) clearTimeout(priceTimerRef.current);
           setHighlightPrice(true);
-          priceTimerRef.current = setTimeout(
-            () => setHighlightPrice(false),
-            2500,
-          );
+          priceTimerRef.current = setTimeout(() => setHighlightPrice(false), 2500);
         }
       }
     },
-    onError: (error) => {
-      console.error("ElevenLabs conversation error:", error);
-    },
+    onError: (error) => console.error("ElevenLabs error:", error),
     clientTools: {
       update_products: async (parameters) => {
         console.log('Update tool called : ', parameters);
-        
-        const products = Array.isArray(parameters?.products)
-          ? parameters.products
-          : [];
+        const products = Array.isArray(parameters?.products) ? parameters.products : [];
 
         setLatestProducts(products);
-        setIsProductsHidden(false); // Ensure overlay shows up when data updates
-        setIsOpen(false); // Close chat to reveal shopping mode
+        setActiveView("PRODUCTS"); 
         setActiveIndex(0);
         showTransientMessage(`Found ${products.length} products for you.`);
         return "UI updated successfully";
@@ -174,39 +151,32 @@ function AvatarInner({
     },
   });
 
-  // Auto-scroll the subtitle text
   useEffect(() => {
     if (subtitleContainerRef.current) {
       subtitleContainerRef.current.scrollTop = subtitleContainerRef.current.scrollHeight;
     }
   }, [agentSubtitle]);
 
-  // Auto-scroll the chat history
   useEffect(() => {
-    if (chatScrollRef.current && isOpen) {
-      chatScrollRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (chatContainerRef.current && activeView === "CHAT") {
+      const container = chatContainerRef.current;
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (distanceFromBottom < 150 || chatHistory.length <= 1) {
+        container.scrollTop = container.scrollHeight;
+      }
     }
-  }, [chatHistory, isOpen]);
+  }, [chatHistory, activeView]);
 
   let visualState = "IDLE";
-  if (conversation.status === "connecting") {
-    visualState = "CONNECTING";
-  } else if (conversation.status === "connected") {
-    visualState = conversation.isSpeaking ? "SPEAKING" : "LISTENING";
-  }
+  if (conversation.status === "connecting") visualState = "CONNECTING";
+  else if (conversation.status === "connected") visualState = conversation.isSpeaking ? "SPEAKING" : "LISTENING";
 
-  // Handle Programmatic Carousel Scrolling
   useEffect(() => {
     if (carouselRef.current && latestProducts.length > 0) {
       isProgrammaticScrollRef.current = true;
       const width = carouselRef.current.clientWidth;
-      carouselRef.current.scrollTo({
-        left: activeIndex * width,
-        behavior: "smooth",
-      });
-      setTimeout(() => {
-        isProgrammaticScrollRef.current = false;
-      }, 600);
+      carouselRef.current.scrollTo({ left: activeIndex * width, behavior: "smooth" });
+      setTimeout(() => { isProgrammaticScrollRef.current = false; }, 600);
     }
   }, [activeIndex, latestProducts, carouselRef, isProgrammaticScrollRef]);
 
@@ -220,226 +190,226 @@ function AvatarInner({
 
   const handleInteraction = async () => {
     if (isSessionTransitioningRef.current) return;
-
     try {
       isSessionTransitioningRef.current = true;
       if (conversation.status === "connected") {
         await conversation.endSession();
-      } else if (
-        conversation.status === "disconnected" ||
-        conversation.status === "error"
-      ) {
-        if (!agentId || agentId === "YOUR_ELEVENLABS_AGENT_ID") {
-          console.error("Missing ElevenLabs agentId. Set a valid agent ID.");
-          return;
-        }
-        await conversation.startSession({
-          agentId,
-          connectionType: "webrtc",
-        });
+      } else if (conversation.status === "disconnected" || conversation.status === "error") {
+        await conversation.startSession({ agentId, connectionType: "webrtc" });
       }
     } catch (error) {
-      console.error("Failed to start/stop conversation:", error);
+      console.error("Failed interaction:", error);
       setAgentSubtitle("");
     } finally {
       isSessionTransitioningRef.current = false;
     }
   };
 
-  // Check visibility logic
-  const isShoppingMode = !isOpen && latestProducts.length > 0 && !isProductsHidden;
-
   return (
     <>
-      {/* 1. SHOPPING MODE OVERLAY (Vertical Flex Layout) */}
-      {isShoppingMode && (
+      {/* 1. SHOPPING / PRODUCTS MODE OVERLAY */}
+      {activeView === 'PRODUCTS' && (
         <div className="shopping-mode-overlay flex flex-col h-[100dvh] w-screen bg-black overflow-hidden relative z-40">
           
-          {/* TOP: Header (Close Button) */}
+          {/* TOP Header */}
           <div className="flex-none p-4 flex justify-end items-start absolute top-0 w-full z-50 pointer-events-none">
-            {/* Close Button at top - Now minimizes the products instead of clearing them */}
             <button
               className="bg-black/40 hover:bg-black/60 backdrop-blur-md text-white rounded-full w-10 h-10 flex items-center justify-center text-xl shadow-lg transition-all pointer-events-auto"
-              onClick={() => setIsProductsHidden(true)}
+              onClick={() => setActiveView('NONE')}
             >
               &times;
             </button>
           </div>
 
-          {/* MID: Hero Stage (Active Product Image) */}
-          <div className="flex-1 w-full relative min-h-0 bg-zinc-900">
-            {latestProducts[activeIndex] && (
-              <>
-                <img
-                  src={latestProducts[activeIndex].image_url || DUMMY_IMAGE}
-                  alt={latestProducts[activeIndex].name}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    e.target.src = "https://placehold.co/400x400?text=Image+Unavailable";
-                  }}
-                />
-                <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-black to-transparent pointer-events-none" />
-              </>
-            )}
-          </div>
+          {latestProducts.length > 0 ? (
+            <>
+              {/* MID: Hero Stage */}
+              <div className="flex-1 w-full relative min-h-0 bg-zinc-900">
+                {latestProducts[activeIndex] && (
+                  <>
+                    <img
+                      src={latestProducts[activeIndex].image_url || DUMMY_IMAGE}
+                      alt={latestProducts[activeIndex].name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => { e.target.src = "https://placehold.co/400x400?text=Image+Unavailable"; }}
+                    />
+                    <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-black to-transparent pointer-events-none" />
+                  </>
+                )}
+              </div>
 
-          {/* BOTTOM: The Interaction Zone */}
-          <div className="flex-none w-full flex flex-col justify-end bg-black pb-4 px-4 z-10 pt-2 pointer-events-auto shrink-0">
-            <div className="w-full mb-3">
-              {latestProducts[activeIndex] && (
-                <ShoppingCard 
-                  product={latestProducts[activeIndex]} 
-                  isActive={true} 
-                  highlightPrice={highlightPrice} 
-                />
-              )}
+              {/* BOTTOM: The Interaction Zone */}
+              <div className="flex-none w-full flex flex-col justify-end bg-black pb-4 px-4 z-10 pt-2 pointer-events-auto shrink-0">
+                <div className="w-full mb-3">
+                  {latestProducts[activeIndex] && (
+                    <ShoppingCard product={latestProducts[activeIndex]} isActive={true} highlightPrice={highlightPrice} />
+                  )}
+                </div>
+
+                <div ref={subtitleContainerRef} className="w-full max-h-20 overflow-y-auto mb-3 no-scrollbar">
+                  {agentSubtitle && (
+                    <div className="text-white/90 bg-black/40 p-2 rounded-lg text-sm backdrop-blur-sm border border-white/10 shadow-sm leading-snug">
+                      {agentSubtitle}
+                    </div>
+                  )}
+                </div>
+
+                <div className="w-full flex items-center overflow-x-auto hide-scrollbar gap-3 mb-4" ref={carouselRef} onScroll={handleCarouselScroll}>
+                  {latestProducts.map((p, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex-shrink-0 transition-all duration-300 cursor-pointer rounded-xl overflow-hidden border-2 ${idx === activeIndex ? "border-blue-500 scale-100 opacity-100" : "border-transparent scale-90 opacity-60 hover:opacity-100"}`}
+                      style={{ width: "60px", height: "60px" }}
+                      onClick={() => setActiveIndex(idx)}
+                    >
+                      <img src={p.image_url || DUMMY_IMAGE} alt={p.name} className="w-full h-full object-cover" onError={(e) => { e.target.src = "https://placehold.co/400x400?text=Image+Unavailable"; }}/>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            // EMPTY STATE 
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-900 pointer-events-auto pt-16">
+               <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mb-6 border border-zinc-700 shadow-xl">
+                   <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+               </div>
+               <h2 className="text-2xl font-bold text-white mb-3 tracking-wide">No Products Yet</h2>
+               <p className="text-gray-400 text-sm max-w-[250px] mx-auto leading-relaxed">
+                 Tap the orb below and ask me to find something for you!
+               </p>
             </div>
+          )}
 
-            <div 
-              ref={subtitleContainerRef}
-              className="w-full max-h-20 overflow-y-auto mb-3 no-scrollbar"
-            >
-              {agentSubtitle && (
-                <div className="text-white/90 bg-black/40 p-2 rounded-lg text-sm backdrop-blur-sm border border-white/10 shadow-sm leading-snug">
-                  {agentSubtitle}
+          {/* DOCK FOR SHOPPING MODE */}
+          <div className="flex-none w-full bg-black pb-6 px-4 z-10 pointer-events-auto">
+            <div className="w-full flex items-center justify-center mt-2">
+              <div className="orb-dock px-2 min-w-[280px]" style={{ position: "relative", width: "100%", margin: "0", height: "50px", boxShadow: "none", background: "transparent", border: "none", padding: "0" }}>
+                <div className="flex-1 flex justify-start items-center">
+                   <button className="dock-action text-[11px] font-bold text-gray-500 uppercase tracking-wider cursor-default">Products</button>
                 </div>
-              )}
-            </div>
-
-            <div 
-              className="w-full flex items-center overflow-x-auto hide-scrollbar gap-3 mb-4"
-              ref={carouselRef}
-              onScroll={handleCarouselScroll}
-            >
-              {latestProducts.map((p, idx) => (
-                <div
-                  key={idx}
-                  className={`flex-shrink-0 transition-all duration-300 cursor-pointer rounded-xl overflow-hidden border-2 ${idx === activeIndex ? "border-blue-500 scale-100 opacity-100" : "border-transparent scale-90 opacity-60 hover:opacity-100"}`}
-                  style={{ width: "60px", height: "60px" }}
-                  onClick={() => setActiveIndex(idx)}
-                >
-                  <img
-                    src={p.image_url || DUMMY_IMAGE}
-                    alt={p.name}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.target.src = "https://placehold.co/400x400?text=Image+Unavailable";
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-
-            {/* Shopping Mode Orb Dock */}
-            <div className="w-full flex items-center justify-center">
-              <div
-                className="orb-dock"
-                style={{
-                  position: "relative",
-                  width: "100%",
-                  margin: "0",
-                  height: "50px",
-                  boxShadow: "none",
-                  background: "transparent",
-                  border: "none",
-                  padding: "0"
-                }}
-              >
-                <div className={`dock-status flex-1 text-left text-xs uppercase font-bold tracking-wider ${visualState !== "IDLE" ? "text-green-400" : "text-gray-400"}`}>
-                  {visualState === "IDLE" ? "Ready" : visualState}
+                
+                <div className="relative flex-shrink-0 flex flex-col items-center justify-center">
+                  {/* Status pill ABOVE the orb */}
+                  <span className={`absolute -top-7 text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap transition-colors ${visualState !== 'IDLE' ? 'bg-green-500/20 text-green-400 border border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.2)]' : 'bg-zinc-800/80 text-gray-400 border border-white/5'}`}>
+                    {visualState === "IDLE" ? "Ready" : visualState}
+                  </span>
+                  
+                  <div className={`orb-wrapper flex-shrink-0 ${visualState} scale-75 cursor-pointer mt-1`} onClick={handleInteraction}>
+                    <div className="orb-core"></div>
+                  </div>
                 </div>
 
-                <div className={`orb-wrapper flex-shrink-0 ${visualState} scale-75 cursor-pointer`} onClick={handleInteraction}>
-                  <div className="orb-core"></div>
-                </div>
-
-                <div className="flex-1 flex justify-end">
-                  <button className="dock-action text-xs text-gray-300 hover:text-white" onClick={() => setIsOpen(true)}>
-                    View Chat
+                <div className="flex-1 flex justify-end items-center">
+                  <button className="dock-action text-[11px] font-bold text-gray-300 hover:text-white uppercase tracking-wider" onClick={() => setActiveView('CHAT')}>
+                    Chat
                   </button>
                 </div>
               </div>
             </div>
-            
           </div>
         </div>
       )}
 
-      {/* 2. MAIN WIDGET CONTAINER (Normal non-shopping mode) */}
-      <div className={`avatar-widget ${isOpen ? "mode-open" : "mode-closed"}`}>
-        <div className="avatar-controls-column">
-          
-          {!isOpen && transientMessage && !isShoppingMode && (
-            <div className={`transient-bubble ${isFadingOut ? "fading-out" : ""}`}>
-              <span dangerouslySetInnerHTML={{ __html: formatMessage(transientMessage) }} />
-            </div>
-          )}
+      {/* 2. MAIN WIDGET CONTAINER (Normal Home Dock) */}
+      {activeView === 'NONE' && (
+        <div className="avatar-widget mode-closed">
+          <div className="avatar-controls-column">
+            
+            {transientMessage && (
+              <div className={`transient-bubble ${isFadingOut ? "fading-out" : ""}`}>
+                <span dangerouslySetInnerHTML={{ __html: formatMessage(transientMessage) }} />
+              </div>
+            )}
 
-          {/* Floating Orb Dock */}
-          {!isOpen && !isShoppingMode && (
-            <div className="orb-dock">
-              <div className={`dock-status ${visualState !== "IDLE" ? "active" : ""}`}>
-                {visualState === "IDLE" ? "Ready" : visualState}
+            {/* SYMMETRICAL HOME DOCK */}
+            <div className="orb-dock px-4 min-w-[280px] shadow-2xl border border-white/10 mt-6">
+              
+              <div className="flex-1 flex justify-start items-center">
+                <button 
+                  className="dock-action font-bold uppercase tracking-wider text-[11px] text-gray-300 hover:text-white transition-colors"
+                  onClick={() => setActiveView('PRODUCTS')}
+                >
+                  Products
+                </button>
               </div>
 
-              <div className={`orb-wrapper ${visualState}`} onClick={handleInteraction}>
-                <div className="orb-core"></div>
+              <div className="relative flex-shrink-0 flex flex-col items-center justify-center">
+                {/* Status pill ABOVE the orb */}
+                <span className={`absolute -top-8 text-[9px] uppercase font-bold tracking-widest px-2.5 py-1 rounded-full whitespace-nowrap transition-all duration-300 ${visualState !== 'IDLE' ? 'bg-green-500/20 text-green-400 border border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.3)]' : 'bg-zinc-800/80 text-gray-400 border border-white/5'}`}>
+                  {visualState === "IDLE" ? "Tap to speak" : visualState}
+                </span>
+
+                <div className={`orb-wrapper ${visualState} cursor-pointer`} onClick={handleInteraction}>
+                  <div className="orb-core"></div>
+                </div>
               </div>
 
-              <div className="flex-1 flex justify-end items-center gap-2 pr-1 z-50">
-                {/* Shows a stylized "Products" toggle if they were minimized */}
-                {latestProducts.length > 0 && isProductsHidden && (
-                  <button 
-                    className="text-xs font-bold text-blue-300 bg-blue-900/40 hover:bg-blue-800/60 px-3 py-1.5 rounded-md uppercase tracking-wider transition border border-blue-500/30 shadow-lg cursor-pointer"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setIsProductsHidden(false);
-                      setIsOpen(false);
-                    }}
-                  >
-                    Products
-                  </button>
-                )}
-                <button className="dock-action text-gray-300 hover:text-white" onClick={() => setIsOpen(true)}>
+              <div className="flex-1 flex justify-end items-center">
+                <button 
+                  className="dock-action font-bold uppercase tracking-wider text-[11px] text-gray-300 hover:text-white transition-colors" 
+                  onClick={() => setActiveView('CHAT')}
+                >
                   Chat
                 </button>
               </div>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* 3. FULL CHAT UI (Open State) */}
-      {isOpen && (
-        <div className="bubble flex flex-col h-[70vh] max-h-[600px] overflow-hidden">
-          <div className="bubble-header flex-shrink-0 bg-zinc-900 border-b border-white/10">
-            <span className="bubble-status font-semibold text-white">Live Session</span>
-            <button className="expand-btn text-xl hover:text-white" onClick={() => setIsOpen(false)}>
-              &times;
-            </button>
+            </div>
           </div>
-          
-          <div className="bubble-content chat-history flex-1 overflow-y-auto flex flex-col gap-3 p-4 bg-zinc-900/50 scroll-smooth">
-            {chatHistory.length === 0 ? (
-              <div className="message-bubble assistant-message self-start bg-zinc-800 text-white p-3 rounded-xl rounded-tl-sm text-sm max-w-[85%] border border-white/5 shadow-sm">
-                Hello! I'm your Team Pop AI agent. How can I help you today?
-              </div>
-            ) : (
-              chatHistory.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`message-bubble p-3 text-sm max-w-[85%] shadow-md ${
-                    msg.source === "user"
-                      ? "user-message self-end bg-blue-600 text-white rounded-2xl rounded-tr-sm border border-blue-500"
-                      : "assistant-message self-start bg-zinc-800 text-gray-100 rounded-2xl rounded-tl-sm border border-white/5"
-                  }`}
-                >
-                  <span dangerouslySetInnerHTML={{ __html: formatMessage(msg.text) }} />
+        </div>
+      )}
+
+      {/* 3. FULL CHAT UI */}
+      {activeView === 'CHAT' && (
+        <div className="avatar-widget mode-open">
+          <div className="bubble flex flex-col h-[70vh] max-h-[600px] overflow-hidden shadow-2xl border border-white/10 relative pointer-events-auto">
+            
+            {/* Header with strictly enforced Close Button */}
+            <div className="bubble-header flex-shrink-0 bg-zinc-900 border-b border-white/10 px-4 py-3 flex justify-between items-center z-50">
+              <span className="font-semibold text-white tracking-wide text-sm flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${visualState !== 'IDLE' ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
+                Live Session
+              </span>
+              
+              {/* Overriding previous generic CSS to guarantee clickability */}
+              <button 
+                className="text-gray-400 hover:text-white transition-colors cursor-pointer p-1 -mr-1 rounded-md hover:bg-white/10 z-50 pointer-events-auto"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setActiveView('NONE');
+                }}
+                aria-label="Close Chat"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+              </button>
+            </div>
+            
+            <div 
+              className="bubble-content chat-history flex-1 overflow-y-auto flex flex-col gap-3 p-4 bg-zinc-900/95"
+              ref={chatContainerRef}
+            >
+              {chatHistory.length === 0 ? (
+                <div className="message-bubble assistant-message self-start bg-zinc-800 text-gray-200 p-3 rounded-xl rounded-tl-sm text-sm max-w-[85%] border border-white/5 shadow-sm">
+                  Hello! I'm your Team Pop AI agent. How can I help you today?
                 </div>
-              ))
-            )}
-            <div ref={chatScrollRef} className="h-1 flex-shrink-0" />
+              ) : (
+                chatHistory.map((msg, idx) => (
+                  <div
+                    key={idx}
+                    className={`message-bubble p-3 text-sm max-w-[85%] shadow-md ${
+                      msg.source === "user"
+                        ? "user-message self-end bg-blue-600 text-white rounded-2xl rounded-tr-sm border border-blue-500"
+                        : "assistant-message self-start bg-zinc-800 text-gray-100 rounded-2xl rounded-tl-sm border border-white/5"
+                    }`}
+                  >
+                    <span dangerouslySetInnerHTML={{ __html: formatMessage(msg.text) }} />
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -448,9 +418,8 @@ function AvatarInner({
 }
 
 export default function AvatarWidget({ agentId, preview = false }) {
-  const resolvedAgentId =
-    agentId || window.__TEAM_POP_AGENT_ID__ || "";
-  const [isOpen, setIsOpen] = useState(preview);
+  const resolvedAgentId = agentId || window.__TEAM_POP_AGENT_ID__ || "YOUR_ELEVENLABS_AGENT_ID";
+  const [activeView, setActiveView] = useState(preview ? "CHAT" : "NONE");
   const [latestProducts, setLatestProducts] = useState([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const carouselRef = useRef(null);
@@ -479,8 +448,8 @@ export default function AvatarWidget({ agentId, preview = false }) {
   return (
     <AvatarInner
       agentId={resolvedAgentId}
-      isOpen={isOpen}
-      setIsOpen={setIsOpen}
+      activeView={activeView}
+      setActiveView={setActiveView}
       latestProducts={latestProducts}
       setLatestProducts={setLatestProducts}
       activeIndex={activeIndex}
