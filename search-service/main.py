@@ -12,6 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel, Field
 from supabase import Client, create_client
+from sentence_transformers import SentenceTransformer
+import uuid
+
 
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -24,6 +27,7 @@ logger = logging.getLogger("search-service")
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
+
 
 
 class SearchRequest(BaseModel):
@@ -69,6 +73,7 @@ app.add_middleware(
 
 _supabase: Optional[Client] = None
 _openrouter_client: Optional[OpenAI] = None
+_embedder: Optional[SentenceTransformer] = None
 
 
 def _get_env(name: str) -> str:
@@ -100,105 +105,108 @@ def get_openrouter_client() -> OpenAI:
     return _openrouter_client
 
 
+
+def get_embedder() -> SentenceTransformer:
+    global _embedder
+    if _embedder is None:
+        logger.info("Loading embedding model all-MiniLM-L6-v2 (first request may be slow).")
+        _embedder = SentenceTransformer("all-MiniLM-L6-v2")
+    return _embedder
+
 def _hybrid_search_products(
-    sb: Client, store_id: str, query: str, limit: int = 5
+    sb: Client,
+    store_id: str,
+    query: str,
+    limit: int = 10          # Increased default – you can still override from caller
 ) -> List[ProductResult]:
     """
-    Hybrid pgvector + full-text search.
+    Hybrid pgvector + full-text search using real query embedding.
 
-    This assumes a Postgres function in your Supabase project:
-
-        create or replace function public.hybrid_search_products(
-            p_store_id uuid,
-            p_query text,
-            p_limit int default 5
-        )
-        returns table (
-            id uuid,
-            store_id uuid,
-            name text,
-            description text,
-            price numeric,
-            image_url text,
-            product_url text,
-            score double precision
-        )
-        language sql as $$
-        with
-        query_embedding as (
-          select
-            coalesce(
-              (select embedding from public.products
-               where store_id = p_store_id
-               order by embedding <#> (
-                 select embedding from public.products
-                 where store_id = p_store_id
-                 limit 1
-               )
-               limit 1),
-              '[0]'::vector
-            ) as embedding
-        ),
-        vector_matches as (
-          select
-            p.*,
-            1 - (p.embedding <#> (select embedding from query_embedding)) as vector_score
-          from public.products p
-          where p.store_id = p_store_id
-        ),
-        text_matches as (
-          select
-            p.*,
-            ts_rank_cd(
-              to_tsvector('english', coalesce(p.name, '') || ' ' || coalesce(p.description, '')),
-              plainto_tsquery('english', p_query)
-            ) as text_score
-          from public.products p
-          where p.store_id = p_store_id
-        )
-        select
-          coalesce(v.id, t.id) as id,
-          coalesce(v.store_id, t.store_id) as store_id,
-          coalesce(v.name, t.name) as name,
-          coalesce(v.description, t.description) as description,
-          coalesce(v.price, t.price) as price,
-          coalesce(v.image_url, t.image_url) as image_url,
-          coalesce(v.product_url, t.product_url) as product_url,
-          coalesce(v.vector_score, 0) * 0.6
-            + coalesce(t.text_score, 0) * 0.4 as score
-        from vector_matches v
-        full outer join text_matches t using (id)
-        where (coalesce(v.vector_score, 0) > 0 or coalesce(t.text_score, 0) > 0)
-        order by score desc
-        limit p_limit;
-        $$;
-
-    Adjust as needed for your schema. The Python side just calls this RPC.
+    Requires the updated Supabase function that accepts:
+    - p_store_id
+    - p_query
+    - p_query_embedding (vector(384))
+    - p_max_price (optional)
+    - p_limit
+    - p_min_score
     """
+    # 1. Embed the user query (must use same model as onboarding)
+    embedder = get_embedder()
+    query_embedding = embedder.encode(query, normalize_embeddings=True).tolist()
+
+    # 2. Optional: Parse max price from query (e.g. "under 150", "less than 80 dollars")
+    max_price = None
+    # try:
+    #     client = get_openrouter_client()
+    #     parse_prompt = f"""
+    #             Extract ONLY the maximum budget/price limit the customer is willing to pay.
+    #             Rules:
+    #             - If the query says "under X", "max X", "less than X", "below X" → return X
+    #             - If "around X" or "about X" → return X
+    #             - Return ONLY a number like 3000 or 45.99 — no currency symbols, no text
+    #             - If no price mentioned at all → return exactly the string "null"
+    #             - Do NOT guess or add extra — be literal
+
+    #             Query: {query}
+    #             """.strip()
+                
+    #     completion = client.chat.completions.create(
+    #         model=os.getenv("OPENROUTER_MODEL", "xai/grok-beta"),
+    #         messages=[{"role": "user", "content": parse_prompt}],
+    #         max_tokens=10,
+    #         temperature=0.0,
+    #     )
+        
+    #     parsed = completion.choices[0].message.content.strip().lower()
+    #     if parsed != "null" and parsed.replace(".", "").isdigit():
+    #         max_price = float(parsed)
+    #     # else: stays None
+    # except Exception as e:
+    #     logger.warning(f"Failed to parse price from query '{query}': {e}", exc_info=True)
+
+    # 3. Prepare RPC parameters
+    rpc_params = {
+        "p_store_id": store_id,
+        "p_query": query,
+        "p_query_embedding": "[" + ",".join(f"{x:.8f}" for x in query_embedding) + "]",
+        "p_limit": limit,
+        "p_min_score": 0.25,          # ← start here, tune between 0.15–0.45 based on tests
+    }
+    if max_price is not None:
+        rpc_params["p_max_price"] = max_price
+    
+    logger.info(f"RPC params for store_id={store_id}, query='{query}': {rpc_params}")
+    logger.info(f"Max price parsed: {max_price}")
+    logger.info(f"Query: '{query}' → Parsed max_price = {max_price} (type: {type(max_price)})")
+    
+    # 4. Call the RPC
     try:
-        # Prefer rpc call so we can leverage the SQL above.
-        resp = (
-            sb.rpc(
-                "hybrid_search_products",
-                {"p_store_id": store_id, "p_query": query, "p_limit": limit},
-            )
-            .execute()
-        )
+        resp = sb.rpc("hybrid_search_products", rpc_params).execute()
     except Exception as e:
         logger.exception("Supabase hybrid_search_products RPC failed")
-        raise HTTPException(status_code=500, detail=f"supabase search failed: {e}") from e
+        raise HTTPException(
+            status_code=500,
+            detail=f"supabase search failed: {str(e)}"
+        ) from e
 
     if not isinstance(resp.data, list):
-        raise HTTPException(status_code=500, detail="unexpected Supabase response shape")
-
+        raise HTTPException(
+            status_code=500,
+            detail="unexpected Supabase response shape"
+        )
+        
+    logger.info(f"RPC response: data_len={len(resp.data)}, full_resp={resp}")
+    
+    if not resp.data:
+       logger.warning(f"No results from RPC for query='{query}', store_id={store_id}. Check threshold={rpc_params['p_min_score']}, max_price={max_price}")
+    
+    # 5. Parse results (same as your original)
     results: List[ProductResult] = []
     for row in resp.data:
         try:
             price_raw = row.get("price")
-            price_val: Optional[Decimal]
-            if price_raw is None:
-                price_val = None
-            else:
+            price_val: Optional[Decimal] = None
+            if price_raw is not None:
                 price_val = Decimal(str(price_raw))
         except Exception:
             price_val = None
@@ -220,37 +228,47 @@ def _hybrid_search_products(
 
 
 def _build_pitch(products: List[ProductResult], query: str) -> str:
+    """
+    Generate a friendly sales pitch for the best matching product,
+    or a helpful no-results message when nothing matches.
+    """
     if not products:
-        return "I couldn't find a great match for that request, but I’d be happy to help you explore similar products."
+        # You can customize this message — keep it warm and inviting
+        return (
+            "Hmm, I couldn't find anything that quite matches your request right now. "
+            "Would you like me to suggest similar items or help refine the search?"
+        )
 
+    # If we have results, proceed with the best one
     client = get_openrouter_client()
     model = os.getenv("OPENROUTER_MODEL", "xai/grok-beta")
-    best = products[0]
+    best = products[0]  # Assuming results are already sorted by score descending
 
     feature_bits: List[str] = []
     if best.description:
-        feature_bits.append(best.description)
+        feature_bits.append(best.description.strip())
     if best.product_url:
-        feature_bits.append(f"URL: {best.product_url}")
+        feature_bits.append(f"Product link: {best.product_url}")
     if best.image_url:
         feature_bits.append(f"Image: {best.image_url}")
 
     price_str = "Unknown price"
     if best.price is not None:
-        price_str = f"${best.price:.2f}"
+        price_str = f"${float(best.price):.2f}"   # safer conversion
 
     system_prompt = (
-        "You are a friendly retail assistant. "
-        "Create a short enthusiastic 2-sentence sales pitch for the best matching product. "
-        "Mention price and key features."
+        "You are a friendly, enthusiastic retail assistant. "
+        "Write a short, engaging 2-sentence sales pitch for the best matching product. "
+        "Always mention the price if known, and highlight 1-2 key features or benefits. "
+        "Keep it natural, positive, and under 100 words."
     )
 
     user_content = (
-        f"Customer query: {query}\n\n"
-        f"Selected product:\n"
+        f"Customer's search: {query}\n\n"
+        f"Best matching product:\n"
         f"- Name: {best.name}\n"
         f"- Price: {price_str}\n"
-        f"- Extra details: {' '.join(feature_bits) if feature_bits else 'N/A'}"
+        f"- Details: {' | '.join(feature_bits) if feature_bits else 'No extra details available'}"
     )
 
     try:
@@ -263,12 +281,16 @@ def _build_pitch(products: List[ProductResult], query: str) -> str:
             max_tokens=160,
             temperature=0.8,
         )
-    except Exception as e:
-        logger.exception("OpenRouter call failed")
-        raise HTTPException(status_code=502, detail=f"pitch generation failed: {e}") from e
+        pitch = completion.choices[0].message.content.strip() if completion.choices else ""
+        return pitch or "Great choice! This looks like a perfect match for you."
 
-    choice = completion.choices[0].message.content if completion.choices else ""
-    return (choice or "").strip()
+    except Exception as e:
+        logger.exception("OpenRouter pitch generation failed")
+        # Fallback pitch in case the LLM call fails
+        return (
+            f"I love that you're looking for {query}! "
+            f"The top match is {best.name} at {price_str} — check it out!"
+        )
 
 
 @app.get("/health")
@@ -280,7 +302,17 @@ def health() -> Dict[str, str]:
 def search(req: SearchRequest) -> SearchResponse:
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="query must not be empty")
-
+    
+    
+    # Validate store_id early
+    try:
+        uuid_obj = uuid.UUID(req.store_id)  # raises ValueError if invalid
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid store_id format: '{req.store_id}'. Must be a valid UUID (36 characters)."
+        )
+    
     sb = get_supabase()
 
     products = _hybrid_search_products(

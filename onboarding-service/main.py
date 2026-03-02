@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from PIL import Image
 from sentence_transformers import SentenceTransformer
 from supabase import Client, create_client
+import uuid
 
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -38,7 +39,7 @@ class OnboardRequest(BaseModel):
 
 @dataclass(frozen=True)
 class ProductRow:
-    id: str
+    id: str # uuid 
     store_id: str
     name: str
     description: str
@@ -281,8 +282,9 @@ def ensure_supabase_schema() -> None:
     create extension if not exists vector;
 
     create table if not exists public.products (
-      id text primary key,
+      id uuid primary key default uuid_generate_v4(),
       store_id uuid not null,
+      handle text not null,
       name text,
       description text,
       price numeric,
@@ -292,6 +294,8 @@ def ensure_supabase_schema() -> None:
     );
 
     create index if not exists products_store_id_idx on public.products (store_id);
+    create unique index if not exists products_store_handle_idx on public.products (store_id, handle);
+    create index if not exists products_embedding_idx on public.products using hnsw (embedding vector_cosine_ops);
     """.strip()
 
     # Try SQL execution via meta query endpoint (preferred).
@@ -353,7 +357,7 @@ def build_product_rows(domain: str, store_id: str, raw_products: List[Dict[str, 
     for (handle, name, description, product_url, price, image_url), emb in zip(metas, embeddings):
         rows.append(
             ProductRow(
-                id=handle,
+                id=str(uuid.uuid4()),
                 store_id=store_id,
                 name=name,
                 description=description,
@@ -431,8 +435,8 @@ def onboard(req: OnboardRequest) -> Dict[str, Any]:
             for r in batch:
                 payload.append(
                     {
-                        "id": r.id,
                         "store_id": r.store_id,
+                        "handle": r.handle,
                         "name": r.name,
                         "description": r.description,
                         "price": str(r.price) if r.price is not None else None,

@@ -4,3 +4,4 @@ supabase
 openai
 requests
 python-dotenv
+sentence-transformers
