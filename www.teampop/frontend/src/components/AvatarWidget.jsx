@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useConversation } from "@elevenlabs/react";
 import "../styles/AvatarWidget.css";
 
-
 const DUMMY_IMAGE = "/image.png";
 
 // --- SHOPPING CARD (Style A) ---
@@ -17,7 +16,9 @@ const ShoppingCard = ({ product, isActive, highlightPrice, highlightDesc }) => {
         <div className="shopping-card-title">{product.name}</div>
         {product.description && (
           <div className="flex flex-col gap-1">
-           <div className={`shopping-card-desc text-sm text-gray-600 transition-all ${!isExpanded ? "line-clamp-2" : ""}`}>
+            <div
+              className={`shopping-card-desc text-sm text-gray-600 transition-all ${!isExpanded ? "line-clamp-2" : ""}`}
+            >
               {product.description}
             </div>
             <button
@@ -34,7 +35,9 @@ const ShoppingCard = ({ product, isActive, highlightPrice, highlightDesc }) => {
         <div
           className={`shopping-card-price text-xl font-bold mt-2 ${isActive && highlightPrice ? "price-glow text-green-400" : "text-green-300"}`}
         >
-          {product.price ? `₹${Number(product.price).toLocaleString("en-IN")}` : "Check Price"}
+          {product.price
+            ? `₹${Number(product.price).toLocaleString("en-IN")}`
+            : "Check Price"}
         </div>
         <a
           href={product.product_url}
@@ -103,9 +106,6 @@ function AvatarInner({
     [activeView],
   );
 
-  
-
-  
   const conversation = useConversation({
     onMessage: (message) => {
       const source = message?.source;
@@ -173,55 +173,68 @@ function AvatarInner({
       },
 
       // New tool 1: Agent wants to pivot carousel during speech
+
       update_carousel_main_view: async (parameters) => {
         console.log("🔄 update_carousel_main_view called with:", parameters);
+
         const productId = parameters?.product_id;
         if (!productId) return "Missing product_id";
 
         const index = latestProducts.findIndex((p) => p.id === productId);
         if (index !== -1 && index !== activeIndex) {
           setActiveIndex(index);
-          return `Carousel slid to product ${productId}`;
+
+          // Force scroll immediately (more reliable than waiting for useEffect)
+          if (carouselRef.current) {
+            const width = carouselRef.current.clientWidth;
+            if (width > 0) {
+              carouselRef.current.scrollTo({
+                left: index * width,
+                behavior: "smooth",
+              });
+            }
+          }
+
+          return `Carousel slid to product ${productId} (index ${index})`;
         }
         return "Already on that product";
       },
 
       // New tool 2: Enrich main view + optional short TTS (called by agent OR manually by us)
+      // New tool 2: Enrich main view + short narration (NO crashing speak)
       product_desc_of_main_view: async (parameters) => {
         console.log("🗣️ product_desc_of_main_view called with:", parameters);
+
         const desc = parameters?.product_desc;
         if (!desc?.product_id) return "Missing product_desc";
 
-        // Optional short TTS (uncomment if you want agent to auto-speak on its own calls)
-        if (desc.name && desc.price && desc.description) {
-          const shortIntro = `Ooh, ${desc.name} — ₹${Number(desc.price).toLocaleString("en-IN")}, ${desc.description.split(/[.!?]\s/)[0] || ""}…`;
-          conversation.speak(shortIntro, { priority: "low" }); // low priority = doesn't interrupt agent
-        }
+        // speak() was crashing the entire tool chain — removed for now
+        console.log(
+          `[Narration would be]: Ooh, ${desc.name} — ₹${Number(desc.price).toLocaleString("en-IN")}, ${desc.description.split(/[.!?]\s/)[0] || ""}…`,
+        );
 
-        // You can store richer desc here later if needed
         return `Main view enriched for ${desc.product_id}`;
       },
     },
   });
 
-// Helper for proactive narration on manual scroll or thumbnail click
+  // Helper for proactive narration on manual scroll or thumbnail click
 
-const syncMainProduct = useCallback(
-  (product) => {
-    if (!product?.id || !conversation.isActive) return;
+  const syncMainProduct = useCallback(
+    (product) => {
+      if (!product?.id || !conversation.isActive) return;
 
-    conversation.clientTools?.product_desc_of_main_view?.({
-      product_desc: {
-        product_id: product.id,
-        name: product.name || "",
-        description: product.description || "",
-        price: product.price || 0,
-      },
-    });
-  },
-  [conversation]
-);
-
+      conversation.clientTools?.product_desc_of_main_view?.({
+        product_desc: {
+          product_id: product.id,
+          name: product.name || "",
+          description: product.description || "",
+          price: product.price || 0,
+        },
+      });
+    },
+    [conversation],
+  );
 
   useEffect(() => {
     if (subtitleContainerRef.current) {
@@ -259,34 +272,42 @@ const syncMainProduct = useCallback(
         isProgrammaticScrollRef.current = false;
       }, 600);
     }
-  }, [activeIndex, latestProducts, carouselRef, isProgrammaticScrollRef , syncMainProduct]);
+  }, [
+    activeIndex,
+    latestProducts,
+    carouselRef,
+    isProgrammaticScrollRef,
+    syncMainProduct,
+  ]);
+
+ 
 
   // Trigger narration + index update on manual/user scroll end
-
-  useEffect(() => {
-  if (!carouselRef.current) return;
+useEffect(() => {
+  const container = carouselRef.current;
+  if (!container) return;
 
   const handleScrollEnd = () => {
     if (isProgrammaticScrollRef.current) return;
 
-    const scrollLeft = carouselRef.current.scrollLeft;
-    const width = carouselRef.current.clientWidth;
+    const scrollLeft = container.scrollLeft;
+    const width = container.clientWidth;
     if (width === 0) return;
 
     const newIndex = Math.round(scrollLeft / width);
     if (newIndex !== activeIndex && latestProducts[newIndex]) {
+      console.log("👆 Manual scroll detected → new index", newIndex);
       setActiveIndex(newIndex);
       syncMainProduct(latestProducts[newIndex]);
     }
   };
 
-  const scrollContainer = carouselRef.current;
-  scrollContainer.addEventListener("scroll", handleScrollEnd, { passive: true });
+  container.addEventListener("scroll", handleScrollEnd, { passive: true });
 
   return () => {
-    scrollContainer.removeEventListener("scroll", handleScrollEnd);
+    container.removeEventListener("scroll", handleScrollEnd);
   };
-}, [latestProducts, activeIndex, syncMainProduct, isProgrammaticScrollRef, setActiveIndex, carouselRef]);
+}, [latestProducts, activeIndex, syncMainProduct, isProgrammaticScrollRef]);
 
 
   useEffect(() => {
@@ -638,7 +659,6 @@ export default function AvatarWidget({ agentId, preview = false }) {
     }, 150);
   }, [activeIndex]);
 
-  
   if (!resolvedAgentId || resolvedAgentId === "YOUR_ELEVENLABS_AGENT_ID") {
     return (
       <div className="avatar-widget-error">Missing ElevenLabs Agent ID</div>
