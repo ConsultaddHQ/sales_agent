@@ -259,6 +259,34 @@ const syncMainProduct = useCallback(
     }
   }, [activeIndex, latestProducts, carouselRef, isProgrammaticScrollRef , syncMainProduct]);
 
+  // Trigger narration + index update on manual/user scroll end
+  
+  useEffect(() => {
+  if (!carouselRef.current) return;
+
+  const handleScrollEnd = () => {
+    if (isProgrammaticScrollRef.current) return;
+
+    const scrollLeft = carouselRef.current.scrollLeft;
+    const width = carouselRef.current.clientWidth;
+    if (width === 0) return;
+
+    const newIndex = Math.round(scrollLeft / width);
+    if (newIndex !== activeIndex && latestProducts[newIndex]) {
+      setActiveIndex(newIndex);
+      syncMainProduct(latestProducts[newIndex]);
+    }
+  };
+
+  const scrollContainer = carouselRef.current;
+  scrollContainer.addEventListener("scroll", handleScrollEnd, { passive: true });
+
+  return () => {
+    scrollContainer.removeEventListener("scroll", handleScrollEnd);
+  };
+}, [latestProducts, activeIndex, syncMainProduct, isProgrammaticScrollRef, setActiveIndex, carouselRef]);
+
+
   useEffect(() => {
     return () => {
       if (transientTimeoutRef.current)
@@ -608,6 +636,7 @@ export default function AvatarWidget({ agentId, preview = false }) {
     }, 150);
   }, [activeIndex]);
 
+  
   if (!resolvedAgentId || resolvedAgentId === "YOUR_ELEVENLABS_AGENT_ID") {
     return (
       <div className="avatar-widget-error">Missing ElevenLabs Agent ID</div>
