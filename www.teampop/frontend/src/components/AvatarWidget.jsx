@@ -174,6 +174,7 @@ function AvatarInner({
 
       // New tool 1: Agent wants to pivot carousel during speech
       update_carousel_main_view: async (parameters) => {
+        console.log("🔄 update_carousel_main_view called with:", parameters);
         const productId = parameters?.product_id;
         if (!productId) return "Missing product_id";
 
@@ -187,13 +188,14 @@ function AvatarInner({
 
       // New tool 2: Enrich main view + optional short TTS (called by agent OR manually by us)
       product_desc_of_main_view: async (parameters) => {
+        console.log("🗣️ product_desc_of_main_view called with:", parameters);
         const desc = parameters?.product_desc;
         if (!desc?.product_id) return "Missing product_desc";
 
         // Optional short TTS (uncomment if you want agent to auto-speak on its own calls)
         if (desc.name && desc.price && desc.description) {
           const shortIntro = `Ooh, ${desc.name} — ₹${Number(desc.price).toLocaleString("en-IN")}, ${desc.description.split(/[.!?]\s/)[0] || ""}…`;
-          // conversation.speak(shortIntro, { priority: "low" }); // low priority = doesn't interrupt agent
+          conversation.speak(shortIntro, { priority: "low" }); // low priority = doesn't interrupt agent
         }
 
         // You can store richer desc here later if needed
@@ -260,7 +262,7 @@ const syncMainProduct = useCallback(
   }, [activeIndex, latestProducts, carouselRef, isProgrammaticScrollRef , syncMainProduct]);
 
   // Trigger narration + index update on manual/user scroll end
-  
+
   useEffect(() => {
   if (!carouselRef.current) return;
 
