@@ -89,21 +89,36 @@ function AvatarInner({
   const chatContainerRef = useRef(null);
   const isSessionTransitioningRef = useRef(false);
   const latestProductsRef = useRef([]);
-
-  const safeIndex = Math.min(activeIndex, Math.max(0, latestProducts.length - 1));
+  // Tracks whether the current activeIndex change came from the agent tool
+  const isAgentTriggeredRef = useRef(false);
+  const isSyntheticMessageRef = useRef(false);
+  const syncDebounceRef = useRef(null);
 
   useEffect(() => {
-  return () => {
-    // Clean up all timers when component unmounts
-    clearTimeout(transientTimeoutRef.current);
-    clearTimeout(priceTimerRef.current);
-    clearTimeout(subtitleTimerRef.current);
-  };
-}, []);
+    return () => {
+      // Clean up all timers when component unmounts
+      clearTimeout(transientTimeoutRef.current);
+      clearTimeout(priceTimerRef.current);
+      clearTimeout(subtitleTimerRef.current);
+      clearTimeout(syncDebounceRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop =
+        chatContainerRef.current.scrollHeight;
+    }
+  }, [chatHistory]);
 
   useEffect(() => {
     latestProductsRef.current = latestProducts;
   }, [latestProducts]);
+
+  const safeIndex = Math.min(
+    activeIndex,
+    Math.max(0, latestProducts.length - 1),
+  );
 
   const showTransientMessage = useCallback(
     (text) => {
@@ -133,6 +148,11 @@ function AvatarInner({
             : typeof message?.content === "string"
               ? message.content
               : "";
+
+      if (source === "user" && isSyntheticMessageRef.current) {
+        isSyntheticMessageRef.current = false; // reset for next real message
+        return; // skip adding this to chat history
+      }
 
       if (text) {
         setChatHistory((prev) => {
@@ -185,11 +205,14 @@ function AvatarInner({
         latestProductsRef.current = products; // ← sync ref immediately, don't wait for useEffect
         setActiveView("PRODUCTS");
         setActiveIndex(0);
-        showTransientMessage(`Found ${products.length} products for you.`);
+        // showTransientMessage(`Found ${products.length} products for you.`);
+        setAgentSubtitle(`Found ${products.length} products for you ✨`);
+        if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+        subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 3000);
         return "UI updated successfully";
       },
 
-      // New tool 1: Agent wants to pivot carousel during speech
+    
 
       // New tool 1: Agent wants to pivot carousel
       update_carousel_main_view: async (parameters) => {
@@ -245,6 +268,8 @@ function AvatarInner({
     },
   });
 
+  const { sendContextualUpdate, sendUserMessage } = conversation; // destructuring of hooks , do rest of the others like this afterwards
+
   const visualState =
     conversation.status === "connected"
       ? "ACTIVE"
@@ -252,19 +277,40 @@ function AvatarInner({
         ? "ERROR"
         : "IDLE";
 
-  // Tracks whether the current activeIndex change came from the agent tool
-  const isAgentTriggeredRef = useRef(false);
+  // Called on manual thumbnail click — injects product context and triggers agent speech
 
-  // Called only on manual thumbnail click — shows product name/price in subtitle bar
-  const syncMainProduct = useCallback((product) => {
-    if (!product?.id) return;
-    console.log("[sync] Manual narration:", product.name);
-    setAgentSubtitle(
-      `${product.name} — ₹${Number(product.price).toLocaleString("en-IN")}`,
-    );
-    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
-    subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 4000);
-  }, []);
+  const syncMainProduct = useCallback(
+    (product) => {
+      if (!product?.id) return;
+      if (conversation.status !== "connected") {
+        setAgentSubtitle(
+          `${product.name} — ₹${Number(product.price).toLocaleString("en-IN")}`,
+        );
+        if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+        subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 4000);
+        return;
+      }
+
+      // Debounce — only fire if user has settled on this product for 600ms
+      if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
+      syncDebounceRef.current = setTimeout(() => {
+        console.log("[sync] Sending product context to agent:", product.name);
+
+        sendContextualUpdate(
+          `[CAROUSEL UPDATE] The user just manually selected a new product on screen. ` +
+            `Product name: "${product.name}". ` +
+            `Price: ₹${Number(product.price).toLocaleString("en-IN")}. ` +
+            `Description: ${product.description || "No description"}. ` +
+            `Product URL: ${product.product_url || ""}. ` +
+            `Please talk about this product naturally in your next response.`,
+        );
+
+        isSyntheticMessageRef.current = true;
+        sendUserMessage("Tell me about this one");
+      }, 600);
+    },
+    [conversation.status, sendContextualUpdate, sendUserMessage],
+  );
 
   // Scroll the active thumbnail into view — deps are [activeIndex] ONLY
   useEffect(() => {
@@ -579,9 +625,9 @@ function AvatarInner({
                   Hello! I'm your Team Pop AI agent. How can I help you today?
                 </div>
               ) : (
-                chatHistory.map((msg, idx) => (
+                chatHistory.map((msg) => (
                   <div
-                    key={idx}
+                    key={msg.id}
                     className={`message-bubble p-3 text-sm max-w-[85%] shadow-md ${
                       msg.source === "user"
                         ? "user-message self-end bg-blue-600 text-white rounded-2xl rounded-tr-sm border border-blue-500"
