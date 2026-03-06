@@ -182,19 +182,7 @@ function AvatarInner({
 
         const index = latestProducts.findIndex((p) => p.id === productId);
         if (index !== -1 && index !== activeIndex) {
-          setActiveIndex(index);
-
-          // Force scroll immediately (more reliable than waiting for useEffect)
-          if (carouselRef.current) {
-            const width = carouselRef.current.clientWidth;
-            if (width > 0) {
-              carouselRef.current.scrollTo({
-                left: index * width,
-                behavior: "smooth",
-              });
-            }
-          }
-
+          setActiveIndex(index); // ← only change index; narration + scroll handled by useEffect
           return `Carousel slid to product ${productId} (index ${index})`;
         }
         return "Already on that product";
@@ -280,35 +268,30 @@ function AvatarInner({
     syncMainProduct,
   ]);
 
- 
-
   // Trigger narration + index update on manual/user scroll end
-useEffect(() => {
-  const container = carouselRef.current;
-  if (!container) return;
+  // Programmatic slide + narration when activeIndex changes (agent or click)
+  useEffect(() => {
+    if (!carouselRef.current || latestProducts.length === 0) return;
 
-  const handleScrollEnd = () => {
-    if (isProgrammaticScrollRef.current) return;
+    isProgrammaticScrollRef.current = true;
 
-    const scrollLeft = container.scrollLeft;
-    const width = container.clientWidth;
-    if (width === 0) return;
-
-    const newIndex = Math.round(scrollLeft / width);
-    if (newIndex !== activeIndex && latestProducts[newIndex]) {
-      console.log("👆 Manual scroll detected → new index", newIndex);
-      setActiveIndex(newIndex);
-      syncMainProduct(latestProducts[newIndex]);
+    const width = carouselRef.current.clientWidth;
+    if (width > 0) {
+      carouselRef.current.scrollTo({
+        left: activeIndex * width,
+        behavior: "smooth",
+      });
     }
-  };
 
-  container.addEventListener("scroll", handleScrollEnd, { passive: true });
+    // Always narrate the new main product
+    if (latestProducts[activeIndex]) {
+      syncMainProduct(latestProducts[activeIndex]);
+    }
 
-  return () => {
-    container.removeEventListener("scroll", handleScrollEnd);
-  };
-}, [latestProducts, activeIndex, syncMainProduct, isProgrammaticScrollRef]);
-
+    setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+    }, 700);
+  }, [activeIndex, latestProducts, carouselRef, syncMainProduct]);
 
   useEffect(() => {
     return () => {
@@ -408,8 +391,8 @@ useEffect(() => {
                       className={`flex-shrink-0 transition-all duration-300 cursor-pointer rounded-xl overflow-hidden border-2 ${idx === activeIndex ? "border-blue-500 scale-100 opacity-100" : "border-transparent scale-90 opacity-60 hover:opacity-100"}`}
                       style={{ width: "60px", height: "60px" }}
                       onClick={() => {
-                        setActiveIndex(idx);
-                        syncMainProduct(latestProducts[idx]);
+                        console.log("👆 Thumbnail clicked → index", idx);
+                        setActiveIndex(idx); // ← useEffect will trigger slide + narration
                       }}
                     >
                       <img
