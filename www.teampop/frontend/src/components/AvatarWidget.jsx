@@ -177,15 +177,42 @@ function AvatarInner({
       update_carousel_main_view: async (parameters) => {
         console.log("🔄 update_carousel_main_view called with:", parameters);
 
-        const productId = parameters?.product_id;
-        if (!productId) return "Missing product_id";
+        let targetIndex = -1;
 
-        const index = latestProducts.findIndex((p) => p.id === productId);
-        if (index !== -1 && index !== activeIndex) {
-          setActiveIndex(index); // ← only change index; narration + scroll handled by useEffect
-          return `Carousel slid to product ${productId} (index ${index})`;
+        // Prefer index if given (much more reliable)
+        if (typeof parameters?.index === "number") {
+          targetIndex = parameters.index;
         }
-        return "Already on that product";
+        // Fallback to id
+        else if (parameters?.product_id) {
+          targetIndex = latestProducts.findIndex(
+            (p) => p.id === parameters.product_id,
+          );
+        }
+
+        if (
+          targetIndex >= 0 &&
+          targetIndex < latestProducts.length &&
+          targetIndex !== activeIndex
+        ) {
+          setActiveIndex(targetIndex);
+
+          // Force scroll right now
+          if (carouselRef.current) {
+            const width = carouselRef.current.clientWidth;
+            if (width > 0) {
+              carouselRef.current.scrollTo({
+                left: targetIndex * width,
+                behavior: "smooth",
+              });
+            }
+          }
+
+          const usedId = latestProducts[targetIndex]?.id || "unknown";
+          return `Carousel moved to index ${targetIndex} (product_id: ${usedId})`;
+        }
+
+        return "Could not move carousel (invalid index or id)";
       },
 
       // New tool 2: Enrich main view + optional short TTS (called by agent OR manually by us)
@@ -270,28 +297,37 @@ function AvatarInner({
 
   // Trigger narration + index update on manual/user scroll end
   // Programmatic slide + narration when activeIndex changes (agent or click)
+  // Manual/user scroll → narration
   useEffect(() => {
-    if (!carouselRef.current || latestProducts.length === 0) return;
+    const container = carouselRef.current;
+    if (!container) return;
 
-    isProgrammaticScrollRef.current = true;
+    let timeoutId;
 
-    const width = carouselRef.current.clientWidth;
-    if (width > 0) {
-      carouselRef.current.scrollTo({
-        left: activeIndex * width,
-        behavior: "smooth",
-      });
-    }
+    const handleScroll = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        if (isProgrammaticScrollRef.current) return;
 
-    // Always narrate the new main product
-    if (latestProducts[activeIndex]) {
-      syncMainProduct(latestProducts[activeIndex]);
-    }
+        const scrollLeft = container.scrollLeft;
+        const width = container.clientWidth;
+        if (width <= 0) return;
 
-    setTimeout(() => {
-      isProgrammaticScrollRef.current = false;
-    }, 700);
-  }, [activeIndex, latestProducts, carouselRef, syncMainProduct]);
+        const newIndex = Math.round(scrollLeft / width);
+        if (newIndex !== activeIndex && latestProducts[newIndex]) {
+          console.log("Manual scroll → new index", newIndex);
+          setActiveIndex(newIndex);
+          syncMainProduct(latestProducts[newIndex]);
+        }
+      }, 150);
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+      clearTimeout(timeoutId);
+    };
+  }, [latestProducts, activeIndex, syncMainProduct, isProgrammaticScrollRef]);
 
   useEffect(() => {
     return () => {
