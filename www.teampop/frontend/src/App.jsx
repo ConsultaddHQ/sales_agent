@@ -3,7 +3,7 @@ import './App.css';
 
 // ElevenLabs Agent ID — replace with your actual agent ID or pass via
 // window.__TEAM_POP_AGENT_ID__ from the embed snippet.
-const AGENT_ID = window.__TEAM_POP_AGENT_ID__ || 'agent_6101kjzp2htmf3zskmx50w19d14n';
+const AGENT_ID = window.__TEAM_POP_AGENT_ID__ || 'agent_6401kk03xzfgej8vtjjdsy13pykf';
 
 function App() {
   return (
