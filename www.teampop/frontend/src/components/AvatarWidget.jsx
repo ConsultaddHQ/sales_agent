@@ -89,8 +89,6 @@ function AvatarInner({
   const chatContainerRef = useRef(null);
   const isSessionTransitioningRef = useRef(false);
 
-  const visualState = conversation.status === "connected" ? "ACTIVE" : conversation.status === "error" ? "ERROR" : "IDLE";
-
   const showTransientMessage = useCallback(
     (text) => {
       if (activeView !== "NONE") return;
@@ -219,6 +217,13 @@ function AvatarInner({
     },
   });
 
+  const visualState =
+    conversation.status === "connected"
+      ? "ACTIVE"
+      : conversation.status === "error"
+        ? "ERROR"
+        : "IDLE";
+
   // Helper for proactive narration on manual scroll or thumbnail click
 
   const syncMainProduct = useCallback(
@@ -237,75 +242,48 @@ function AvatarInner({
     [conversation],
   );
 
-const SCROLL_DEBOUNCE_MS = 150;
-const SCROLL_ANIMATION_MS = 700;
-const DOM_READY_DELAY_MS = 100;
+  const SCROLL_DEBOUNCE_MS = 150;
+  const SCROLL_ANIMATION_MS = 700;
+  const DOM_READY_DELAY_MS = 100;
 
-// Programmatic scroll + narration when activeIndex changes (agent tool or thumbnail click)
-useEffect(() => {
-  if (!carouselRef.current || latestProducts.length === 0) return;
+  // ────────────────────────────────────────────────
+  // SINGLE SOURCE OF TRUTH – Programmatic scroll + narration
+  // ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!carouselRef.current || latestProducts.length === 0) return;
 
-  isProgrammaticScrollRef.current = true;
+    isProgrammaticScrollRef.current = true;
 
-  const timeoutId = setTimeout(() => {
-    const container = carouselRef.current;
-    if (!container) return;
+    const timeoutId = setTimeout(() => {
+      const container = carouselRef.current;
+      if (!container) return;
 
-    const width = container.clientWidth;
-    if (width > 0) {
-      container.scrollTo({
-        left: activeIndex * width,
-        behavior: "smooth",
-      });
-    }
-
-    // Narrate current product
-    if (latestProducts[activeIndex]) {
-      syncMainProduct(latestProducts[activeIndex]);
-    }
-
-    // Reset flag after animation should be done
-    setTimeout(() => {
-      isProgrammaticScrollRef.current = false;
-    }, SCROLL_ANIMATION_MS);
-  }, DOM_READY_DELAY_MS);
-
-  return () => clearTimeout(timeoutId);
-}, [activeIndex, latestProducts, syncMainProduct]);
-
-// Detect manual/user scroll and update index + narrate
-useEffect(() => {
-  const container = carouselRef.current;
-  if (!container) return;
-
-  let debounceTimer;
-
-  const handleScroll = () => {
-   if(debounceTimer) clearTimeout(debounceTimer);
-
-    debounceTimer = setTimeout(() => {
-      if (isProgrammaticScrollRef.current) return;
-
-      const scrollLeft = container.scrollLeft;
-      const width = container.clientWidth;
-      if (width <= 0) return;
-
-      const newIndex = Math.round(scrollLeft / width);
-      if (newIndex !== activeIndex && latestProducts[newIndex]) {
-        console.log("Manual scroll detected → new index:", newIndex);
-        setActiveIndex(newIndex);
-        syncMainProduct(latestProducts[newIndex]);
+      const width = container.clientWidth || container.offsetWidth;
+      if (width > 0) {
+        container.scrollTo({
+          left: activeIndex * width,
+          behavior: "smooth",
+        });
+        console.log(
+          `[Scroll Success] Moved to index ${activeIndex} (width: ${width})`,
+        );
+      } else {
+        console.warn(
+          "[Scroll Warning] Width is still 0 – retrying in next tick",
+        );
       }
-    }, SCROLL_DEBOUNCE_MS);
-  };
 
-  container.addEventListener("scroll", handleScroll, { passive: true });
+      if (latestProducts[activeIndex]) {
+        syncMainProduct(latestProducts[activeIndex]);
+      }
 
-  return () => {
-    container.removeEventListener("scroll", handleScroll);
-    clearTimeout(debounceTimer);
-  };
-}, [latestProducts, activeIndex, syncMainProduct, isProgrammaticScrollRef, carouselRef]);
+      setTimeout(() => {
+        isProgrammaticScrollRef.current = false;
+      }, 800);
+    }, 150);
+
+    return () => clearTimeout(timeoutId);
+  }, [activeIndex, latestProducts, syncMainProduct]);
 
   const handleInteraction = async () => {
     if (isSessionTransitioningRef.current) return;
