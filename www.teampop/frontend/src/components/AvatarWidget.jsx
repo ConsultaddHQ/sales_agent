@@ -89,6 +89,8 @@ function AvatarInner({
   const chatContainerRef = useRef(null);
   const isSessionTransitioningRef = useRef(false);
 
+  const visualState = conversation.status === "connected" ? "ACTIVE" : conversation.status === "error" ? "ERROR" : "IDLE";
+
   const showTransientMessage = useCallback(
     (text) => {
       if (activeView !== "NONE") return;
@@ -174,17 +176,15 @@ function AvatarInner({
 
       // New tool 1: Agent wants to pivot carousel during speech
 
+      // New tool 1: Agent wants to pivot carousel
       update_carousel_main_view: async (parameters) => {
         console.log("🔄 update_carousel_main_view called with:", parameters);
 
         let targetIndex = -1;
 
-        // Prefer index if given (much more reliable)
         if (typeof parameters?.index === "number") {
           targetIndex = parameters.index;
-        }
-        // Fallback to id
-        else if (parameters?.product_id) {
+        } else if (parameters?.product_id) {
           targetIndex = latestProducts.findIndex(
             (p) => p.id === parameters.product_id,
           );
@@ -196,23 +196,9 @@ function AvatarInner({
           targetIndex !== activeIndex
         ) {
           setActiveIndex(targetIndex);
-
-          // Force scroll right now
-          if (carouselRef.current) {
-            const width = carouselRef.current.clientWidth;
-            if (width > 0) {
-              carouselRef.current.scrollTo({
-                left: targetIndex * width,
-                behavior: "smooth",
-              });
-            }
-          }
-
-          const usedId = latestProducts[targetIndex]?.id || "unknown";
-          return `Carousel moved to index ${targetIndex} (product_id: ${usedId})`;
+          return `Carousel moved to index ${targetIndex}`;
         }
-
-        return "Could not move carousel (invalid index or id)";
+        return "Already on that product";
       },
 
       // New tool 2: Enrich main view + optional short TTS (called by agent OR manually by us)
@@ -251,92 +237,75 @@ function AvatarInner({
     [conversation],
   );
 
-  useEffect(() => {
-    if (subtitleContainerRef.current) {
-      subtitleContainerRef.current.scrollTop =
-        subtitleContainerRef.current.scrollHeight;
-    }
-  }, [agentSubtitle]);
+const SCROLL_DEBOUNCE_MS = 150;
+const SCROLL_ANIMATION_MS = 700;
+const DOM_READY_DELAY_MS = 100;
 
-  useEffect(() => {
-    if (chatContainerRef.current && activeView === "CHAT") {
-      const container = chatContainerRef.current;
-      const distanceFromBottom =
-        container.scrollHeight - container.scrollTop - container.clientHeight;
-      if (distanceFromBottom < 150 || chatHistory.length <= 1) {
-        container.scrollTop = container.scrollHeight;
-      }
-    }
-  }, [chatHistory, activeView]);
+// Programmatic scroll + narration when activeIndex changes (agent tool or thumbnail click)
+useEffect(() => {
+  if (!carouselRef.current || latestProducts.length === 0) return;
 
-  let visualState = "IDLE";
-  if (conversation.status === "connecting") visualState = "CONNECTING";
-  else if (conversation.status === "connected")
-    visualState = conversation.isSpeaking ? "SPEAKING" : "LISTENING";
+  isProgrammaticScrollRef.current = true;
 
-  useEffect(() => {
-    if (carouselRef.current && latestProducts.length > 0) {
-      isProgrammaticScrollRef.current = true;
-      const width = carouselRef.current.clientWidth;
-      carouselRef.current.scrollTo({
-        left: activeIndex * width,
-        behavior: "smooth",
-      });
-      syncMainProduct(latestProducts[activeIndex]);
-      setTimeout(() => {
-        isProgrammaticScrollRef.current = false;
-      }, 600);
-    }
-  }, [
-    activeIndex,
-    latestProducts,
-    carouselRef,
-    isProgrammaticScrollRef,
-    syncMainProduct,
-  ]);
-
-  // Trigger narration + index update on manual/user scroll end
-  // Programmatic slide + narration when activeIndex changes (agent or click)
-  // Manual/user scroll → narration
-  useEffect(() => {
+  const timeoutId = setTimeout(() => {
     const container = carouselRef.current;
     if (!container) return;
 
-    let timeoutId;
+    const width = container.clientWidth;
+    if (width > 0) {
+      container.scrollTo({
+        left: activeIndex * width,
+        behavior: "smooth",
+      });
+    }
 
-    const handleScroll = () => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        if (isProgrammaticScrollRef.current) return;
+    // Narrate current product
+    if (latestProducts[activeIndex]) {
+      syncMainProduct(latestProducts[activeIndex]);
+    }
 
-        const scrollLeft = container.scrollLeft;
-        const width = container.clientWidth;
-        if (width <= 0) return;
+    // Reset flag after animation should be done
+    setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+    }, SCROLL_ANIMATION_MS);
+  }, DOM_READY_DELAY_MS);
 
-        const newIndex = Math.round(scrollLeft / width);
-        if (newIndex !== activeIndex && latestProducts[newIndex]) {
-          console.log("Manual scroll → new index", newIndex);
-          setActiveIndex(newIndex);
-          syncMainProduct(latestProducts[newIndex]);
-        }
-      }, 150);
-    };
+  return () => clearTimeout(timeoutId);
+}, [activeIndex, latestProducts, syncMainProduct]);
 
-    container.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      container.removeEventListener("scroll", handleScroll);
-      clearTimeout(timeoutId);
-    };
-  }, [latestProducts, activeIndex, syncMainProduct, isProgrammaticScrollRef]);
+// Detect manual/user scroll and update index + narrate
+useEffect(() => {
+  const container = carouselRef.current;
+  if (!container) return;
 
-  useEffect(() => {
-    return () => {
-      if (transientTimeoutRef.current)
-        clearTimeout(transientTimeoutRef.current);
-      if (priceTimerRef.current) clearTimeout(priceTimerRef.current);
-      if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
-    };
-  }, []);
+  let debounceTimer;
+
+  const handleScroll = () => {
+   if(debounceTimer) clearTimeout(debounceTimer);
+
+    debounceTimer = setTimeout(() => {
+      if (isProgrammaticScrollRef.current) return;
+
+      const scrollLeft = container.scrollLeft;
+      const width = container.clientWidth;
+      if (width <= 0) return;
+
+      const newIndex = Math.round(scrollLeft / width);
+      if (newIndex !== activeIndex && latestProducts[newIndex]) {
+        console.log("Manual scroll detected → new index:", newIndex);
+        setActiveIndex(newIndex);
+        syncMainProduct(latestProducts[newIndex]);
+      }
+    }, SCROLL_DEBOUNCE_MS);
+  };
+
+  container.addEventListener("scroll", handleScroll, { passive: true });
+
+  return () => {
+    container.removeEventListener("scroll", handleScroll);
+    clearTimeout(debounceTimer);
+  };
+}, [latestProducts, activeIndex, syncMainProduct, isProgrammaticScrollRef, carouselRef]);
 
   const handleInteraction = async () => {
     if (isSessionTransitioningRef.current) return;
