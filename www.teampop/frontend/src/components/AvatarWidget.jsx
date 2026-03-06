@@ -177,9 +177,7 @@ function AvatarInner({
       // New tool 1: Agent wants to pivot carousel
       update_carousel_main_view: async (parameters) => {
         console.log("🔄 update_carousel_main_view called with:", parameters);
-
         let targetIndex = -1;
-
         if (typeof parameters?.index === "number") {
           targetIndex = parameters.index;
         } else if (parameters?.product_id) {
@@ -187,31 +185,35 @@ function AvatarInner({
             (p) => p.id === parameters.product_id,
           );
         }
-
-        if (
-          targetIndex >= 0 &&
-          targetIndex < latestProducts.length &&
-          targetIndex !== activeIndex
-        ) {
-          setActiveIndex(targetIndex);
-          return `Carousel moved to index ${targetIndex}`;
+        if (targetIndex < 0 || targetIndex >= latestProducts.length) {
+          return `Invalid index ${targetIndex}. Products available: 0–${latestProducts.length - 1}.`;
         }
-        return "Already on that product";
+        // Set agent flag BEFORE setActiveIndex so the useEffect sees it
+        isAgentTriggeredRef.current = true;
+        setActiveIndex(targetIndex);
+        console.log(
+          `[Agent] Carousel → index ${targetIndex} (${latestProducts[targetIndex]?.name})`,
+        );
+        return `Carousel moved to index ${targetIndex}: ${latestProducts[targetIndex]?.name}`;
       },
 
       // New tool 2: Enrich main view + optional short TTS (called by agent OR manually by us)
-      // New tool 2: Enrich main view + short narration (NO crashing speak)
       product_desc_of_main_view: async (parameters) => {
         console.log("🗣️ product_desc_of_main_view called with:", parameters);
-
         const desc = parameters?.product_desc;
         if (!desc?.product_id) return "Missing product_desc";
-
-        // speak() was crashing the entire tool chain — removed for now
-        console.log(
-          `[Narration would be]: Ooh, ${desc.name} — ₹${Number(desc.price).toLocaleString("en-IN")}, ${desc.description.split(/[.!?]\s/)[0] || ""}…`,
+        // Update subtitle bar and trigger price highlight
+        const label = `${desc.name || ""} — ₹${Number(desc.price || 0).toLocaleString("en-IN")}`;
+        setAgentSubtitle(label);
+        if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+        subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 5000);
+        setHighlightPrice(true);
+        if (priceTimerRef.current) clearTimeout(priceTimerRef.current);
+        priceTimerRef.current = setTimeout(
+          () => setHighlightPrice(false),
+          2500,
         );
-
+        console.log(`[product_desc] UI updated for: ${desc.name}`);
         return `Main view enriched for ${desc.product_id}`;
       },
     },
@@ -224,69 +226,37 @@ function AvatarInner({
         ? "ERROR"
         : "IDLE";
 
-  // Helper for proactive narration on manual scroll or thumbnail click
+  // Tracks whether the current activeIndex change came from the agent tool
+  const isAgentTriggeredRef = useRef(false);
 
-  const syncMainProduct = useCallback(
-    (product) => {
-      if (!product?.id || !conversation.isActive) return;
+  // Called only on manual thumbnail click — shows product name/price in subtitle bar
+  const syncMainProduct = useCallback((product) => {
+    if (!product?.id) return;
+    console.log("[sync] Manual narration:", product.name);
+    setAgentSubtitle(
+      `${product.name} — ₹${Number(product.price).toLocaleString("en-IN")}`,
+    );
+    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+    subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 4000);
+  }, []);
 
-      conversation.clientTools?.product_desc_of_main_view?.({
-        product_desc: {
-          product_id: product.id,
-          name: product.name || "",
-          description: product.description || "",
-          price: product.price || 0,
-        },
-      });
-    },
-    [conversation],
-  );
-
-  const SCROLL_DEBOUNCE_MS = 150;
-  const SCROLL_ANIMATION_MS = 700;
-  const DOM_READY_DELAY_MS = 100;
-
-  // ────────────────────────────────────────────────
-  // SINGLE SOURCE OF TRUTH – Programmatic slide (agent or thumbnail)
-  // ────────────────────────────────────────────────
+  // Scroll the active thumbnail into view — deps are [activeIndex] ONLY
   useEffect(() => {
     if (!carouselRef.current || latestProducts.length === 0) return;
-
-    isProgrammaticScrollRef.current = true;
-
-    const tryScroll = () => {
-      const container = carouselRef.current;
-      console.log("Ref element:", carouselRef.current)
-      if (!container) return;
-
-      const width = container.clientWidth || container.offsetWidth;
-      console.log(`[Scroll Attempt] Index ${activeIndex}, Width ${width}`);
-
-      if (width > 0) {
-        container.scrollTo({
-          left: activeIndex * width,
-          behavior: "smooth",
-        });
-        console.log(`[Scroll Executed] Moved to index ${activeIndex}`);
-      } else {
-        console.warn("[Scroll] Width = 0 – retrying in 80ms");
-        setTimeout(tryScroll, 80);
-        return;
-      }
-    };
-
-    setTimeout(tryScroll, 200);
-
-    if (latestProducts[activeIndex]) {
-      syncMainProduct(latestProducts[activeIndex]);
+    console.log(
+      `[Index Changed] activeIndex = ${activeIndex}, agentTriggered = ${isAgentTriggeredRef.current}`,
+    );
+    const thumbnailEl = carouselRef.current.children[activeIndex];
+    if (thumbnailEl) {
+      thumbnailEl.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center",
+      });
+      console.log(`[Scroll OK] Thumbnail ${activeIndex} scrolled into view`);
     }
-
-    setTimeout(() => {
-      isProgrammaticScrollRef.current = false;
-    }, 1000);
-  }, [activeIndex, latestProducts, syncMainProduct]);
-
-
+    isAgentTriggeredRef.current = false;
+  }, [activeIndex]); // ← activeIndex ONLY — prevents duplicate fires
 
   const handleInteraction = async () => {
     if (isSessionTransitioningRef.current) return;
@@ -377,8 +347,12 @@ function AvatarInner({
                       className={`flex-shrink-0 transition-all duration-300 cursor-pointer rounded-xl overflow-hidden border-2 ${idx === activeIndex ? "border-blue-500 scale-100 opacity-100" : "border-transparent scale-90 opacity-60 hover:opacity-100"}`}
                       style={{ width: "60px", height: "60px" }}
                       onClick={() => {
-                        console.log("👆 Thumbnail clicked → index", idx);
-                        setActiveIndex(idx); // ← useEffect will trigger slide + narration
+                        console.log(
+                          `[Thumbnail] Click → index ${idx} (${latestProducts[idx]?.name || "unknown"})`,
+                        );
+                        isAgentTriggeredRef.current = false; // ensure manual flag is clear
+                        setActiveIndex(idx);
+                        syncMainProduct(latestProducts[idx]); // narrate directly here, not via useEffect
                       }}
                     >
                       <img
@@ -617,14 +591,24 @@ export default function AvatarWidget({ agentId, preview = false }) {
     if (isProgrammaticScrollRef.current) return;
     if (scrollEndTimerRef.current) clearTimeout(scrollEndTimerRef.current);
     scrollEndTimerRef.current = setTimeout(() => {
-      if (carouselRef.current) {
-        const scrollLeft = carouselRef.current.scrollLeft;
-        const width = carouselRef.current.clientWidth;
-        if (width > 0) {
-          const newIndex = Math.round(scrollLeft / width);
-          if (newIndex !== activeIndex) setActiveIndex(newIndex);
+      if (!carouselRef.current) return;
+      const container = carouselRef.current;
+      const children = Array.from(container.children);
+      if (!children.length) return;
+      const containerCenter =
+        container.getBoundingClientRect().left + container.clientWidth / 2;
+      let closest = 0;
+      let minDist = Infinity;
+      children.forEach((child, i) => {
+        const rect = child.getBoundingClientRect();
+        const childCenter = rect.left + rect.width / 2;
+        const dist = Math.abs(childCenter - containerCenter);
+        if (dist < minDist) {
+          minDist = dist;
+          closest = i;
         }
-      }
+      });
+      if (closest !== activeIndex) setActiveIndex(closest);
     }, 150);
   }, [activeIndex]);
 

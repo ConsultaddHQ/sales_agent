@@ -509,3 +509,21 @@
   color: #e0ffe8;
   border-bottom-left-radius: 4px;
 }
+
+
+/* Force horizontal scroll even with few products */
+.shopping-carousel .flex {
+  min-width: fit-content; /* prevents shrinking */
+}
+
+.shopping-carousel img, .thumbnail {
+  width: 80px !important;  /* or 90px – make sure total > container width */
+  height: 80px !important;
+  flex-shrink: 0;
+  scroll-snap-align: center;
+}
+
+/* Optional: snap to center each thumbnail */
+.shopping-carousel {
+  scroll-snap-type: x mandatory;
+}
