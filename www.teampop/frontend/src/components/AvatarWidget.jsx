@@ -247,43 +247,46 @@ function AvatarInner({
   const DOM_READY_DELAY_MS = 100;
 
   // ────────────────────────────────────────────────
-  // SINGLE SOURCE OF TRUTH – Programmatic scroll + narration
+  // SINGLE SOURCE OF TRUTH – Programmatic slide (agent or thumbnail)
   // ────────────────────────────────────────────────
   useEffect(() => {
     if (!carouselRef.current || latestProducts.length === 0) return;
 
     isProgrammaticScrollRef.current = true;
 
-    const timeoutId = setTimeout(() => {
+    const tryScroll = () => {
       const container = carouselRef.current;
+      console.log("Ref element:", carouselRef.current)
       if (!container) return;
 
       const width = container.clientWidth || container.offsetWidth;
+      console.log(`[Scroll Attempt] Index ${activeIndex}, Width ${width}`);
+
       if (width > 0) {
         container.scrollTo({
           left: activeIndex * width,
           behavior: "smooth",
         });
-        console.log(
-          `[Scroll Success] Moved to index ${activeIndex} (width: ${width})`,
-        );
+        console.log(`[Scroll Executed] Moved to index ${activeIndex}`);
       } else {
-        console.warn(
-          "[Scroll Warning] Width is still 0 – retrying in next tick",
-        );
+        console.warn("[Scroll] Width = 0 – retrying in 80ms");
+        setTimeout(tryScroll, 80);
+        return;
       }
+    };
 
-      if (latestProducts[activeIndex]) {
-        syncMainProduct(latestProducts[activeIndex]);
-      }
+    setTimeout(tryScroll, 200);
 
-      setTimeout(() => {
-        isProgrammaticScrollRef.current = false;
-      }, 800);
-    }, 150);
+    if (latestProducts[activeIndex]) {
+      syncMainProduct(latestProducts[activeIndex]);
+    }
 
-    return () => clearTimeout(timeoutId);
+    setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+    }, 1000);
   }, [activeIndex, latestProducts, syncMainProduct]);
+
+
 
   const handleInteraction = async () => {
     if (isSessionTransitioningRef.current) return;
