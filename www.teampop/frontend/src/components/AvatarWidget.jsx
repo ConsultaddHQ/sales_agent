@@ -90,6 +90,17 @@ function AvatarInner({
   const isSessionTransitioningRef = useRef(false);
   const latestProductsRef = useRef([]);
 
+  const safeIndex = Math.min(activeIndex, Math.max(0, latestProducts.length - 1));
+
+  useEffect(() => {
+  return () => {
+    // Clean up all timers when component unmounts
+    clearTimeout(transientTimeoutRef.current);
+    clearTimeout(priceTimerRef.current);
+    clearTimeout(subtitleTimerRef.current);
+  };
+}, []);
+
   useEffect(() => {
     latestProductsRef.current = latestProducts;
   }, [latestProducts]);
@@ -259,9 +270,9 @@ function AvatarInner({
   useEffect(() => {
     if (!carouselRef.current || latestProducts.length === 0) return;
     console.log(
-      `[Index Changed] activeIndex = ${activeIndex}, agentTriggered = ${isAgentTriggeredRef.current}`,
+      `[Index Changed] activeIndex = ${activeIndex}, agentTriggered = ${isAgentTriggeredRef.current} -  ${safeIndex}`,
     );
-    const thumbnailEl = carouselRef.current.children[activeIndex];
+    const thumbnailEl = carouselRef.current.children[safeIndex];
     if (thumbnailEl) {
       thumbnailEl.scrollIntoView({
         behavior: "smooth",
@@ -271,10 +282,11 @@ function AvatarInner({
       console.log(`[Scroll OK] Thumbnail ${activeIndex} scrolled into view`);
     }
     isAgentTriggeredRef.current = false;
-  }, [activeIndex]); // ← activeIndex ONLY — prevents duplicate fires
+  }, [safeIndex]); // ← activeIndex ONLY — prevents duplicate fires
 
   const handleInteraction = async () => {
     if (isSessionTransitioningRef.current) return;
+    if (conversation.status === "connecting") return;
     try {
       isSessionTransitioningRef.current = true;
       if (conversation.status === "connected") {
@@ -312,11 +324,11 @@ function AvatarInner({
             <>
               {/* MID: Hero Stage */}
               <div className="flex-1 w-full relative min-h-0 bg-zinc-900">
-                {latestProducts[activeIndex] && (
+                {latestProducts[safeIndex] && (
                   <>
                     <img
-                      src={latestProducts[activeIndex].image_url || DUMMY_IMAGE}
-                      alt={latestProducts[activeIndex].name}
+                      src={latestProducts[safeIndex].image_url || DUMMY_IMAGE}
+                      alt={latestProducts[safeIndex].name}
                       className="w-full h-full object-cover"
                       onError={(e) => {
                         e.target.src =
@@ -331,9 +343,9 @@ function AvatarInner({
               {/* BOTTOM: The Interaction Zone */}
               <div className="flex-none w-full flex flex-col justify-end bg-black pb-4 px-4 z-10 pt-2 pointer-events-auto shrink-0">
                 <div className="w-full mb-3">
-                  {latestProducts[activeIndex] && (
+                  {latestProducts[safeIndex] && (
                     <ShoppingCard
-                      product={latestProducts[activeIndex]}
+                      product={latestProducts[safeIndex]}
                       isActive={true}
                       highlightPrice={highlightPrice}
                     />
@@ -358,8 +370,8 @@ function AvatarInner({
                 >
                   {latestProducts.map((p, idx) => (
                     <div
-                      key={idx}
-                      className={`flex-shrink-0 transition-all duration-300 cursor-pointer rounded-xl overflow-hidden border-2 ${idx === activeIndex ? "border-blue-500 scale-100 opacity-100" : "border-transparent scale-90 opacity-60 hover:opacity-100"}`}
+                      key={p.id || idx}
+                      className={`flex-shrink-0 transition-all duration-300 cursor-pointer rounded-xl overflow-hidden border-2 ${idx === safeIndex ? "border-blue-500 scale-100 opacity-100" : "border-transparent scale-90 opacity-60 hover:opacity-100"}`}
                       style={{ width: "60px", height: "60px" }}
                       onClick={() => {
                         console.log(
