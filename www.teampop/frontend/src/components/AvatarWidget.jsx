@@ -177,6 +177,7 @@ function AvatarInner({
       // New tool 1: Agent wants to pivot carousel
       update_carousel_main_view: async (parameters) => {
         console.log("🔄 update_carousel_main_view called with:", parameters);
+        console.log("latestProducts IDs:", latestProducts.map(p => ({ id: p.id, name: p.name })));
         let targetIndex = -1;
         if (typeof parameters?.index === "number") {
           targetIndex = parameters.index;
@@ -185,6 +186,9 @@ function AvatarInner({
             (p) => p.id === parameters.product_id,
           );
         }
+
+        console.log("findIndex result:", targetIndex);
+        
         if (targetIndex < 0 || targetIndex >= latestProducts.length) {
           return `Invalid index ${targetIndex}. Products available: 0–${latestProducts.length - 1}.`;
         }
