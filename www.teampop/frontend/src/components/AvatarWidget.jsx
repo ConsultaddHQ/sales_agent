@@ -88,6 +88,11 @@ function AvatarInner({
   const subtitleContainerRef = useRef(null);
   const chatContainerRef = useRef(null);
   const isSessionTransitioningRef = useRef(false);
+  const latestProductsRef = useRef([]);
+
+  useEffect(() => {
+    latestProductsRef.current = latestProducts;
+  }, [latestProducts]);
 
   const showTransientMessage = useCallback(
     (text) => {
@@ -166,6 +171,7 @@ function AvatarInner({
           : [];
 
         setLatestProducts(products);
+        latestProductsRef.current = products; // ← sync ref immediately, don't wait for useEffect
         setActiveView("PRODUCTS");
         setActiveIndex(0);
         showTransientMessage(`Found ${products.length} products for you.`);
@@ -177,28 +183,33 @@ function AvatarInner({
       // New tool 1: Agent wants to pivot carousel
       update_carousel_main_view: async (parameters) => {
         console.log("🔄 update_carousel_main_view called with:", parameters);
-        console.log("latestProducts IDs:", latestProducts.map(p => ({ id: p.id, name: p.name })));
+
+        const products = latestProductsRef.current; // ← read from ref, not stale closure
+        console.log(
+          "products in ref:",
+          products.map((p) => ({ id: p.id, name: p.name })),
+        );
+
         let targetIndex = -1;
         if (typeof parameters?.index === "number") {
           targetIndex = parameters.index;
         } else if (parameters?.product_id) {
-          targetIndex = latestProducts.findIndex(
+          targetIndex = products.findIndex(
             (p) => p.id === parameters.product_id,
           );
         }
 
         console.log("findIndex result:", targetIndex);
-        
-        if (targetIndex < 0 || targetIndex >= latestProducts.length) {
-          return `Invalid index ${targetIndex}. Products available: 0–${latestProducts.length - 1}.`;
+
+        if (targetIndex < 0 || targetIndex >= products.length) {
+          return `Invalid index ${targetIndex}. Products available: 0–${products.length - 1}.`;
         }
-        // Set agent flag BEFORE setActiveIndex so the useEffect sees it
         isAgentTriggeredRef.current = true;
         setActiveIndex(targetIndex);
         console.log(
-          `[Agent] Carousel → index ${targetIndex} (${latestProducts[targetIndex]?.name})`,
+          `[Agent] Carousel → index ${targetIndex} (${products[targetIndex]?.name})`,
         );
-        return `Carousel moved to index ${targetIndex}: ${latestProducts[targetIndex]?.name}`;
+        return `Carousel moved to index ${targetIndex}: ${products[targetIndex]?.name}`;
       },
 
       // New tool 2: Enrich main view + optional short TTS (called by agent OR manually by us)
