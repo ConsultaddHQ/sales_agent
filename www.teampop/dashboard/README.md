@@ -1,24 +1,39 @@
 # Team Pop Dashboard
 
-The dashboard for the Team Pop Voice Agent. Built with **React 19**, **Vite**, and **Tailwind CSS**. This application serves as the SaaS frontend where users configure their target domain and orchestrate the background crawler.
+SaaS user interface for configuring and launching the Team Pop voice
+assistant. This React 19 + Vite + Tailwind CSS application allows a merchant
+to enter their domain, watch the ingestion progress, and copy the snippet
+needed to embed the Avatar Widget.
 
-## ✨ Features
+> **Status:** alpha – used in demos and internal tests.
 
-- **Get Started Timeline**: A guided onboarding flow (Enter URL -> Crawling -> Snippet Generation).
-- **Background Polling**: Visually tracks the status of the backend crawler using skeleton loaders and animated progress states.
-- **Installation Snippet**: Automatically generates the `<script>` tag configuration for users to embed the widget in their own HTML sites.
+## Features
 
-## 🚀 Setup & Run
+- Guided three‑step onboarding timeline.
+- Real‑time polling of backend ingestion status.
+- Automatic generation of the `<script>` embed snippet.
+- Light-weight, mobile‑friendly design.
 
-### Prerequisites
+## Prerequisites
 
 - Node.js 18+
-- Backend running on port 8080 (serves the crawling endpoints).
+- Backend services running locally:
+  - `onboarding-service` at `http://localhost:8005` (or adjust `VITE_BACKEND_URL`)
+  - `search-service` is not required for dashboard.
 
-### Installation
+### Environment variables
+
+Create `.env` in this directory (copy from `.env.example` if you add one).
+Key variables:
+
+```env
+VITE_BACKEND_URL=http://localhost:8005
+```
+
+### Setup
 
 ```bash
-cd dashboard
+cd www.teampop/dashboard
 npm install
 ```
 
@@ -28,24 +43,27 @@ npm install
 npm run dev
 ```
 
-Access the app at `http://localhost:5174` (or the port Vite assigns).
+Visit `http://localhost:5174` (Vite displays the port after start).
 
-## 🏗️ Project Structure
+### API integration
+
+- POST `{$VITE_BACKEND_URL}/onboard` – body `{ url: string }`.
+- GET  `{$VITE_BACKEND_URL}/health` – used to validate the backend.
+- The service will return a `job_id` that you poll via
+  `GET /job/{job_id}` until completion.
+
+_NOTE:_ endpoint paths correspond to the current `onboarding-service` API.
+Adjust if you move services or change ports.
+
+### Project structure
 
 ```
 src/
-├── components/
-│   ├── InstallSnippet.jsx   # Renders the copy-paste deployment code
-│   └── ...
-├── pages/
-│   ├── Landing.jsx          # Initial marketing/URL entry page
-│   └── Onboarding.jsx       # The multi-state polling and crawl progress UI
-└── App.jsx                  # Main router config
+└── [components, pages, App.jsx] same as before...
 ```
 
-## 🔌 API Integration
+### Best practices
 
-The dashboard communicates via REST to the FastAPI backend to trigger and monitor background tasks:
-
-- `POST http://localhost:8080/api/onboard`: Sends `{ url, tenant_id }` to trigger the Elastic Crawler and returns a `job_id`.
-- `GET http://localhost:8080/api/job/{job_id}`: Polls the background process until it returns a `status` of `'completed'` or `'failed'`.
+- Keep the backend URL configurable via environment.
+- Do not commit build artifacts.
+- Test on multiple screen sizes to ensure the widget snippet is clear.

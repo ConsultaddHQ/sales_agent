@@ -1,81 +1,52 @@
 # Team Pop Voice Agent
 
-A voice-first AI assistant built with **React 19**, **LiveKit WebRTC**, and **FastAPI**. This system allows users to "train" an assistant on any website URL, which is then indexed by **Elasticsearch** and made accessible via a cinematic "Avatar Widget" that supports real-time, ultra-low latency multimodal voice interaction.
+Monorepo for the Team Pop voice‑first AI assistant. It ties together several
+independent services and front‑end applications to deliver a conversational
+agent that can be embedded on an e‑commerce website.
 
-## 🚀 High-Level Architecture
+> **Current status:** internal prototype / alpha. The code is actively being
+developed and may change. Use at your own risk.
 
-The system consists of three main components arranged in a monorepo pattern:
+## Components
 
-1.  **Dashboard (`/dashboard`)**: A React application built with Vite and TailwindCSS for the user onboarding experience. It handles the 3-step timeline UI where users enter a URL, monitor the backend crawler's progress, and receive their embeddable snippet.
-2.  **Frontend Widget (`/frontend`)**: The core WebRTC React application. This is the embeddable, floating "Avatar Widget" (Orb) that establishes a real-time LiveKit connection to the agent for voice recording, playback, and chat UI.
-3.  **Backend (`/backend`)**: A FastAPI server running the core AI orchestrated logic.
-    - **Crawler Service**: Orchestrates web crawling using a Firecrawl/Elastic pipeline to index website content (Sitemaps, HTML).
-    - **LiveKit Agent Worker**: Runs a persistent Python WebRTC worker (`livekit.agents`) connecting user audio to Google's Gemini Multimodal Live API.
-    - **Integrations**:
-      - **LiveKit** (WebRTC Transport & Token Vending)
-      - **Elasticsearch** (Vector Store + Hybrid Search Context)
-      - **Google Gemini 2.5 Flash** (Native Audio/Multimodal generation)
+- `onboarding-service/` – FastAPI crawler & embedder.
+- `search-service/` – FastAPI semantic search API.
+- `www.teampop/dashboard/` – React dashboard used by merchants.
+- `www.teampop/frontend/` – Embeddable Avatar Widget (React + LiveKit).
 
-## 🛠️ Tech Stack
+Each component has its own README with detailed setup instructions.
 
-- **Dashboard**: React 19, Vite, Tailwind CSS, Lucide Icons.
-- **Frontend Widget**: React 19, Vite, LiveKit React Components (`@livekit/components-react`), CSS Modules (Glassmorphism).
-- **Backend**: Python 3.10+, FastAPI, LiveKit Agents API, Async Elasticsearch.
+## How it works
 
-## ⚡ Quick Start
+1. Merchant opens the dashboard and submits their store URL.
+2. Dashboard calls `onboarding-service` which ingests the storefront,
+   extracts products, embeds descriptions, and stores them in Supabase.
+3. The `frontend` widget (embedded on the merchant site) queries
+   `search-service` for relevant products during a LiveKit voice session.
+4. `search-service` returns product cards and an LLM‑generated pitch.
 
-### 1. Backend Setup
+The backend services are simple FastAPI processes; there is currently no
+central monolithic server.
 
-The backend requires LiveKit and Gemini API keys. Create a `.env` file in `backend/` (see `backend/README_backend.MD`).
+## Getting started
 
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-# Run Server on port 8080 to sync with frontends
-uvicorn app.main:app --port 8080 --reload
-```
+Refer to individual README files for each subdirectory. In general:
 
-_Runs on `http://localhost:8080`_
+1. Install Python 3.10+ and Node 18+.
+2. Create and activate a virtual environment in each Python service.
+3. Copy `.env.example` to `.env` and populate with keys (Supabase, OpenRouter,
+   LiveKit, etc.).
+4. Run the services on distinct ports (8005 for onboarding,
+   8006 for search) and front‑ends via `npm run dev`.
 
-### 2. Frontend Widget Setup
+## Best practices & tips
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+- Treat this repo as a developer playground.
+- Use `pip freeze` to capture dependencies when continuing work.
+- Use environment variables and avoid hard‑coding secrets.
+- If adding a new service, update this README with its purpose.
+- Consider containerization (Docker) for deployment.
 
-_Runs on `http://localhost:5173`_
-
-### 3. Dashboard Setup
-
-```bash
-cd dashboard
-npm install
-npm run dev
-```
-
-_Runs on `http://localhost:5174` (or next available port)_
-
-## 🌊 User Flow
-
-1.  **Onboarding**: User visits the dashboard (`localhost:5174`), enters `https://example.com`.
-2.  **Crawling**: Backend instructs the crawler to index the site. Dashboard polls for status on port `8080`.
-3.  **Deployment**: Dashboard provides a `<script>` snippet for the user to embed `widget.js`.
-4.  **Interaction**: User clicks the Orb on a deployed site.
-    - The widget fetches a LiveKit Token from `http://localhost:8080/get-livekit-token`.
-    - A WebRTC room is established.
-    - The Python Agent Worker listens to user speech and streams it to Gemini.
-    - Gemini streams native audio back to the user via LiveKit with sub-second latency.
-
-## 📂 Repository Structure
-
-- `frontend/`: The embeddable Avatar Widget.
-- `dashboard/`: The onboarding SaaS application.
-- `backend/`: FastAPI application and LiveKit WebRTC Worker.
-
-## 📄 License
+## License
 
 MIT.

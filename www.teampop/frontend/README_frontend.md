@@ -1,5 +1,7 @@
 # Team Pop Frontend
 
+**Status:** alpha prototype
+
 The frontend for the Team Pop Voice Agent. Built with **React 19** and **Vite**, this application provides the embeddable `AvatarWidget`—a cinematic, voice-first UI component that connects directly to the LiveKit Cloud.
 
 _(Note: The onboarding flow now lives in the `/dashboard` application)._

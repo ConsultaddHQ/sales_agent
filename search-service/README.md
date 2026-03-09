@@ -1,0 +1,55 @@
+# search-service
+
+Backend API for performing semantic + text search over product data.
+
+**Status:** Beta; service is considered core to the voice agent and used by the frontend
+widget.
+
+## Purpose & Responsibilities
+
+- Accept search queries from the Avatar Widget (or any client).
+- Compute query embeddings with `all-MiniLM-L6-v2` (same model used by onboarding).
+- Call a Supabase RPC (`hybrid_search_products`) that performs a pgvector /
+  full-text hybrid search.
+- Optionally parse a max-price from the query (price parsing is disabled by default).
+- Package results into a `SearchResponse` including a `pitch` string generated via
+  OpenRouter/LLM.
+- Expose a simple healthcheck.
+
+## Endpoints
+
+- `GET /health` – Returns 200 OK if the service is running.
+- `POST /search` – Accepts JSON:
+  ```json
+  { "store_id": "...", "query": "..." }
+  ```
+  Responds with a list of products and a marketing pitch.
+
+## Environment
+
+Create a `.env` from `.env.example` with the following vars:
+
+- `SUPABASE_URL` – your Supabase project URL.
+- `SUPABASE_KEY` – service-role API key.
+- `OPENROUTER_API_KEY` – key for LLM backend (used for price parsing & pitch).
+- `OPENROUTER_BASE_URL` – optional custom endpoint.
+- `OPENROUTER_MODEL` – model name for completions (default `xai/grok-beta`).
+- `LOG_LEVEL` – `INFO`/`DEBUG`.
+
+## Setup
+
+```bash
+cd search-service
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env  # fill in your values
+uvicorn main:app --port 8006 --reload
+```
+
+## Notes
+
+- The service assumes the Supabase table has been populated by onboarding-service.
+- Response shape may change as features (price filters, pagination) are added.
+- For production use, containerize with Docker and deploy behind a proper API
+  gateway or Kubernetes.
