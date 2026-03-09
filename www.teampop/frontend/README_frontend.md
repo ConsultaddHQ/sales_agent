@@ -2,14 +2,14 @@
 
 **Status:** alpha prototype
 
-The frontend for the Team Pop Voice Agent. Built with **React 19** and **Vite**, this application provides the embeddable `AvatarWidget`—a cinematic, voice-first UI component that connects directly to the LiveKit Cloud.
+The frontend for the Team Pop Voice Agent. Built with **React 19** and **Vite**, this application provides the embeddable `AvatarWidget`—a cinematic, voice-first UI component that connects to ElevenLabs for voice interactions.
 
 _(Note: The onboarding flow now lives in the `/dashboard` application)._
 
 ## ✨ Features
 
 - **Avatar Widget**: A cinematic, voice-first UI component.
-  - **LiveKit Integration**: Uses `@livekit/components-react` to establish a low-latency WebRTC room directly with the backend Python Worker.
+  - **ElevenLabs Integration**: Uses ElevenLabs API to establish voice conversations.
   - **Orb Mode**: A glowing, animated orb that reacts to "Listening", "Thinking", and "Speaking" states piped in real-time from the agent.
   - **Chat Mode**: A simplifed, glassmorphism-styled chat window that opens on interaction, displaying product cards via Data Channels.
   - **Voice-First**: "Tap-to-Interrupt" logic, auto-open on speech, and real-time state visualization.
@@ -21,7 +21,7 @@ _(Note: The onboarding flow now lives in the `/dashboard` application)._
 ### Prerequisites
 
 - Node.js 18+
-- Backend running on port 8080 (to serve local LiveKit tokens).
+- ElevenLabs API key for voice agent integration.
 
 ### Installation
 
@@ -62,11 +62,9 @@ src/
 
 ## 🔌 API Integration
 
-The frontend primarily communicates over WebRTC (`wss://`) using LiveKit.
+The frontend communicates with ElevenLabs for voice processing and with the search-service for product queries.
 
-For the initial handshake, it fetches a JWT from the FastAPI backend:
-
-- `GET http://localhost:8080/get-livekit-token`: Receives the token and LiveKit URL to initialize the room.
+For the initial setup, it uses an ElevenLabs agent ID (configurable via `window.__TEAM_POP_AGENT_ID__`).
 
 ## 🎨 Styling
 

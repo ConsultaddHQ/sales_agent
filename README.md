@@ -24,7 +24,7 @@ sales-voice-agent/
    saving into Supabase.
 3. Later, the **frontend widget** uses **search-service** to perform hybrid
    semantic/full‑text queries against the Supabase data, and renders results to
-the user during a LiveKit‑powered voice interaction.
+the user during an ElevenLabs-powered voice interaction.
 
 ## Getting started
 
@@ -37,7 +37,7 @@ You can run them in parallel during development.
 - Node 18+
 - Supabase project with a `products` table and the `hybrid_search_products` RPC
   defined (see `search-service/main.py` comments).
-- LiveKit server (for the voice widget).
+- ElevenLabs API key (for the voice widget).
 - API keys: SUPABASE_URL, SUPABASE_KEY, OPENROUTER_API_KEY / other LLM keys.
 
 ### Running locally

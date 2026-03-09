@@ -12,7 +12,7 @@ developed and may change. Use at your own risk.
 - `onboarding-service/` – FastAPI crawler & embedder.
 - `search-service/` – FastAPI semantic search API.
 - `www.teampop/dashboard/` – React dashboard used by merchants.
-- `www.teampop/frontend/` – Embeddable Avatar Widget (React + LiveKit).
+- `www.teampop/frontend/` – Embeddable Avatar Widget (React + ElevenLabs).
 
 Each component has its own README with detailed setup instructions.
 
@@ -22,7 +22,7 @@ Each component has its own README with detailed setup instructions.
 2. Dashboard calls `onboarding-service` which ingests the storefront,
    extracts products, embeds descriptions, and stores them in Supabase.
 3. The `frontend` widget (embedded on the merchant site) queries
-   `search-service` for relevant products during a LiveKit voice session.
+   `search-service` for relevant products during an ElevenLabs voice session.
 4. `search-service` returns product cards and an LLM‑generated pitch.
 
 The backend services are simple FastAPI processes; there is currently no
@@ -35,7 +35,7 @@ Refer to individual README files for each subdirectory. In general:
 1. Install Python 3.10+ and Node 18+.
 2. Create and activate a virtual environment in each Python service.
 3. Copy `.env.example` to `.env` and populate with keys (Supabase, OpenRouter,
-   LiveKit, etc.).
+   ElevenLabs, etc.).
 4. Run the services on distinct ports (8005 for onboarding,
    8006 for search) and front‑ends via `npm run dev`.
 
@@ -50,3 +50,9 @@ Refer to individual README files for each subdirectory. In general:
 ## License
 
 MIT.
+
+## Additional files
+
+- `index.html` – Demo landing page.
+- `test_widget.html` – Test page for the widget.
+- `demo_click_pattern.md` – Documentation for demo interactions.
