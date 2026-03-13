@@ -213,7 +213,7 @@ function AvatarInner({
         return "UI updated successfully";
       },
 
-    
+
 
       // New tool 1: Agent wants to pivot carousel
       update_carousel_main_view: async (parameters) => {
@@ -299,11 +299,11 @@ function AvatarInner({
 
         sendContextualUpdate(
           `[CAROUSEL UPDATE] The user just manually selected a new product on screen. ` +
-            `Product name: "${product.name}". ` +
-            `Price: ₹${Number(product.price).toLocaleString("en-IN")}. ` +
-            `Description: ${product.description || "No description"}. ` +
-            `Product URL: ${product.product_url || ""}. ` +
-            `Please talk about this product naturally in your next response.`,
+          `Product name: "${product.name}". ` +
+          `Price: ₹${Number(product.price).toLocaleString("en-IN")}. ` +
+          `Description: ${product.description || "No description"}. ` +
+          `Product URL: ${product.product_url || ""}. ` +
+          `Please talk about this product naturally in your next response.`,
         );
 
         isSyntheticMessageRef.current = true;
@@ -332,7 +332,7 @@ function AvatarInner({
   }, [safeIndex]); // ← activeIndex ONLY — prevents duplicate fires
 
   const handleInteraction = async () => {
-    if (isSessionTransitioningRef.current) return;  
+    if (isSessionTransitioningRef.current) return;
     if (conversation.status === "connecting") return;
     try {
       isSessionTransitioningRef.current = true;
@@ -374,12 +374,15 @@ function AvatarInner({
                 {latestProducts[safeIndex] && (
                   <>
                     <img
-                      src={latestProducts[safeIndex].image_url || DUMMY_IMAGE}
+                      src={latestProducts[safeIndex].local_image_url || latestProducts[safeIndex].image_url || DUMMY_IMAGE}
                       alt={latestProducts[safeIndex].name}
                       className="w-full h-full object-cover"
                       onError={(e) => {
-                        e.target.src =
-                          "https://placehold.co/400x400?text=Image+Unavailable";
+                        if (e.target.src !== product.image_url && product.image_url) {
+                          e.target.src = product.image_url;
+                        } else {
+                          e.target.src = 'https://placehold.co/400x400?text=No+Image';
+                        }
                       }}
                     />
                     <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-black to-transparent pointer-events-none" />
@@ -430,12 +433,15 @@ function AvatarInner({
                       }}
                     >
                       <img
-                        src={p.image_url || DUMMY_IMAGE}
+                        src={p.local_image_url || p.image_url || DUMMY_IMAGE}
                         alt={p.name}
                         className="w-full h-full object-cover"
                         onError={(e) => {
-                          e.target.src =
-                            "https://placehold.co/400x400?text=Image+Unavailable";
+                          if (e.target.src !== product.image_url && product.image_url) {
+                            e.target.src = product.image_url;
+                          } else {
+                            e.target.src = 'https://placehold.co/400x400?text=No+Image';
+                          }
                         }}
                       />
                     </div>
@@ -629,11 +635,10 @@ function AvatarInner({
                 chatHistory.map((msg) => (
                   <div
                     key={msg.id}
-                    className={`message-bubble p-3 text-sm max-w-[85%] shadow-md ${
-                      msg.source === "user"
-                        ? "user-message self-end bg-blue-600 text-white rounded-2xl rounded-tr-sm border border-blue-500"
-                        : "assistant-message self-start bg-zinc-800 text-gray-100 rounded-2xl rounded-tl-sm border border-white/5"
-                    }`}
+                    className={`message-bubble p-3 text-sm max-w-[85%] shadow-md ${msg.source === "user"
+                      ? "user-message self-end bg-blue-600 text-white rounded-2xl rounded-tr-sm border border-blue-500"
+                      : "assistant-message self-start bg-zinc-800 text-gray-100 rounded-2xl rounded-tl-sm border border-white/5"
+                      }`}
                   >
                     <span
                       dangerouslySetInnerHTML={{

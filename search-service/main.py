@@ -212,13 +212,16 @@ def _hybrid_search_products(
             price_val = None
 
          # ENHANCE: Prefer our server images over CDN 
+        image_url = row.get("image_url")  # CDN URL (original)
         local_path = row.get("local_image_path")
         
-        # If we have local image, construct our server URL
+        # If we have local image, prefer our server
         if local_path:
             image_server_url = os.getenv("IMAGE_SERVER_URL", "http://localhost:8000")
-            image_local_url = f"{image_server_url}/images/{local_path}"
-
+            local_image_url = f"{image_server_url}/images/{local_path}"
+        else:
+            local_image_url = None
+        
         results.append(
             ProductResult(
                 id=str(row.get("id")),
@@ -226,13 +229,13 @@ def _hybrid_search_products(
                 name=str(row.get("name") or ""),
                 description=row.get("description"),
                 price=price_val,
-                image_url=row.get("image_url"),
-                local_image_path=image_local_url,
+                image_url=image_url,              # Original CDN URL (fallback)
+                local_image_url=local_image_url,  # Our server URL (preferred)
                 product_url=row.get("product_url"),
                 score=float(row.get("score") or 0.0),
             )
         )
-
+        
     return results
 
 
