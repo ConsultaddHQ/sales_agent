@@ -1,0 +1,73 @@
+PM Ticket Management Rules
+1. Keep Linear Tickets Updated Regularly
+All project work must be tracked and updated in Linear to ensure transparency, alignment, and predictable delivery.
+
+2. What Needs to Be Updated
+2.1 Maintain Active Work
+Each team member should always have at least one ticket in progress when they are actively working on a project.
+
+
+This helps PMs and stakeholders understand current workload and progress.
+Move the ticket to the backlog when working on other tasks. 
+
+
+2.2 Ownership & Update Cadence
+The ticket owner is responsible for keeping the ticket accurate and up to date.
+
+
+Tickets must be reviewed and updated at least every two days (status, progress, blockers, or notes).
+
+
+2.3 Required Dates
+Every ticket must include:
+
+
+Start Date
+
+
+End Date / Target Completion Date
+
+
+These fields should be filled at the time of ticket creation.
+
+
+2.4 Document Progress in Comments
+Use the comment section to record:
+
+
+Key updates or milestones
+
+
+Decisions made
+
+
+Blockers or risks
+
+
+Links to PRs, docs, or related resources
+
+
+Comments should reflect meaningful progress, not minor step-by-step logs.
+2.5 Ticket Scope & Sizing
+A ticket should represent roughly one week of work.
+
+
+Avoid tickets that are:
+
+
+❌ Too small (micro-tasks that create noise)
+
+
+❌ Too large (unclear scope or multi-week efforts)
+
+
+If work exceeds one week, split it into smaller deliverables.
+
+2.6 Additional Best Practices
+• Use **clear, descriptive titles** that summarize the outcome (avoid vague words like “fix” or “update”).
+• Add a short **acceptance criteria** or definition of done in the description so reviewers know when the ticket is complete.
+• Apply appropriate **labels** (feature, bug, improvement, etc.) and set the correct **priority** when the ticket is created.
+• Link all relevant **PRs, documents, designs, and demo recordings** in the description or comments.
+• When closing a ticket, add a final comment summarizing what changed and reference the merged PR or deployment.
+• Delete or archive stale tickets; move in‑progress items to backlog if they’ve been inactive for more than two weeks.
+• Use the “blocks/blocked by” relations where dependencies exist to give visibility into cross‑ticket impact.

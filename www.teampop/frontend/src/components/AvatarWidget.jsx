@@ -331,7 +331,7 @@ function AvatarInner({
   }, [safeIndex]); // ← activeIndex ONLY — prevents duplicate fires
 
   const handleInteraction = async () => {
-    if (isSessionTransitioningRef.current) return;
+    if (isSessionTransitioningRef.current) return;  
     if (conversation.status === "connecting") return;
     try {
       isSessionTransitioningRef.current = true;

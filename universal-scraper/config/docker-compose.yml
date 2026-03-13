@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # Image Server - Serves downloaded product images
+  image-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.images
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./product_images:/app/product_images:ro
+    environment:
+      - PORT=8000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Search Service - AI product search API
+  search-service:
+    build:
+      context: ./search-service
+    ports:
+      - "8006:8006"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=xai/grok-beta
+      - PORT=8006
+    restart: unless-stopped
+    depends_on:
+      - image-server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Demo Page Server - Serves static demo pages
+  demo-server:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./demo_pages:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped
+    depends_on:
+      - image-server
+      - search-service
+
+# Optional: Frontend widget dev server (development only)
+  # widget-dev:
+  #   build:
+  #     context: ./www.teampop/frontend
+  #   ports:
+  #     - "5173:5173"
+  #   volumes:
+  #     - ./www.teampop/frontend:/app
+  #     - /app/node_modules
+  #   command: npm run dev
+  #   environment:
+  #     - VITE_SEARCH_API_URL=http://search-service:8006
+
+volumes:
+  product_images:
+
+networks:
+  default:
+    name: ai-assistant-network
