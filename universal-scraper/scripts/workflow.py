@@ -28,6 +28,16 @@ class DemoOrchestrator:
         image_server_port: int = 8000,
         image_server_url: str = None
     ):
+         # Validate max_products limit
+        if max_products > 250:
+            logger.warning(f"max_products ({max_products}) exceeds recommended limit of 250")
+            logger.warning("Supabase free tier may have issues. Consider using filtered URL instead.")
+            
+            response = input("Continue anyway? (y/N): ")
+            if response.lower() != 'y':
+                logger.info("Aborted by user")
+                return False
+     
         """Run complete workflow"""
         
         logger.info("="*70)

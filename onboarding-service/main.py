@@ -10,6 +10,7 @@ from html import unescape
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse, urlunparse
+from datetime import datetime
 
 import requests
 from dotenv import load_dotenv
@@ -46,8 +47,10 @@ class ProductRow:
     price: Optional[Decimal]
     image_url: Optional[str]
     product_url: str
+    local_image_path: Optional[str]
     embedding: List[float]
     handle: str
+    created_at: datetime = Field(default_factory=datetime.now)
 
 
 app = FastAPI(title="onboarding-service", version="1.0.0")

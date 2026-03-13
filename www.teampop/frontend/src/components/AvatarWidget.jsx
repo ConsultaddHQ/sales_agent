@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useConversation } from "@elevenlabs/react";
+import { withMaxZIndex } from "./WidgetZIndexFix";
 import "../styles/AvatarWidget.css";
 
 const DUMMY_IMAGE = "/image.png";
@@ -650,7 +651,7 @@ function AvatarInner({
   );
 }
 
-export default function AvatarWidget({ agentId, preview = false }) {
+function AvatarWidget({ agentId, preview = false }) {
   const resolvedAgentId =
     agentId || window.__TEAM_POP_AGENT_ID__ || "YOUR_ELEVENLABS_AGENT_ID";
   const [activeView, setActiveView] = useState(preview ? "CHAT" : "NONE");
@@ -706,3 +707,6 @@ export default function AvatarWidget({ agentId, preview = false }) {
     />
   );
 }
+
+
+export default withMaxZIndex(AvatarWidget);

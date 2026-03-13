@@ -79,21 +79,32 @@ class StaticPageGenerator:
             'hotjar',
             'clarity',
             'mixpanel',
-            # Be careful with these - might break layout
-            # 'jquery',
-            # 'react',
-            # 'vue',
+            'doubleclick',
+        ]
+
+        keep_patterns = [
+        'jquery',
+        'bootstrap',
+        'shopify',
+        'cdn',
+        'theme',
+        'product',
         ]
         
         for script in soup.find_all('script'):
-            src = script.get('src', '')
-            content = script.string or ''
+            src = (script.get('src') or '').lower()
+            content = (script.string or '').lower()
+        
+            # Check if should keep
+            should_keep = any(pattern in src or pattern in content for pattern in keep_patterns)
+            if should_keep:
+                continue
             
-            for pattern in remove_patterns:
-                if pattern in src.lower() or pattern in content.lower():
-                    logger.debug(f"Removing script: {src[:50]}")
-                    script.decompose()
-                    break
+            # Check if should remove
+            should_remove = any(pattern in src or pattern in content for pattern in remove_patterns)
+            if should_remove:
+                logger.debug(f"Removing script: {src[:50]}")
+                script.decompose()
     
     def _fix_urls(self, soup: BeautifulSoup, base_url: str):
         """Convert relative URLs to absolute"""
