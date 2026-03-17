@@ -9,3 +9,13 @@ uvicorn
 aiofiles
 sentence-transformers
 lxml
+
+# NEW: Fallback scraping dependencies
+playwright
+httpx
+ 
+# NEW: LLM extraction dependencies
+openai  # For OpenRouter API (uses OpenAI SDK format)
+ 
+# Optional: Better user agents
+fake-useragent

@@ -20,6 +20,10 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from sentence_transformers import SentenceTransformer
 import logging
+from scraping_strategies import scrape_with_fallback
+from llm_extractor import LLMExtractor
+
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -268,15 +272,34 @@ class UniversalScraper:
             return None
     
     def extract_products(self, url: str, max_products: int = 200) -> List[Dict]:
-        """Extract products with site-specific logic"""
-        logger.info(f"Fetching URL: {url}")
+        """Extract products with 3-tier fallback strategy"""
+        
+        # Get OpenRouter API key for LLM fallback
+        openrouter_key = os.getenv('OPENROUTER_API_KEY')
+        
+        # Use multi-tier scraping
+        html, strategy, llm_products = scrape_with_fallback(
+            url,
+            openrouter_key=openrouter_key,
+            use_llm_fallback=bool(openrouter_key)  # Only use LLM if key is set
+        )
+        
+        if not html and not llm_products:
+            logger.error("❌ All scraping strategies failed!")
+            return []
+        
+        # If LLM extraction succeeded, return those products directly
+        if strategy == "llm" and llm_products:
+            logger.info(f"✅ Using LLM-extracted products ({len(llm_products)} items)")
+            return llm_products[:max_products]
+        
+        # Otherwise, parse HTML with BeautifulSoup
+        logger.info(f"✅ Using {strategy} strategy - parsing HTML...")
         
         try:
-            response = self.session.get(url, timeout=30)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
+            soup = BeautifulSoup(html, 'html.parser')
         except Exception as e:
-            logger.error(f"Failed to fetch page: {e}")
+            logger.error(f"Failed to parse HTML: {e}")
             return []
         
         base_url = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
