@@ -5,3 +5,5 @@ supabase
 pillow
 sentence-transformers
 python-dotenv
+pydantic
+

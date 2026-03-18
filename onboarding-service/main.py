@@ -1,27 +1,39 @@
+"""
+TeamPop Onboarding Service - Complete Shopify Flow
+Handles: Validation → Scraping → Embeddings → Agent Creation → Test Page
+"""
+
 import io
 import json
 import logging
 import os
 import re
 import uuid
-from dataclasses import dataclass
+import subprocess
+import sys
+from dataclasses import dataclass, asdict
 from decimal import Decimal, InvalidOperation
 from html import unescape
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import urlparse, urlunparse
+from typing import Any, Dict, Iterable, List, Optional
+from urllib.parse import urlparse
 from datetime import datetime
 
 import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from PIL import Image
 from sentence_transformers import SentenceTransformer
 from supabase import Client, create_client
-import uuid
 
+# Import our custom modules
+from shopify_validator import validate_shopify_store
+from error_codes import ErrorCodes, get_error_response, success_response
+from elevenlabs_agent import create_agent_for_store
 
+# Setup logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=LOG_LEVEL,
@@ -29,18 +41,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger("onboarding-service")
 
-
+# Load environment
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
+# FastAPI app
+app = FastAPI(title="TeamPop Onboarding Service", version="2.0.0")
 
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Update in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Models
 class OnboardRequest(BaseModel):
-    url: str = Field(..., examples=["example.myshopify.com"])
-
+    url: str = Field(..., examples=["sensesindia.in", "https://example.myshopify.com"])
 
 @dataclass(frozen=True)
 class ProductRow:
-    id: str # uuid 
+    id: str
     store_id: str
     name: str
     description: str
@@ -50,416 +73,591 @@ class ProductRow:
     local_image_path: Optional[str]
     embedding: List[float]
     handle: str
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime
 
-
-app = FastAPI(title="onboarding-service", version="1.0.0")
-
+# Global state
 _model: Optional[SentenceTransformer] = None
 _supabase: Optional[Client] = None
 _schema_ensured: bool = False
 
-
-def _get_env(name: str) -> str:
-    v = os.getenv(name)
-    if not v:
-        raise RuntimeError(f"Missing required env var: {name}")
-    return v
+# Constants
+MAX_PRODUCTS = 200  # Maximum products to scrape per store
+IMAGE_DOWNLOAD_TIMEOUT = 15  # seconds
 
 
 def get_supabase() -> Client:
+    """Get or create Supabase client"""
     global _supabase
     if _supabase is not None:
         return _supabase
-    url = _get_env("SUPABASE_URL").rstrip("/")
-    key = _get_env("SUPABASE_KEY")
-    _supabase = create_client(url, key)
+    
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    
+    if not url or not key:
+        raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY environment variables")
+    
+    _supabase = create_client(url.rstrip("/"), key)
     return _supabase
 
 
 def get_embedder() -> SentenceTransformer:
+    """Get or load embedding model"""
     global _model
     if _model is None:
-        logger.info("Loading embedding model all-MiniLM-L6-v2 (first request may be slow).")
+        logger.info("🔄 Loading embedding model all-MiniLM-L6-v2...")
         _model = SentenceTransformer("all-MiniLM-L6-v2")
+        logger.info("✅ Model loaded")
     return _model
 
 
-def clean_domain(raw: str) -> str:
-    s = raw.strip()
-    if not s:
-        raise ValueError("url is empty")
-    if "://" not in s:
-        s = "https://" + s
-    parsed = urlparse(s)
-    host = parsed.netloc or parsed.path
-    host = host.strip().lower()
-    host = host.split("/")[0]
-    host = host.rstrip(".")
-    host = re.sub(r"^www\.", "", host)
-    if not host or "." not in host:
-        raise ValueError("invalid domain")
-    return host
-
-
-_TAG_RE = re.compile(r"<[^>]+>")
-
-
-def html_to_text(value: Any) -> str:
-    if not value:
-        return ""
-    s = unescape(str(value))
-    s = _TAG_RE.sub(" ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
-
-
-def _parse_price(product: Dict[str, Any]) -> Optional[Decimal]:
-    variants = product.get("variants") or []
-    if not variants:
-        return None
-    price = variants[0].get("price")
-    if price is None:
-        return None
-    try:
-        return Decimal(str(price))
-    except (InvalidOperation, ValueError):
-        return None
-
-
-def _first_image_src(product: Dict[str, Any]) -> Optional[str]:
-    images = product.get("images") or []
-    if images and isinstance(images, list):
-        src = images[0].get("src")
-        if src:
-            return str(src)
-    image = product.get("image")
-    if isinstance(image, dict) and image.get("src"):
-        return str(image["src"])
-    return None
-
-
-def _product_handle(product: Dict[str, Any]) -> str:
-    h = product.get("handle")
-    if h:
-        return str(h)
-    title = product.get("title") or ""
-    slug = re.sub(r"[^a-z0-9]+", "-", str(title).lower()).strip("-")
-    return slug or "product"
-
-
-def _shopify_products_page_url(domain: str, page_url: Optional[str], page: int) -> Tuple[str, Dict[str, Any]]:
-    if page_url:
-        return page_url, {}
-    return f"https://{domain}/products.json", {"limit": 250, "page": page}
-
-
-_LINK_RE = re.compile(r'<([^>]+)>\s*;\s*rel="([^"]+)"')
-
-
-def _next_link(link_header: str) -> Optional[str]:
-    for part in link_header.split(","):
-        m = _LINK_RE.search(part.strip())
-        if m and m.group(2) == "next":
-            return m.group(1)
-    return None
-
-
-def fetch_shopify_products(domain: str, max_products: int = 500) -> List[Dict[str, Any]]:
+def fetch_shopify_products(
+    domain: str,
+    max_products: int = MAX_PRODUCTS
+) -> List[Dict[str, Any]]:
+    """
+    Fetch products from Shopify /products.json with pagination and rate limiting
+    
+    Args:
+        domain: Clean domain (e.g., sensesindia.in)
+        max_products: Maximum products to fetch
+    
+    Returns:
+        List of raw product dictionaries
+    
+    Raises:
+        Exception on failure
+    """
     products: List[Dict[str, Any]] = []
     page = 1
-    page_url: Optional[str] = None
     session = requests.Session()
-    headers = {"User-Agent": "onboarding-service/1.0"}
-
+    headers = {"User-Agent": "TeamPop-Onboarding/2.0"}
+    
+    # Retry configuration for rate limiting
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    logger.info(f"📥 Fetching products from {domain} (max: {max_products})")
+    
     while len(products) < max_products:
-        url, params = _shopify_products_page_url(domain, page_url, page)
-        logger.info("Fetching products page (%s) params=%s", url, params or {})
+        url = f"https://{domain}/products.json"
+        params = {"limit": 250, "page": page}
+        
+        for attempt in range(max_retries):
+            try:
+                response = session.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=20
+                )
+                
+                # Handle rate limiting
+                if response.status_code == 429:
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)  # Exponential backoff
+                        logger.warning(f"⚠️ Rate limited, waiting {wait_time}s...")
+                        import time
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        raise Exception("Rate limited after max retries")
+                
+                response.raise_for_status()
+                break
+                
+            except requests.RequestException as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"⚠️ Request failed, retrying... ({attempt + 1}/{max_retries})")
+                    continue
+                raise Exception(f"Failed to fetch products: {str(e)}")
+        
         try:
-            resp = session.get(url, params=params, headers=headers, timeout=20)
-        except requests.RequestException as e:
-            raise RuntimeError(f"failed to fetch products: {e}") from e
-
-        if resp.status_code == 404:
-            raise RuntimeError("products.json not found (store may block public product feed)")
-        if resp.status_code >= 400:
-            raise RuntimeError(f"failed to fetch products: HTTP {resp.status_code} {resp.text[:500]}")
-
-        try:
-            payload = resp.json()
-        except json.JSONDecodeError as e:
-            raise RuntimeError("invalid JSON from products.json") from e
-
-        page_products = payload.get("products") if isinstance(payload, dict) else None
+            data = response.json()
+        except json.JSONDecodeError:
+            raise Exception("Invalid JSON response from products.json")
+        
+        page_products = data.get("products", [])
         if not page_products:
             break
-        if not isinstance(page_products, list):
-            raise RuntimeError("unexpected products.json shape")
-
+        
         remaining = max_products - len(products)
         products.extend(page_products[:remaining])
-
-        link = resp.headers.get("Link") or resp.headers.get("link") or ""
-        nxt = _next_link(link) if link else None
-        if nxt:
-            page_url = nxt
-            page += 1
-            continue
-
-        page += 1
-        page_url = None
-
-        if len(page_products) < 250:
+        
+        logger.info(f"  📦 Fetched page {page}: {len(page_products)} products (total: {len(products)})")
+        
+        # Check for pagination via Link header
+        link_header = response.headers.get("Link", "")
+        if "rel=\"next\"" not in link_header:
             break
-
+        
+        page += 1
+        
+        # Safety: stop if too many pages
+        if page > 20:
+            logger.warning("⚠️ Stopping at page 20 (safety limit)")
+            break
+    
+    logger.info(f"✅ Fetched {len(products)} products total")
     return products
 
 
-def _safe_filename(value: str) -> str:
-    v = value.strip().lower()
-    v = re.sub(r"[^a-z0-9._-]+", "-", v)
-    v = re.sub(r"-{2,}", "-", v).strip("-")
-    return v or "image"
-
-
-def download_image(image_url: str, dest_path: Path) -> None:
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
-    if dest_path.exists():
-        return
-
-    headers = {"User-Agent": "onboarding-service/1.0"}
+def download_product_image(
+    image_url: str,
+    store_images_dir: Path,
+    handle: str
+) -> Optional[str]:
+    """
+    Download first product image
+    
+    Args:
+        image_url: URL of the image
+        store_images_dir: Directory to save image
+        handle: Product handle for filename
+    
+    Returns:
+        Local image path (relative to store_images_dir) or None if failed
+    """
+    if not image_url:
+        return None
+    
     try:
-        resp = requests.get(image_url, headers=headers, timeout=30)
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        raise RuntimeError(f"failed to download image: {e}") from e
-
-    try:
-        img = Image.open(io.BytesIO(resp.content))
+        # Create directory
+        store_images_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Download image
+        response = requests.get(image_url, timeout=IMAGE_DOWNLOAD_TIMEOUT, stream=True)
+        response.raise_for_status()
+        
+        # Save as JPEG
+        filename = f"{handle}.jpg"
+        filepath = store_images_dir / filename
+        
+        # Convert to JPEG using PIL
+        img = Image.open(io.BytesIO(response.content))
         img = img.convert("RGB")
-        img.save(dest_path, format="JPEG", quality=90, optimize=True)
+        img.save(filepath, format="JPEG", quality=90, optimize=True)
+        
+        logger.debug(f"  ✅ Downloaded: {filename}")
+        return filename
+        
     except Exception as e:
-        raise RuntimeError(f"failed to process image as JPEG: {e}") from e
+        logger.warning(f"  ⚠️ Image download failed for {handle}: {e}")
+        return None
 
 
-def vector_literal(vec: Iterable[float]) -> str:
-    return "[" + ",".join(f"{float(x):.8f}" for x in vec) + "]"
-
-
-def _meta_headers() -> Dict[str, str]:
-    key = _get_env("SUPABASE_KEY")
-    return {
-        "Authorization": f"Bearer {key}",
-        "apikey": key,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-
-
-def _meta_post(path: str, payload: Dict[str, Any]) -> requests.Response:
-    base = _get_env("SUPABASE_URL").rstrip("/")
-    url = f"{base}{path}"
-    return requests.post(url, headers=_meta_headers(), json=payload, timeout=30)
-
-
-def ensure_supabase_schema() -> None:
+def build_product_rows(
+    domain: str,
+    store_id: str,
+    raw_products: List[Dict[str, Any]],
+    store_images_dir: Path
+) -> List[ProductRow]:
     """
-    Best-effort auto-create for `public.products`.
-
-    Uses Supabase's postgres-meta service (`/pg/meta/*`). This typically requires a
-    service-role key.
+    Build product rows with embeddings and download images
+    
+    Args:
+        domain: Store domain
+        store_id: UUID of the store
+        raw_products: Raw products from Shopify
+        store_images_dir: Directory to save images
+    
+    Returns:
+        List of ProductRow objects
     """
-    global _schema_ensured
-    if _schema_ensured:
-        return
-
-    sb = get_supabase()
-    try:
-        sb.table("products").select("id").limit(1).execute()
-        _schema_ensured = True
-        return
-    except Exception:
-        pass
-
-    ddl = """
-    create extension if not exists vector;
-
-    create table if not exists public.products (
-      id uuid primary key default uuid_generate_v4(),
-      store_id uuid not null,
-      handle text not null,
-      name text,
-      description text,
-      price numeric,
-      image_url text,
-      product_url text,
-      embedding vector(384)
-    );
-
-    create index if not exists products_store_id_idx on public.products (store_id);
-    create unique index if not exists products_store_handle_idx on public.products (store_id, handle);
-    create index if not exists products_embedding_idx on public.products using hnsw (embedding vector_cosine_ops);
-    """.strip()
-
-    # Try SQL execution via meta query endpoint (preferred).
-    candidates = [
-        ("/pg/meta/query", {"query": ddl}),
-        ("/pg/meta/query", {"sql": ddl}),
-        ("/pg/meta/query/", {"query": ddl}),
-        ("/pg/meta/query/", {"sql": ddl}),
-    ]
-    last_err = None
-    for path, payload in candidates:
-        try:
-            resp = _meta_post(path, payload)
-            if 200 <= resp.status_code < 300:
-                logger.info("Ensured Supabase schema via %s", path)
-                break
-            last_err = f"{resp.status_code} {resp.text[:500]}"
-        except Exception as e:
-            last_err = str(e)
-    else:
-        raise RuntimeError(
-            "Failed to auto-create Supabase table `products`. "
-            "This usually means SUPABASE_KEY is not a service-role key or the /pg/meta API is disabled. "
-            f"Last error: {last_err}"
-        )
-
-    # Verify the table is now reachable via PostgREST
-    sb.table("products").select("id").limit(1).execute()
-    _schema_ensured = True
-
-
-def build_product_rows(domain: str, store_id: str, raw_products: List[Dict[str, Any]]) -> List[ProductRow]:
+    logger.info(f"🔄 Processing {len(raw_products)} products...")
+    
     embedder = get_embedder()
-
-    rows: List[ProductRow] = []
-    texts: List[str] = []
-    metas: List[Tuple[str, str, str, Optional[Decimal], Optional[str], str]] = []
-    # metas: (id/handle, name, description, product_url, price, image_url)
-
-    for p in raw_products:
-        handle = _product_handle(p)
-        name = str(p.get("title") or "").strip()
-        product_url = f"https://{domain}/products/{handle}"
-        description = html_to_text(p.get("body_html"))
-        price = _parse_price(p)
-        image_url = _first_image_src(p)
-
-        if not name:
-            continue
-
-        blob = f"{name}\n\n{description}".strip()
-        texts.append(blob)
-        metas.append((handle, name, description, product_url, price, image_url))
-
-    if not texts:
-        return []
-
-    embeddings = embedder.encode(texts, normalize_embeddings=True)
-    for (handle, name, description, product_url, price, image_url), emb in zip(metas, embeddings):
-        rows.append(
-            ProductRow(
+    rows = []
+    image_server_url = os.getenv("IMAGE_SERVER_URL", "http://localhost:8000")
+    
+    for product in raw_products:
+        try:
+            # Extract fields
+            handle = product.get("handle") or "product"
+            name = product.get("title") or "Untitled Product"
+            
+            # Description (strip HTML)
+            desc_html = product.get("body_html") or ""
+            description = unescape(re.sub(r"<[^>]+>", " ", desc_html))
+            description = re.sub(r"\s+", " ", description).strip()
+            
+            # Price (from first variant)
+            price = None
+            variants = product.get("variants", [])
+            if variants:
+                price_str = variants[0].get("price")
+                if price_str:
+                    try:
+                        price = Decimal(str(price_str))
+                    except:
+                        pass
+            
+            # Image URL (first image)
+            image_url = None
+            images = product.get("images", [])
+            if images:
+                image_url = images[0].get("src")
+            
+            # Download image
+            local_image_path = download_product_image(image_url, store_images_dir, handle)
+            
+            # Build image URL for database
+            db_image_url = None
+            if local_image_path:
+                db_image_url = f"{image_server_url}/images/{store_id}/{local_image_path}"
+            
+            # Product URL
+            product_url = f"https://{domain}/products/{handle}"
+            
+            # Create embedding
+            text_to_embed = f"{name} {description}"
+            embedding = embedder.encode(text_to_embed, normalize_embeddings=True).tolist()
+            
+            # Create row
+            row = ProductRow(
                 id=str(uuid.uuid4()),
                 store_id=store_id,
                 name=name,
                 description=description,
                 price=price,
-                image_url=image_url,
+                image_url=db_image_url,
                 product_url=product_url,
-                embedding=[float(x) for x in emb],
+                local_image_path=f"{store_id}/{local_image_path}" if local_image_path else None,
+                embedding=embedding,
                 handle=handle,
+                created_at=datetime.now()
             )
-        )
+            
+            rows.append(row)
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to process product '{product.get('title', 'unknown')}': {e}")
+            continue
+    
+    logger.info(f"✅ Processed {len(rows)} products successfully")
     return rows
 
 
-def chunked(items: List[Any], size: int) -> Iterable[List[Any]]:
-    for i in range(0, len(items), size):
-        yield items[i : i + size]
+def store_products_in_supabase(rows: List[ProductRow]) -> None:
+    """
+    Store products in Supabase with batch inserts
+    
+    Args:
+        rows: List of ProductRow objects
+    
+    Raises:
+        Exception on database error
+    """
+    if not rows:
+        logger.warning("⚠️ No products to store")
+        return
+    
+    logger.info(f"💾 Storing {len(rows)} products in Supabase...")
+    
+    supabase = get_supabase()
+    
+    # Convert to dicts for insertion
+    records = []
+    for row in rows:
+        record = {
+            "id": row.id,
+            "store_id": row.store_id,
+            "handle": row.handle,
+            "name": row.name,
+            "description": row.description,
+            "price": float(row.price) if row.price else None,
+            "image_url": row.image_url,
+            "product_url": row.product_url,
+            "local_image_path": row.local_image_path,
+            "embedding": row.embedding,
+            "created_at": row.created_at.isoformat()
+        }
+        records.append(record)
+    
+    # Batch insert (chunks of 100)
+    chunk_size = 100
+    for i in range(0, len(records), chunk_size):
+        chunk = records[i:i + chunk_size]
+        try:
+            supabase.table("products").insert(chunk).execute()
+            logger.info(f"  ✅ Inserted batch {i // chunk_size + 1} ({len(chunk)} products)")
+        except Exception as e:
+            logger.error(f"❌ Failed to insert batch: {e}")
+            raise
+    
+    logger.info(f"✅ All products stored in database")
 
+
+def generate_static_test_page(
+    store_url: str,
+    store_id: str,
+    agent_id: str
+) -> str:
+    """
+    Generate static test page by cloning client's site and injecting widget
+    
+    Args:
+        store_url: Original store URL
+        store_id: Store UUID
+        agent_id: ElevenLabs agent ID
+    
+    Returns:
+        Relative URL to test page (e.g., /demo/test_abc123.html)
+    
+    Raises:
+        Exception if generation fails
+    """
+    logger.info(f"🎨 Generating static test page for {store_url}")
+    
+    try:
+        # Call static_page_generator.py script
+        script_path = Path(__file__).parent.parent / "scripts" / "static_page_generator.py"
+        
+        if not script_path.exists():
+            logger.warning(f"⚠️ static_page_generator.py not found at {script_path}")
+            return f"/demo/test_{store_id[:8]}.html"  # Return placeholder
+        
+        widget_script_url = os.getenv("WIDGET_SCRIPT_URL", "http://localhost:5173/src/main.jsx")
+        search_api_url = os.getenv("SEARCH_API_URL", "http://localhost:8006")
+        
+        # Run generator script
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                store_url,
+                store_id,
+                "--agent-id", agent_id,
+                "--widget-script", widget_script_url,
+                "--search-api", search_api_url
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            logger.error(f"❌ Test page generation failed: {result.stderr}")
+            return f"/demo/test_{store_id[:8]}.html"  # Return placeholder
+        
+        logger.info(f"✅ Test page generated successfully")
+        return f"/demo/test_{store_id[:8]}.html"
+        
+    except Exception as e:
+        logger.warning(f"⚠️ Test page generation failed: {e}")
+        return f"/demo/test_{store_id[:8]}.html"  # Return placeholder
+
+
+def extract_store_context(products: List[Dict[str, Any]], domain: str) -> Dict:
+    """
+    Extract store context for agent personalization
+    
+    Args:
+        products: Raw product list
+        domain: Store domain
+    
+    Returns:
+        Store context dict
+    """
+    # Extract categories (product types)
+    categories = set()
+    min_price = None
+    max_price = None
+    
+    for product in products[:50]:  # Sample first 50
+        product_type = product.get("product_type")
+        if product_type:
+            categories.add(product_type)
+        
+        variants = product.get("variants", [])
+        for variant in variants:
+            price_str = variant.get("price")
+            if price_str:
+                try:
+                    price = float(price_str)
+                    if min_price is None or price < min_price:
+                        min_price = price
+                    if max_price is None or price > max_price:
+                        max_price = price
+                except:
+                    pass
+    
+    # Build context
+    store_name = domain.replace(".myshopify.com", "").replace(".com", "").replace(".in", "").title()
+    
+    return {
+        "store_name": store_name,
+        "description": "online store",
+        "categories": ", ".join(list(categories)[:10]) if categories else "various products",
+        "price_range": f"₹{int(min_price)} to ₹{int(max_price)}" if min_price and max_price else "affordable pricing"
+    }
+
+
+# === API ENDPOINTS ===
 
 @app.get("/health")
-def health() -> Dict[str, str]:
-    return {"status": "ok"}
+def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "ok",
+        "service": "onboarding-service",
+        "version": "2.0.0"
+    }
 
 
 @app.post("/onboard")
 def onboard(req: OnboardRequest) -> Dict[str, Any]:
-    try:
-        domain = clean_domain(req.url)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
+    """
+    Complete onboarding flow:
+    1. Validate Shopify store
+    2. Scrape products (max 200)
+    3. Download images
+    4. Create embeddings
+    5. Store in Supabase
+    6. Create ElevenLabs agent
+    7. Generate test page
+    
+    Returns:
+        {
+            "success": true,
+            "store_id": "uuid",
+            "agent_id": "elevenlabs_agent_id",
+            "test_url": "/demo/test_xyz.html",
+            "widget_snippet": "<script>...</script>",
+            "products_count": 123
+        }
+    """
+    logger.info(f"\n{'='*60}")
+    logger.info(f"🚀 ONBOARDING STARTED: {req.url}")
+    logger.info(f"{'='*60}\n")
+    
+    # STEP 1: Validate Store
+    logger.info("📋 Step 1/7: Validating Shopify store...")
+    validation = validate_shopify_store(req.url)
+    
+    if not validation.get("valid"):
+        logger.error(f"❌ Validation failed: {validation.get('error_code')}")
+        raise HTTPException(status_code=400, detail=validation)
+    
+    clean_url = validation["url"]
+    domain = urlparse(clean_url).netloc
+    logger.info(f"✅ Validation passed: {domain}")
+    
+    # Generate store_id
     store_id = str(uuid.uuid4())
-    images_root = os.getenv("STORE_IMAGES_PATH", "./images")
-    images_root_path = (BASE_DIR / images_root).resolve() if not Path(images_root).is_absolute() else Path(images_root)
-    store_images_dir = images_root_path / store_id
-
-    logger.info("Starting onboarding domain=%s store_id=%s", domain, store_id)
-
+    logger.info(f"🆔 Store ID: {store_id}")
+    
+    # STEP 2: Scrape Products
+    logger.info(f"\n📦 Step 2/7: Scraping products (max {MAX_PRODUCTS})...")
     try:
-        raw_products = fetch_shopify_products(domain=domain, max_products=500)
+        raw_products = fetch_shopify_products(domain, max_products=MAX_PRODUCTS)
     except Exception as e:
-        logger.exception("Failed fetching Shopify products")
-        raise HTTPException(status_code=502, detail=str(e)) from e
-
+        logger.error(f"❌ Scraping failed: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail=get_error_response(ErrorCodes.UNKNOWN_ERROR, str(e))
+        )
+    
+    if not raw_products:
+        raise HTTPException(
+            status_code=400,
+            detail=get_error_response(ErrorCodes.NO_PRODUCTS)
+        )
+    
+    # STEP 3: Process Products & Download Images
+    logger.info(f"\n🖼️  Step 3/7: Processing products and downloading images...")
+    images_root = Path(os.getenv("STORE_IMAGES_PATH", "./images"))
+    store_images_dir = images_root / store_id
+    
     try:
-        ensure_supabase_schema()
+        product_rows = build_product_rows(domain, store_id, raw_products, store_images_dir)
     except Exception as e:
-        logger.exception("Failed ensuring Supabase schema")
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
+        logger.error(f"❌ Product processing failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=get_error_response(ErrorCodes.EMBEDDING_ERROR, str(e))
+        )
+    
+    # STEP 4: Store in Supabase
+    logger.info(f"\n💾 Step 4/7: Storing products in database...")
     try:
-        rows = build_product_rows(domain=domain, store_id=store_id, raw_products=raw_products)
+        store_products_in_supabase(product_rows)
     except Exception as e:
-        logger.exception("Failed building embeddings")
-        raise HTTPException(status_code=500, detail=f"embedding failed: {e}") from e
-
-    # Download images (best-effort)
-    downloaded = 0
-    for r in rows:
-        if not r.image_url:
-            continue
-        fname = _safe_filename(r.handle) + ".jpg"
-        dest = store_images_dir / fname
-        try:
-            download_image(r.image_url, dest)
-            downloaded += 1
-        except Exception as e:
-            logger.warning("Image download failed handle=%s err=%s", r.handle, e)
-
-    # Insert into Supabase in batches
-    sb = get_supabase()
-    inserted = 0
+        logger.error(f"❌ Database storage failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=get_error_response(ErrorCodes.SUPABASE_ERROR, str(e))
+        )
+    
+    # STEP 5: Create ElevenLabs Agent
+    logger.info(f"\n🤖 Step 5/7: Creating ElevenLabs conversational agent...")
     try:
-        for batch in chunked(rows, 50):
-            payload = []
-            for r in batch:
-                payload.append(
-                    {
-                        "store_id": r.store_id,
-                        "handle": r.handle,
-                        "name": r.name,
-                        "description": r.description,
-                        "price": str(r.price) if r.price is not None else None,
-                        "image_url": r.image_url,
-                        "product_url": r.product_url,
-                        "embedding": vector_literal(r.embedding),
-                    }
-                )
-            sb.table("products").insert(payload).execute()
-            inserted += len(payload)
+        store_context = extract_store_context(raw_products, domain)
+        search_api_url = os.getenv("SEARCH_API_URL", "http://localhost:8006")
+        
+        agent_result = create_agent_for_store(
+            store_id=store_id,
+            store_context=store_context,
+            search_api_url=search_api_url
+        )
+        
+        agent_id = agent_result["agent_id"]
+        logger.info(f"✅ Agent created: {agent_id}")
+        
     except Exception as e:
-        logger.exception("Failed inserting into Supabase")
-        raise HTTPException(status_code=500, detail=f"supabase insert failed: {e}") from e
+        logger.error(f"❌ Agent creation failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=get_error_response(ErrorCodes.ELEVENLABS_ERROR, str(e))
+        )
+    
+    # STEP 6: Generate Test Page
+    logger.info(f"\n🎨 Step 6/7: Generating static test page...")
+    try:
+        test_url = generate_static_test_page(clean_url, store_id, agent_id)
+    except Exception as e:
+        logger.warning(f"⚠️ Test page generation failed: {e}")
+        test_url = f"/demo/test_{store_id[:8]}.html"  # Placeholder
+    
+    # STEP 7: Generate Widget Snippet
+    logger.info(f"\n📝 Step 7/7: Generating widget snippet...")
+    widget_script_url = os.getenv("WIDGET_SCRIPT_URL", "http://localhost:5173/src/main.jsx")
+    
+    widget_snippet = f"""<script src="{widget_script_url}"></script>
+<script>
+  window.AVATAR_WIDGET_CONFIG = {{
+    agentId: "{agent_id}",
+    storeId: "{store_id}"
+  }};
+</script>"""
+    
+    # SUCCESS
+    logger.info(f"\n{'='*60}")
+    logger.info(f"✅ ONBOARDING COMPLETE!")
+    logger.info(f"Store ID: {store_id}")
+    logger.info(f"Agent ID: {agent_id}")
+    logger.info(f"Products: {len(product_rows)}")
+    logger.info(f"{'='*60}\n")
+    
+    return success_response({
+        "store_id": store_id,
+        "agent_id": agent_id,
+        "test_url": test_url,
+        "widget_snippet": widget_snippet,
+        "products_count": len(product_rows),
+        "store_url": clean_url
+    })
 
-    logger.info(
-        "Onboarding finished store_id=%s products=%s images=%s",
-        store_id,
-        len(rows),
-        downloaded,
+
+if __name__ == "__main__":
+    import uvicorn
+    
+    port = int(os.getenv("PORT", 8005))
+    logger.info(f"🚀 Starting Onboarding Service on port {port}")
+    
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        log_level="info"
     )
-
-    return {"store_id": store_id, "product_count": len(rows), "status": "ready"}
-
