@@ -9,7 +9,8 @@ export default defineConfig({
       // Use topExecutionPriority to ensure CSS runs before everything
       topExecutionPriority: true,
       injectCode: (cssCode, options) => {
-        return `try{window.__TEAM_POP_CSS__=${JSON.stringify(cssCode)};}catch(e){console.error('[TeamPop] CSS inject failed',e);}`
+        const escaped = JSON.stringify(cssCode)
+        return `try{window.__TEAM_POP_CSS__=${escaped};}catch(e){console.error('[TeamPop] CSS inject failed',e);}`
       }
     })
   ],
