@@ -27,6 +27,10 @@ from pydantic import BaseModel, Field
 from PIL import Image
 from sentence_transformers import SentenceTransformer
 from supabase import Client, create_client
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+import httpx
+from bs4 import BeautifulSoup
 
 # Import our custom modules
 from shopify_validator import validate_shopify_store
@@ -56,6 +60,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve built widget.js from frontend dist
+WIDGET_DIST_DIR = Path(__file__).parent.parent / "www.teampop" / "frontend" / "dist"
+if WIDGET_DIST_DIR.exists():
+    app.mount("/widget", StaticFiles(directory=str(WIDGET_DIST_DIR)), name="widget")
+    logger.info(f"✅ Widget served from: {WIDGET_DIST_DIR}")
+else:
+    logger.warning(f"⚠️ Widget dist not found at {WIDGET_DIST_DIR} — run npm run build in frontend/")
+
+# Serve generated demo pages
+app.mount("/demo", StaticFiles(directory="demo_pages", html=True), name="demo")
 
 # Models
 class OnboardRequest(BaseModel):
@@ -388,65 +403,92 @@ def store_products_in_supabase(rows: List[ProductRow]) -> None:
     logger.info(f"✅ All products stored in database")
 
 
+DEMO_PAGES_DIR = Path("./demo_pages")
+DEMO_PAGES_DIR.mkdir(exist_ok=True)
+
+
 def generate_static_test_page(
     store_url: str,
     store_id: str,
     agent_id: str
 ) -> str:
     """
-    Generate static test page by cloning client's site and injecting widget
-    
-    Args:
-        store_url: Original store URL
-        store_id: Store UUID
-        agent_id: ElevenLabs agent ID
-    
-    Returns:
-        Relative URL to test page (e.g., /demo/test_abc123.html)
-    
-    Raises:
-        Exception if generation fails
+    Fetch client's page, inject widget snippet, save to demo_pages/
+    Returns relative path like /demo/test_abc12345.html
     """
-    logger.info(f"🎨 Generating static test page for {store_url}")
-    
-    try:
-        # Call static_page_generator.py script
-        script_path = Path(__file__).parent.parent / "scripts" / "static_page_generator.py"
-        
-        if not script_path.exists():
-            logger.warning(f"⚠️ static_page_generator.py not found at {script_path}")
-            return f"/demo/test_{store_id[:8]}.html"  # Return placeholder
-        
-        widget_script_url = os.getenv("WIDGET_SCRIPT_URL", "http://localhost:5173/src/main.jsx")
-        search_api_url = os.getenv("SEARCH_API_URL", "http://localhost:8006")
-        
-        # Run generator script
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(script_path),
-                store_url,
-                store_id,
-                "--agent-id", agent_id,
-                "--widget-script", widget_script_url,
-                "--search-api", search_api_url
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-        
-        if result.returncode != 0:
-            logger.error(f"❌ Test page generation failed: {result.stderr}")
-            return f"/demo/test_{store_id[:8]}.html"  # Return placeholder
-        
-        logger.info(f"✅ Test page generated successfully")
-        return f"/demo/test_{store_id[:8]}.html"
-        
-    except Exception as e:
-        logger.warning(f"⚠️ Test page generation failed: {e}")
-        return f"/demo/test_{store_id[:8]}.html"  # Return placeholder
+    import re as _re
+    from urllib.parse import urljoin, urlparse
 
+    logger.info(f"🎨 Generating static test page for {store_url}")
+
+    widget_script_url = os.getenv("WIDGET_SCRIPT_URL", "http://localhost:5173/widget.js")
+    search_api_url = os.getenv("SEARCH_API_URL", "http://localhost:8006")
+
+    try:
+        headers = {"User-Agent": "TeamPop-Onboarding/2.0"}
+        response = requests.get(store_url, headers=headers, timeout=20)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not fetch store page ({e}), using blank template")
+        soup = BeautifulSoup(
+            f"<html><head><title>Store Preview</title></head><body></body></html>",
+            "html.parser"
+        )
+
+    base_url = f"{urlparse(store_url).scheme}://{urlparse(store_url).netloc}"
+
+    # Fix relative URLs → absolute so assets load cross-origin
+    for tag in soup.find_all(["img", "source"], src=True):
+        tag["src"] = urljoin(base_url, tag["src"])
+    for tag in soup.find_all("link", href=True):
+        tag["href"] = urljoin(base_url, tag["href"])
+    for tag in soup.find_all("a", href=True):
+        href = tag["href"]
+        if not href.startswith(("http", "https", "mailto", "tel", "#", "javascript")):
+            tag["href"] = urljoin(base_url, href)
+
+    # Remove analytics / tracking scripts that could break the page
+    kill_patterns = ["google-analytics", "googletagmanager", "gtag", "hotjar",
+                     "clarity", "facebook", "mixpanel", "posthog", "snitcher"]
+    for script in soup.find_all("script"):
+        src = script.get("src", "")
+        content = script.string or ""
+        combined = (src + content).lower()
+        if any(p in combined for p in kill_patterns):
+            script.decompose()
+    
+    # --- Inject widget ---
+    head = soup.find("head") or soup.new_tag("head")
+    body = soup.find("body") or soup.new_tag("body")
+
+    # Config script (must come BEFORE widget.js)
+    config_script = soup.new_tag("script")
+    config_script.string = f"""
+    window.__TEAM_POP_AGENT_ID__ = "{agent_id}";
+    console.log('[TeamPop] Widget config loaded', window.AVATAR_WIDGET_CONFIG);
+    """
+    head.append(config_script)
+
+
+    # Widget script tag
+    widget_tag = soup.new_tag("script")
+    widget_tag["src"] = widget_script_url
+    # widget_tag["defer"] = True
+    body.append(widget_tag)
+
+    # team-pop-agent custom element (used by the web component in main.jsx)
+    agent_el = soup.new_tag("team-pop-agent")
+    body.append(agent_el)
+
+    # Save file
+    filename = f"test_{store_id[:8]}.html"
+    output_path = DEMO_PAGES_DIR / filename
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(str(soup))
+
+    logger.info(f"✅ Test page saved: {output_path}")
+    return filename  # just the filename, not the full path
 
 def extract_store_context(products: List[Dict[str, Any]], domain: str) -> Dict:
     """
@@ -614,7 +656,8 @@ def onboard(req: OnboardRequest) -> Dict[str, Any]:
     # STEP 6: Generate Test Page
     logger.info(f"\n🎨 Step 6/7: Generating static test page...")
     try:
-        test_url = generate_static_test_page(clean_url, store_id, agent_id)
+        filename = generate_static_test_page(clean_url, store_id, agent_id)
+        test_url = f"/demo/{filename}"
     except Exception as e:
         logger.warning(f"⚠️ Test page generation failed: {e}")
         test_url = f"/demo/test_{store_id[:8]}.html"  # Placeholder
@@ -623,13 +666,13 @@ def onboard(req: OnboardRequest) -> Dict[str, Any]:
     logger.info(f"\n📝 Step 7/7: Generating widget snippet...")
     widget_script_url = os.getenv("WIDGET_SCRIPT_URL", "http://localhost:5173/src/main.jsx")
     
-    widget_snippet = f"""<script src="{widget_script_url}"></script>
-<script>
-  window.AVATAR_WIDGET_CONFIG = {{
-    agentId: "{agent_id}",
-    storeId: "{store_id}"
-  }};
-</script>"""
+    # CORRECT — config BEFORE script, correct variable name
+    widget_snippet = f"""<!-- TeamPop Voice Widget -->
+    <script>
+    window.__TEAM_POP_AGENT_ID__ = "{agent_id}";
+    </script>
+    <script src="{widget_script_url}"></script>
+    <team-pop-agent></team-pop-agent>"""
     
     # SUCCESS
     logger.info(f"\n{'='*60}")

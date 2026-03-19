@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
-import { Check, Clipboard, Terminal } from 'lucide-react';
+import React, { useState } from "react";
+import { Check, Clipboard, Terminal } from "lucide-react";
 
-export default function InstallSnippet({ tenantId = '<THE_TENANT_ID>' }) {
+export default function InstallSnippet({ tenantId = "<THE_TENANT_ID>" }) {
   const [copied, setCopied] = useState(false);
 
-  const snippet = `<script src="https://cdn.teampop.com/widget.js"></script>
-<team-pop-agent client-id="${tenantId}"></team-pop-agent>`;
+  const snippet = `<!-- TeamPop Voice Widget -->
+<script>
+  window.__TEAM_POP_AGENT_ID__ = "${tenantId}";
+</script>
+<script src="https://cdn.teampop.com/widget.js"></script>
+<team-pop-agent></team-pop-agent>`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(snippet);
@@ -46,9 +50,11 @@ export default function InstallSnippet({ tenantId = '<THE_TENANT_ID>' }) {
             <span className="text-pink-400">&lt;script</span>
             <span className="text-brand-300"> src</span>
             <span className="text-slate-400">=</span>
-            <span className="text-green-300">"https://cdn.teampop.com/widget.js"</span>
+            <span className="text-green-300">
+              "https://cdn.teampop.com/widget.js"
+            </span>
             <span className="text-pink-400">&gt;&lt;/script&gt;</span>
-            {'\n\n'}
+            {"\n\n"}
             <span className="text-pink-400">&lt;team-pop-agent</span>
             <span className="text-brand-300"> client-id</span>
             <span className="text-slate-400">=</span>

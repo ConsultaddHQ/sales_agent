@@ -6,4 +6,5 @@ pillow
 sentence-transformers
 python-dotenv
 pydantic
-
+httpx
+beautifulsoup4

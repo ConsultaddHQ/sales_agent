@@ -260,7 +260,11 @@ class ElevenLabsAgentCreator:
                     "language": "en"
                 },
                 "tts": {
-                    "voice_id": voice_id or os.getenv('ELEVENLABS_VOICE_ID')
+                    "voice_id": (
+                        voice_id
+                        or os.getenv('ELEVENLABS_VOICE_ID')
+                        or "EXAVITQu4vr4xnSDxMaL"  # Sarah — ElevenLabs public default voice
+                    )
                     # Uses ElevenLabs default voice if not specified
                 },
                 "tools": tools
