@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Space+Grotesk:wght@300;400;500;600;700&display=swap");
+/* REMOVED: @import url for Google Fonts — handled via <link> in main.jsx for Shadow DOM */
 
 @layer base {
   :host {
@@ -8,8 +8,24 @@
   }
 }
 
+/* ── CSS Variables — both :host (Shadow DOM) and :root (dev standalone) ── */
+:host {
+  --bg-0: #0a0f14;
+  --bg-1: #0d1620;
+  --bg-2: #0a1c24;
+  --glass: rgba(18, 28, 38, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --text-0: #e9f0f6;
+  --text-1: #c7d3df;
+  --accent-0: #46c2ff;
+  --accent-1: #6de0ff;
+  --danger: #ff6b6b;
+  --shadow-0: 0 20px 60px rgba(0, 0, 0, 0.45);
+  --radius-0: 16px;
+  --radius-1: 24px;
+}
 
-:host, :root {
+:root {
   --bg-0: #0a0f14;
   --bg-1: #0d1620;
   --bg-2: #0a1c24;
@@ -29,38 +45,33 @@
   box-sizing: border-box;
 }
 
-html,
-body,
-#root,
-#voice-avatar-widget-root {
+/* For standalone dev mode only — ignored inside Shadow DOM */
+html, body, #root {
   height: 100%;
   width: 100%;
-}
-
-body {
   margin: 0;
-  font-family:
-    "Space Grotesk",
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
   color: var(--text-0);
-  background:
-    radial-gradient(
-      1200px 800px at 20% -10%,
-      rgba(70, 194, 255, 0.12),
-      transparent 60%
-    ),
-    radial-gradient(
-      900px 700px at 80% 10%,
-      rgba(109, 224, 255, 0.1),
-      transparent 60%
-    ),
-    linear-gradient(160deg, var(--bg-0), var(--bg-1) 40%, var(--bg-2));
-  overflow: hidden;
 }
 
-body::before {
+/* ── Shadow DOM root container ── */
+:host {
+  display: block;
+  font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  color: var(--text-0);
+}
+
+#team-pop-root {
+  height: 100%;
+  width: 100%;
+  font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  color: var(--text-0);
+  position: relative;
+  z-index: 1;
+}
+
+/* Noise texture — applied to the widget container instead of body */
+#team-pop-root::before {
   content: "";
   position: fixed;
   inset: 0;
@@ -70,16 +81,13 @@ body::before {
   z-index: 0;
 }
 
-h1,
-h2,
-h3 {
+h1, h2, h3 {
   font-family: "DM Serif Display", serif;
   font-weight: 400;
   margin: 0;
 }
 
-button,
-input {
+button, input {
   font-family: inherit;
 }
 
@@ -89,21 +97,10 @@ input {
   min-height: 100vh;
   width: 100%;
   display: flex;
-  flex-direction: column; /* Stack Header and Content */
-  align-items: stretch; /* Full width */
-  justify-content: flex-start; /* Start from top */
-  padding: 0; /* Remove padding so header touches edges */
-}
-
-#voice-avatar-widget-root {
-  width: 100%;
-  position: relative;
-  z-index: 1;
-}
-
-#root {
-  position: relative;
-  z-index: 1;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -114,7 +111,7 @@ input {
   }
 }
 
-/* ── Launch Screen ─────────────────────────────── */
+/* ── Launch Screen ── */
 .launch-screen {
   display: flex !important;
   align-items: center !important;

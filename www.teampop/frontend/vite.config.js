@@ -2,13 +2,14 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     cssInjectedByJsPlugin({
-      injectCode: (cssCode) => {
-        return `window.__TEAM_POP_CSS__ = ${JSON.stringify(cssCode)};`
+      // Use topExecutionPriority to ensure CSS runs before everything
+      topExecutionPriority: true,
+      injectCode: (cssCode, options) => {
+        return `try{window.__TEAM_POP_CSS__=${JSON.stringify(cssCode)};}catch(e){console.error('[TeamPop] CSS inject failed',e);}`
       }
     })
   ],
@@ -19,6 +20,12 @@ export default defineConfig({
       fileName: () => 'widget.js',
       formats: ['iife'],
     },
+    rollupOptions: {
+      output: {
+        // Ensure CSS is not extracted as separate file
+        assetFileNames: '[name][extname]',
+      }
+    }
   },
   define: {
     'process.env': {}
