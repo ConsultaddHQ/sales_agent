@@ -26,3 +26,7 @@ Thumbs.db
 # Env
 .env
 .env.example
+
+#folder
+images/
+demo_pages/
