@@ -23,6 +23,17 @@
   --shadow-0: 0 20px 60px rgba(0, 0, 0, 0.45);
   --radius-0: 16px;
   --radius-1: 24px;
+  
+  all: initial;
+  display: block !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  pointer-events: none !important;
+  z-index: 2147483647 !important;
+  font-family: "Space Grotesk", system-ui, sans-serif;
 }
 
 :root {

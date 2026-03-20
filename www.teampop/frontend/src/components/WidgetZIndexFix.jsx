@@ -162,42 +162,25 @@ export default function AvatarWidget({ storeId, searchApiUrl, ...props }) {
 
 export function withMaxZIndex(WidgetComponent) {
   return function WidgetWithMaxZIndex(props) {
-    const [isReady, setIsReady] = useState(false);
 
-    useEffect(() => {
-      let widgetRoot = document.getElementById('avatar-widget-root');
-      if (!widgetRoot) {
-        widgetRoot = document.createElement('div');
-        widgetRoot.id = 'avatar-widget-root';
-        document.body.appendChild(widgetRoot);
-      }
-      setIsReady(true);
 
-      return () => {
-        if (widgetRoot && widgetRoot.childNodes.length === 0) {
-          widgetRoot.remove();
-        }
-      };
-    }, []);
-
-    if (!isReady) return null;
-
-    return createPortal(
+    return (
       <div 
-        className="avatar-widget-container"
         style={{
           position: 'fixed',
-          bottom: '20px',
-          right: '20px',
+          bottom: '0',
+          left: '0',
+          width: '100%',
+          height: '100%',
           zIndex: 2147483647,
+          pointerEvents: 'none',
           isolation: 'isolate',
         }}
       >
         <WidgetComponent {...props} />
-      </div>,
-      document.getElementById('avatar-widget-root')
-    );
-  };
+      </div>
+    )
+  }
 }
 
 /**
