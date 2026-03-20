@@ -12,26 +12,186 @@ This document outlines the best practices for creating tickets and commits to en
 - Avoid vague terms like "fix" or "update"; instead, describe the outcome (e.g., "Add preview in the UI").
 
 ### 2. **Description**
-- Provide a detailed description of the ticket, including:
-  - **Problem Statement:** Clearly state the issue or requirement.
-  - **Expected Outcome:** Describe the desired result or functionality.
-  - **Steps to Reproduce (if applicable):** Include steps to replicate the issue.
-  - **Updates Section:**
-    - **Commit Details:** List relevant commit hashes and their descriptions.
-    - **Proof:** Placeholder for proof (e.g., screenshots, logs, demo recordings).
-    - **Attachments:** Placeholder for relevant attachments (e.g., documents, links).
-  - **Notes:** Add any additional context or information.
+- Use a structured markdown format with the following sections:
+
+#### **Description Structure Template**
+
+```markdown
+## Summary
+
+[One-line clear description of what the ticket accomplishes]
+
+## Problem Statement
+
+[Describe the user pain point, business requirement, or current blocker. What is broken or missing? Why does it matter?]
+
+## Expected Outcome
+
+- [Specific, measurable deliverable 1]
+- [Specific, measurable deliverable 2]
+- [Add any acceptance criteria]
+
+## What Was Done
+
+[For completed tickets: Describe implementation details, approach taken, and key changes made. For new tickets: Leave blank or add "(To be filled on completion)"]
+
+## Updates Section
+
+**Commit Details**: [Relevant commit hashes and descriptions, or "pending"]  
+**Proof**: [Screenshots, demo recordings, logs, or "pending"]  
+**Attachments**: [Links, documents, or "pending"]
+
+## Notes
+
+- [Implementation guidance, edge cases, or testing requirements]
+- [Related tickets or dependencies]
+- [Any warnings or special considerations]
+```
+
+#### **Example Tickets**
+
+**Feature Ticket (HPF-175):**
+```markdown
+## Summary
+Research cross-site scraping strategy across different site types using no-cost (keyword scraping → Playwright → LLM) and paid methods.
+
+## Problem Statement
+Current crawler approach is unclear for varied website structures (static CMS, SPAs, ecommerce platforms, anti-bot protected). No documented strategy for handling different site types, and no evaluation of cost vs. free options.
+
+## Expected Outcome
+- 3-phase strategy: pure scraping (HTML/CSS) → Playwright (JS-heavy) → LLM extraction (quick POC)
+- Site classification matrix: static, SPA, ecommerce, anti-bot, gated content
+- Comparison: no-cost options (BeautifulSoup, Scrapy, Playwright) vs. paid (Apify, ScrapingBee, BrightData)
+- Risk assessment and robots.txt compliance guidelines
+
+## Updates Section
+**Commit Details**: pending  
+**Proof**: Research document + comparison matrix  
+**Attachments**: pending
+
+## Notes
+- No target website selected yet; will select after strategy research
+- Include throughput, error rate, and legal compliance metrics
+```
+
+**UI Bug Ticket (HPF-178):**
+```markdown
+## Summary
+Remove unnecessary input field from homepage UI beside Magic Crawl button to reduce clutter.
+
+## Problem Statement
+The homepage displays an input box next to the Magic Crawl button that causes confusion about its purpose and competes with the primary CTA.
+
+## Expected Outcome
+- Input field removed from homepage layout
+- Magic Crawl button is the only CTA in that row
+- Keyboard accessibility and focus management maintained
+- Responsive design works on mobile/tablet/desktop
+
+## What Was Done
+(To be filled on completion)
+
+## Updates Section
+**Commit Details**: pending  
+**Proof**: before/after screenshots  
+**Attachments**: pending
+
+## Notes
+- Low-risk UI-only change
+- Test on all viewport sizes
+- Verify keyboard navigation
+```
+
+**Voice/UX Ticket (HPF-179):**
+```markdown
+## Summary
+Stop agent speech synthesis when product carousel is dismissed, preventing audio spillover.
+
+## Problem Statement
+Users close the carousel expecting to mute the agent, but speech continues playing. This creates poor UX and feels like the agent is not responding to user actions.
+
+## Expected Outcome
+- Carousel close event (click, ESC, or programmatic) triggers `speechStop()`
+- All in-flight TTS API requests are cancelled
+- Agent speaking state clears in UI
+- Regression test verifies silence on close
+
+## Updates Section
+**Commit Details**: pending  
+**Proof**: video demo of carousel close + silence verification  
+**Attachments**: pending
+
+## Notes
+- High priority: direct user experience impact
+- Related: HPF-176 (End/Pause buttons)
+- Test: rapid open/close, mid-sentence closures, network delays
+```
+
+---
+
+### Key Formatting Rules
+
+1. **Summary**: Single line, action-oriented (what gets built/fixed)
+2. **Problem Statement**: User perspective (why it matters), not implementation detail
+3. **Expected Outcome**: Bullet list of concrete deliverables, not vague promises
+4. **What Was Done**: For new tickets, mark as "(To be filled on completion)" to show structure
+5. **Updates Section**: Always include with pending placeholders so team knows what to fill on completion
+6. **Notes**: Development hints, related tickets, testing edge cases—context for implementer
+
+### Dos and Don'ts
+
+✅ **DO:**
+- Be specific about deliverables ("Stop TTS on carousel close" not "fix voice issue")
+- Include user impact ("poor UX when users..." not just "needs fixing")
+- List dependencies and related tickets
+- Provide clear testing guidance
+
+❌ **DON'T:**
+- Write vague titles ("Update stuff", "Fix bug", "Improvement needed")
+- Skip the Problem Statement (always explain why, not just what)
+- Leave Expected Outcome as a single sentence
+- Assume readers know the context without explanation
 
 ### 3. **Labels**
-- Apply appropriate labels (e.g., Feature, Bug, Improvement, Demo).
-- Set the correct priority (e.g., High, Medium, Low).
+- Apply appropriate labels based on ticket type:
+  - **Feature**: New functionality or capability
+  - **Bug**: Defect or issue in existing code
+  - **Improvement**: Enhancement to existing feature
+  - **Demo**: Demo-related work
+  - **Testing**: QA and test coverage
+- Set the correct **priority**:
+  - **Urgent (1)**: Blocking production or critical path
+  - **High (2)**: Important feature or significant issue
+  - **Medium (3)**: Standard feature or improvement
+  - **Low (4)**: Nice-to-have or cosmetic fix
 
-### 4. **Relations**
-- Link related tickets, PRs, or dependencies using "blocks/blocked by" relations.
+### 4. **Required Dates**
+- **Start Date**: When work begins (fill at ticket creation)
+- **End Date / Target Completion Date**: Expected completion (fill at ticket creation)
+- Update these if scope or timeline changes during work
 
-### 5. **Assignee and Project**
-- Assign the ticket to the responsible team member.
-- Ensure the ticket is associated with the correct project.
+### 5. **Ticket Scope & Sizing**
+- Each ticket should represent **roughly one week of work**
+- Avoid tickets that are:
+  - ❌ Too small (micro-tasks creating noise)
+  - ❌ Too large (multi-week efforts with unclear scope)
+- If work exceeds one week, split into smaller deliverables with clear dependencies
+
+### 6. **Update Cadence**
+- Ticket owner must review and update status **at least every 2 days**
+- Update if: status changes, progress made, blockers encountered, or decisions recorded
+- Use **Comments section** for meaningful progress, not step-by-step logs
+- Move ticket to Backlog when switching to other work
+
+### 7. **Acceptance Criteria**
+- Define clear "Definition of Done" in the description
+- Include specific, verifiable requirements
+- Example: "✓ API endpoint responds within 200ms" (not "API works")
+
+### 8. **Relations & Dependencies**
+- Link related tickets, PRs, or dependencies using "blocks/blocked by" relations
+- Gives visibility into cross-ticket impact
+- Update relations if scope changes
 
 ---
 
