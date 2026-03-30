@@ -1,0 +1,158 @@
+# AGENTS.md — Canonical Agent Instructions
+
+**Project:** sales-voice-agent (Team Pop)  
+**Status:** Early alpha / lab prototype  
+**Purpose:** Voice-first AI shopping assistant for Shopify storefronts.
+
+This is the **canonical shared instruction file** for all coding agents working in this repo.
+
+- Read this file first.
+- Use `docs/agents/` for specialized state.
+- Do not create a second full agent handbook elsewhere.
+
+---
+
+## Read Order
+
+1. Read this file.
+2. Read `docs/agents/constraints.md` before touching code.
+3. Read `docs/agents/memory.md` before starting active work.
+4. Read `docs/agents/decisions.md` if your task touches architecture or shared behavior.
+5. Read `docs/agents/handoff.md` if you are resuming interrupted work.
+
+---
+
+## Repo Snapshot
+
+- `onboarding-service/`: FastAPI service for Shopify validation, crawling, embeddings, agent creation
+- `search-service/`: FastAPI hybrid search API
+- `image_server.py`: primary image server used by `start_services.sh`
+- `image-service/`: near-duplicate image service
+- `www.teampop/dashboard/`: React onboarding dashboard
+- `www.teampop/frontend/`: embeddable React widget in Shadow DOM
+- `universal-scraper/`: scraping workflow and fallback strategies
+- `docs/`: human-facing project docs and agent support files
+
+---
+
+## Common Commands
+
+```bash
+# Start all services
+./start_services.sh
+
+# Stop all services
+./stop_services.sh
+
+# Onboarding service
+cd onboarding-service && source .venv/bin/activate && python main.py
+
+# Search service
+cd search-service && source .venv/bin/activate && uvicorn main:app --port 8006
+
+# Dashboard
+cd www.teampop/dashboard && npm run dev
+
+# Widget
+cd www.teampop/frontend && npm run dev
+cd www.teampop/frontend && npm run build
+```
+
+---
+
+## Critical Invariants
+
+- `all-MiniLM-L6-v2` must stay aligned across onboarding and search.
+- `products.embedding` is `vector(384)`; embedding changes require migration + full re-embed.
+- `hybrid_search_products` is a core API contract for search.
+- Widget public API is the `<team-pop-agent>` custom element.
+- Shadow DOM means `@import` does not work inside widget CSS.
+- `image_server.py` is the active image server used by startup scripts.
+- Never commit `.env` files or secrets.
+- User-facing onboarding errors must go through `error_codes.py`.
+
+For the full non-negotiable rules, read `docs/agents/constraints.md`.
+
+---
+
+## Working Agreement
+
+### Before Work
+
+- Check `docs/agents/memory.md` for active ownership and files being modified.
+- Add your task to `docs/agents/memory.md` before significant work.
+- Prefer existing patterns over inventing new structure.
+
+### During Work
+
+- Keep changes scoped to the task.
+- Record non-obvious architectural choices in `docs/agents/decisions.md`.
+- Keep `docs/agents/memory.md` short and current.
+- Do not add duplicate rules or duplicate agent guides.
+
+### After Work
+
+- Remove stale in-progress entries from `docs/agents/memory.md`.
+- Add a recent-completion note if the work was meaningful.
+- Add a handoff entry to `docs/agents/handoff.md` if another agent must continue.
+- Keep `AGENTS.md` concise; do not turn it into a changelog.
+
+### File Update Rules
+
+- Update `AGENTS.md` only for shared workflow, read order, repo structure, or project-wide agent rules.
+- Update `docs/agents/constraints.md` for hard rules only.
+- Update `docs/agents/decisions.md` for durable decisions only.
+- Update `docs/agents/memory.md` for active work only.
+- Update `docs/agents/handoff.md` only when handing incomplete work to another agent.
+- Keep one owner per piece of information; delete duplicates instead of maintaining two copies.
+
+---
+
+## File Roles
+
+| File | Role |
+|------|------|
+| `AGENTS.md` | Canonical entry point for shared agent instructions |
+| `docs/agents/constraints.md` | Stable hard rules and invariants |
+| `docs/agents/decisions.md` | Append-only architectural decisions |
+| `docs/agents/memory.md` | Current work in progress and active edits |
+| `docs/agents/handoff.md` | Structured task-transfer log |
+| `docs/COLLABORATIVE.md` | Human-readable explainer for this collaboration system |
+| `docs/AGENT_DOCS_GUIDE.md` | Human maintenance guide for this agent-doc system |
+| `CLAUDE.md` | Thin Claude wrapper that imports/references canonical docs |
+
+---
+
+## Architecture Quick Map
+
+| Area | Path | Notes |
+|------|------|-------|
+| Onboarding | `onboarding-service/` | Crawl, validate, embed, create voice agent |
+| Search | `search-service/` | Semantic + full-text product search |
+| Widget | `www.teampop/frontend/` | Shadow DOM custom element |
+| Dashboard | `www.teampop/dashboard/` | Merchant onboarding UI |
+| Scraper | `universal-scraper/` | HTTP -> Playwright -> LLM fallback chain |
+| Images | `image_server.py`, `image-service/` | Primary server + duplicate implementation |
+| Database | Supabase | `products` table + `hybrid_search_products` RPC |
+
+---
+
+## Related Docs
+
+- `docs/Engineering Standards.md`: commits, tickets, PRs, workflow
+- `docs/AI Collaboration Guide - Project Tickets.md`: AI request patterns
+- `docs/AGENT_DOCS_GUIDE.md`: how to maintain this doc system
+- `docs/ticket_creation_standards.md`: ticket structure
+- `SHOPIFY_FLOW_COMPLETE.md`: env vars, SQL, troubleshooting
+- `README.md`: high-level project overview
+
+---
+
+## Future-Project Standard
+
+Use this default structure for future collaborative repos unless the repo is tiny:
+
+- Required: `AGENTS.md`
+- Recommended: `docs/agents/constraints.md`, `decisions.md`, `memory.md`, `handoff.md`
+- Optional: tool-specific wrappers like `CLAUDE.md` only when the tool benefits from a known filename
+- Optional later: path-specific instruction files when the codebase grows enough to justify them
