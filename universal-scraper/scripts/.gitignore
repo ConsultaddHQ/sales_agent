@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+
+# Scraper outputs
+product_images/
+demo_pages/
+store_id.txt
+debug_*.png
+
+.env
