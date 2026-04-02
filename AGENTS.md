@@ -18,7 +18,8 @@ This is the **canonical shared instruction file** for all coding agents working 
 2. Read `docs/agents/constraints.md` before touching code.
 3. Read `docs/agents/memory.md` before starting active work.
 4. Read `docs/agents/decisions.md` if your task touches architecture or shared behavior.
-5. Read `docs/agents/handoff.md` if you are resuming interrupted work.
+5. Read `docs/agents/completions.md` if you need historical implementation context, tradeoffs, or prior verification notes.
+6. Read `docs/agents/handoff.md` if you are resuming interrupted work.
 
 ---
 
@@ -89,11 +90,13 @@ For the full non-negotiable rules, read `docs/agents/constraints.md`.
 - Record non-obvious architectural choices in `docs/agents/decisions.md`.
 - Keep `docs/agents/memory.md` short and current.
 - Do not add duplicate rules or duplicate agent guides.
+- If the task becomes a meaningful completed change, prepare a short durable summary for `docs/agents/completions.md`.
 
 ### After Work
 
 - Remove stale in-progress entries from `docs/agents/memory.md`.
 - Add a recent-completion note if the work was meaningful.
+- Append a durable summary to `docs/agents/completions.md` when the completed task will be useful for future review, onboarding, or learning.
 - Add a handoff entry to `docs/agents/handoff.md` if another agent must continue.
 - Keep `AGENTS.md` concise; do not turn it into a changelog.
 
@@ -103,6 +106,7 @@ For the full non-negotiable rules, read `docs/agents/constraints.md`.
 - Update `docs/agents/constraints.md` for hard rules only.
 - Update `docs/agents/decisions.md` for durable decisions only.
 - Update `docs/agents/memory.md` for active work only.
+- Update `docs/agents/completions.md` for meaningful completed work, rationale, tradeoffs, and verification.
 - Update `docs/agents/handoff.md` only when handing incomplete work to another agent.
 - Keep one owner per piece of information; delete duplicates instead of maintaining two copies.
 
@@ -116,6 +120,7 @@ For the full non-negotiable rules, read `docs/agents/constraints.md`.
 | `docs/agents/constraints.md` | Stable hard rules and invariants |
 | `docs/agents/decisions.md` | Append-only architectural decisions |
 | `docs/agents/memory.md` | Current work in progress and active edits |
+| `docs/agents/completions.md` | Durable summaries of completed work, tradeoffs, and verification |
 | `docs/agents/handoff.md` | Structured task-transfer log |
 | `docs/COLLABORATIVE.md` | Human-readable explainer for this collaboration system |
 | `docs/AGENT_DOCS_GUIDE.md` | Human maintenance guide for this agent-doc system |
@@ -153,6 +158,6 @@ For the full non-negotiable rules, read `docs/agents/constraints.md`.
 Use this default structure for future collaborative repos unless the repo is tiny:
 
 - Required: `AGENTS.md`
-- Recommended: `docs/agents/constraints.md`, `decisions.md`, `memory.md`, `handoff.md`
+- Recommended: `docs/agents/constraints.md`, `decisions.md`, `memory.md`, `completions.md`, `handoff.md`
 - Optional: tool-specific wrappers like `CLAUDE.md` only when the tool benefits from a known filename
 - Optional later: path-specific instruction files when the codebase grows enough to justify them

@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-04-02: Durable Completed-Work Summaries Live in `docs/agents/completions.md`
+
+- **Decision:** Add `docs/agents/completions.md` as the canonical place for meaningful completed-task summaries, tradeoffs, and verification notes.
+- **Context:** The repo already had good homes for hard rules, active work, architectural decisions, and unfinished handoffs, but it lacked a durable place to review completed implementation work for learning or historical reference.
+- **Rationale:** Humans and agents need one place to answer "what changed, why did we do it this way, what tradeoffs did we accept, and how was it verified?" without searching through temporary memory or mixing implementation logs into architectural decision records.
+- **Alternatives considered:** Expanding `memory.md` to keep long history; adding more detail to `decisions.md`; using `handoff.md` for completed work.
+- **Consequences:**
+  - `memory.md` stays short and temporary.
+  - `decisions.md` stays focused on durable architecture and process choices, not every finished task.
+  - `completions.md` becomes the main review and learning reference for meaningful shipped work.
+  - Completed entries should summarize key files, rationale, tradeoffs, and verification, but should not turn into a raw changelog.
+- **Status:** Active
+- **Agent/Author:** Codex
+
+---
+
 ## 2026-03-30: Canonical Agent Instructions Live in `AGENTS.md`
 
 - **Decision:** Use repo-root `AGENTS.md` as the canonical shared instruction file, with `docs/agents/` as the specialized state layer.

@@ -58,3 +58,7 @@ coverage/
 tmp/
 temp/
 images/
+
+### Personal local-only notes
+.personal/
+.claude/
