@@ -57,6 +57,7 @@ class ProductResult:
     description: Optional[str]
     price: Optional[Decimal]
     image_url: Optional[str]
+    local_image_url: Optional[str]
     product_url: Optional[str]
     score: float
 

@@ -218,18 +218,20 @@ class ElevenLabsAgentCreator:
         store_context: Optional[Dict] = None,
         search_api_url: Optional[str] = None,
         voice_id: Optional[str] = None,
-        agent_name: Optional[str] = None
+        agent_name: Optional[str] = None,
+        tags: Optional[List[str]] = None
     ) -> Dict:
         """
         Create a new conversational agent for a store
-        
+
         Args:
             store_id: Unique store identifier
             store_context: Store-specific context (name, categories, etc.)
             search_api_url: URL of search service (defaults to env var SEARCH_API_URL)
             voice_id: ElevenLabs voice ID (defaults to system default)
             agent_name: Display name for the agent
-        
+            tags: Optional list of tags for the agent (defaults to ["teampop", "shopify", store_id])
+
         Returns:
             {
                 "success": True,
@@ -270,7 +272,7 @@ class ElevenLabsAgentCreator:
                 "tools": tools
             },
             "name": agent_name or f"Agent for Store {store_id[:8]}",
-            "tags": ["teampop", "shopify", store_id]
+            "tags": tags or ["teampop", "shopify", store_id]
         }
         
         # Create agent via API
@@ -307,16 +309,18 @@ class ElevenLabsAgentCreator:
 def create_agent_for_store(
     store_id: str,
     store_context: Optional[Dict] = None,
-    search_api_url: Optional[str] = None
+    search_api_url: Optional[str] = None,
+    tags: Optional[List[str]] = None
 ) -> Dict:
     """
     Convenience function to create an agent
-    
+
     Args:
         store_id: Store UUID
         store_context: Optional store metadata
         search_api_url: Search service URL
-    
+        tags: Optional list of tags (defaults to ["teampop", "shopify", store_id])
+
     Returns:
         Agent creation result
     """
@@ -324,5 +328,6 @@ def create_agent_for_store(
     return creator.create_agent(
         store_id=store_id,
         store_context=store_context,
-        search_api_url=search_api_url
+        search_api_url=search_api_url,
+        tags=tags
     )

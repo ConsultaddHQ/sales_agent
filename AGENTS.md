@@ -2,7 +2,7 @@
 
 **Project:** sales-voice-agent (Team Pop)  
 **Status:** Early alpha / lab prototype  
-**Purpose:** Voice-first AI shopping assistant for Shopify storefronts.
+**Purpose:** Voice-first AI shopping assistant for Shopify storefronts and Threadless artist shops.
 
 This is the **canonical shared instruction file** for all coding agents working in this repo.
 
@@ -25,7 +25,8 @@ This is the **canonical shared instruction file** for all coding agents working 
 
 ## Repo Snapshot
 
-- `onboarding-service/`: FastAPI service for Shopify validation, crawling, embeddings, agent creation
+- `onboarding-service/`: FastAPI service for store validation, crawling, embeddings, agent creation (Shopify + Threadless)
+- `onboarding-service/threadless_adapter.py`: Adapter bridging Threadless scraper into the onboarding pipeline
 - `search-service/`: FastAPI hybrid search API
 - `image_server.py`: primary image server used by `start_services.sh`
 - `image-service/`: near-duplicate image service
@@ -57,6 +58,14 @@ cd www.teampop/dashboard && npm run dev
 # Widget
 cd www.teampop/frontend && npm run dev
 cd www.teampop/frontend && npm run build
+
+# Threadless onboarding (non-Shopify)
+curl -X POST http://localhost:8005/onboard-threadless \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://nurdluv.threadless.com"}'
+
+# ngrok tunnel for search webhook (required for ElevenLabs agent)
+ngrok http 8006
 ```
 
 ---
@@ -69,6 +78,9 @@ cd www.teampop/frontend && npm run build
 - Widget public API is the `<team-pop-agent>` custom element.
 - Shadow DOM means `@import` does not work inside widget CSS.
 - `image_server.py` is the active image server used by startup scripts.
+- Widget must be served as built IIFE from `/widget/widget.js`, NOT via Vite dev server (Fast Refresh breaks it).
+- `@elevenlabs/react` v1.0+ requires `<ConversationProvider>` wrapper and `useConversationClientTool` for tool registration.
+- ElevenLabs agent tool names must match exactly across: dashboard config, system prompt, and widget code.
 - Never commit `.env` files or secrets.
 - User-facing onboarding errors must go through `error_codes.py`.
 

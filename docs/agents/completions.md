@@ -26,6 +26,41 @@ Copy this block for meaningful completed work:
 
 ---
 
+## 2026-04-03 — N/A — Threadless (NurdLuv) Store Integration with Supabase Pipeline
+
+- **Status:** Completed
+- **Owner:** Claude Code
+- **Summary:** Integrated the standalone nurdluv.threadless.com scraper into the full onboarding pipeline — scraping, embedding, Supabase storage, ElevenLabs agent creation, and demo page generation. Also upgraded `@elevenlabs/react` from v0.14.3 to v1.0.1 and migrated the widget to the new SDK API.
+- **Why:** The Threadless scraper existed as standalone code with no DB storage, no agent creation, and no demo page. This integration makes the full voice shopping experience work end-to-end for non-Shopify stores.
+- **Files:**
+  - `onboarding-service/threadless_adapter.py` — **NEW**: adapter that normalizes Threadless scraper output to Shopify-compatible format, Playwright-based page fetching for demo pages, store context builder
+  - `onboarding-service/main.py` — added `POST /onboard-threadless` endpoint, import adapter, fixed product_url to use `_original_product_url` for non-Shopify stores
+  - `onboarding-service/elevenlabs_agent.py` — added optional `tags` parameter to `create_agent()` and `create_agent_for_store()`
+  - `onboarding-service/requirements.txt` — added `playwright`
+  - `www.teampop/frontend/src/App.jsx` — wrapped app in `<ConversationProvider>` for ElevenLabs SDK v1.0
+  - `www.teampop/frontend/src/components/AvatarWidget.jsx` — migrated from `useConversation` with inline `clientTools` to `useConversationClientTool` hooks, fixed `startSession` to sync (v1.0), fixed `connectionType: "websocket"`, fixed `<img> onError` undefined `product` bug
+  - `search-service/main.py` — added `local_image_url` field to `ProductResult` dataclass
+- **Tradeoffs:**
+  - Adapter pattern (normalize to Shopify format) instead of refactoring `build_product_rows()` — avoids breaking existing Shopify flow, acceptable duplication for 2 store types
+  - Strips ALL scripts and HTML comments from demo pages — necessary because Cloudflare challenge scripts and commented-out `<script>` blocks break browser parsing when served from localhost
+  - Uses `connectionType: "websocket"` instead of default WebRTC — installed `livekit-client@2.18.1` doesn't have ElevenLabs' patch for their RTC server, causing WebRTC connections to drop
+  - Widget served from onboarding service (`/widget/widget.js`) instead of Vite dev server — Vite injects React Fast Refresh globals that break the IIFE on external pages
+- **Verification:**
+  - `POST /onboard-threadless` creates store, scrapes products, stores in Supabase, creates ElevenLabs agent, generates demo page
+  - Demo page loads real NurdLuv store HTML with widget overlay
+  - Agent connects via WebSocket, responds to voice, calls search_products webhook via ngrok, updates product carousel via client tools
+  - Product images served correctly from image server
+  - Search service returns products with correct URLs (`/designs/` not `/products/`)
+- **Related Decisions:** 2026-04-03 — Adapter pattern for non-Shopify stores; ElevenLabs SDK v1.0 migration
+- **Notes:**
+  - ElevenLabs tools must be configured via dashboard (API PATCH for tools has validation issues with `constant_value` + `description` conflict)
+  - Tool names must match exactly between: ElevenLabs dashboard, agent system prompt, and widget `useConversationClientTool` registrations (e.g., `search_products` not `search_product`)
+  - ngrok URL for search webhook changes on restart — must update agent's tool config each time
+  - Image server expects images at repo-root `./images/`, but onboarding service saves to `onboarding-service/images/` — needs copy or symlink
+  - `build_product_rows()` now checks `product.get("_original_product_url")` before falling back to Shopify `/products/{handle}` format
+
+---
+
 ## 2026-04-02 — N/A — Added durable completed-work log and clarified doc ownership
 
 - **Status:** Completed
