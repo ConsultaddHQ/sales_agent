@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useConversation } from "@elevenlabs/react";
+import {
+  useConversation,
+  useConversationClientTool,
+} from "@elevenlabs/react";
 import { withMaxZIndex } from "./WidgetZIndexFix";
 import "../styles/AvatarWidget.css";
 
@@ -138,6 +141,7 @@ function AvatarInner({
     [activeView],
   );
 
+  // --- ElevenLabs v1.0 conversation hook ---
   const conversation = useConversation({
     onMessage: (message) => {
       const source = message?.source;
@@ -151,8 +155,8 @@ function AvatarInner({
               : "";
 
       if (source === "user" && isSyntheticMessageRef.current) {
-        isSyntheticMessageRef.current = false; // reset for next real message
-        return; // skip adding this to chat history
+        isSyntheticMessageRef.current = false;
+        return;
       }
 
       if (text) {
@@ -195,81 +199,68 @@ function AvatarInner({
       }
     },
     onError: (error) => console.error("ElevenLabs error:", error),
-    clientTools: {
-      update_products: async (parameters) => {
-        console.log("Update tool called : ", parameters);
-        const products = Array.isArray(parameters?.products)
-          ? parameters.products
-          : [];
-
-        setLatestProducts(products);
-        latestProductsRef.current = products; // ← sync ref immediately, don't wait for useEffect
-        setActiveView("PRODUCTS");
-        setActiveIndex(0);
-        // showTransientMessage(`Found ${products.length} products for you.`);
-        setAgentSubtitle(`Found ${products.length} products for you ✨`);
-        if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
-        subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 3000);
-        return "UI updated successfully";
-      },
-
-
-
-      // New tool 1: Agent wants to pivot carousel
-      update_carousel_main_view: async (parameters) => {
-        console.log("🔄 update_carousel_main_view called with:", parameters);
-
-        const products = latestProductsRef.current; // ← read from ref, not stale closure
-        console.log(
-          "products in ref:",
-          products.map((p) => ({ id: p.id, name: p.name })),
-        );
-
-        let targetIndex = -1;
-        if (typeof parameters?.index === "number") {
-          targetIndex = parameters.index;
-        } else if (parameters?.product_id) {
-          targetIndex = products.findIndex(
-            (p) => p.id === parameters.product_id,
-          );
-        }
-
-        console.log("findIndex result:", targetIndex);
-
-        if (targetIndex < 0 || targetIndex >= products.length) {
-          return `Invalid index ${targetIndex}. Products available: 0–${products.length - 1}.`;
-        }
-        isAgentTriggeredRef.current = true;
-        setActiveIndex(targetIndex);
-        console.log(
-          `[Agent] Carousel → index ${targetIndex} (${products[targetIndex]?.name})`,
-        );
-        return `Carousel moved to index ${targetIndex}: ${products[targetIndex]?.name}`;
-      },
-
-      // New tool 2: Enrich main view + optional short TTS (called by agent OR manually by us)
-      product_desc_of_main_view: async (parameters) => {
-        console.log("🗣️ product_desc_of_main_view called with:", parameters);
-        const desc = parameters?.product_desc;
-        if (!desc?.product_id) return "Missing product_desc";
-        // Update subtitle bar and trigger price highlight
-        const label = `${desc.name || ""} — ₹${Number(desc.price || 0).toLocaleString("en-IN")}`;
-        setAgentSubtitle(label);
-        if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
-        subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 5000);
-        setHighlightPrice(true);
-        if (priceTimerRef.current) clearTimeout(priceTimerRef.current);
-        priceTimerRef.current = setTimeout(
-          () => setHighlightPrice(false),
-          2500,
-        );
-        console.log(`[product_desc] UI updated for: ${desc.name}`);
-        return `Main view enriched for ${desc.product_id}`;
-      },
-    },
   });
 
-  const { sendContextualUpdate, sendUserMessage } = conversation; // destructuring of hooks , do rest of the others like this afterwards
+  // --- Client tools via v1.0 useConversationClientTool (always-fresh closures) ---
+  useConversationClientTool("update_products", (parameters) => {
+    console.log("Update tool called : ", parameters);
+    const products = Array.isArray(parameters?.products)
+      ? parameters.products
+      : [];
+
+    setLatestProducts(products);
+    latestProductsRef.current = products;
+    setActiveView("PRODUCTS");
+    setActiveIndex(0);
+    setAgentSubtitle(`Found ${products.length} products for you`);
+    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+    subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 3000);
+    return "UI updated successfully";
+  });
+
+  useConversationClientTool("update_carousel_main_view", (parameters) => {
+    console.log("update_carousel_main_view called with:", parameters);
+
+    const products = latestProductsRef.current;
+    let targetIndex = -1;
+    if (typeof parameters?.index === "number") {
+      targetIndex = parameters.index;
+    } else if (parameters?.product_id) {
+      targetIndex = products.findIndex(
+        (p) => p.id === parameters.product_id,
+      );
+    }
+
+    if (targetIndex < 0 || targetIndex >= products.length) {
+      return `Invalid index ${targetIndex}. Products available: 0-${products.length - 1}.`;
+    }
+    isAgentTriggeredRef.current = true;
+    setActiveIndex(targetIndex);
+    console.log(
+      `[Agent] Carousel -> index ${targetIndex} (${products[targetIndex]?.name})`,
+    );
+    return `Carousel moved to index ${targetIndex}: ${products[targetIndex]?.name}`;
+  });
+
+  useConversationClientTool("product_desc_of_main_view", (parameters) => {
+    console.log("product_desc_of_main_view called with:", parameters);
+    const desc = parameters?.product_desc;
+    if (!desc?.product_id) return "Missing product_desc";
+    const label = `${desc.name || ""} - $${Number(desc.price || 0).toLocaleString("en-US")}`;
+    setAgentSubtitle(label);
+    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+    subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 5000);
+    setHighlightPrice(true);
+    if (priceTimerRef.current) clearTimeout(priceTimerRef.current);
+    priceTimerRef.current = setTimeout(
+      () => setHighlightPrice(false),
+      2500,
+    );
+    console.log(`[product_desc] UI updated for: ${desc.name}`);
+    return `Main view enriched for ${desc.product_id}`;
+  });
+
+  const { sendContextualUpdate, sendUserMessage } = conversation;
 
   const visualState =
     conversation.status === "connected"
@@ -331,25 +322,22 @@ function AvatarInner({
     isAgentTriggeredRef.current = false;
   }, [safeIndex]); // ← activeIndex ONLY — prevents duplicate fires
 
-  const handleInteraction = async () => {
+  const handleInteraction = () => {
     if (isSessionTransitioningRef.current) return;
     if (conversation.status === "connecting") return;
-    try {
-      isSessionTransitioningRef.current = true;
-      if (conversation.status === "connected") {
-        await conversation.endSession();
-      } else if (
-        conversation.status === "disconnected" ||
-        conversation.status === "error"
-      ) {
-        await conversation.startSession({ agentId, connectionType: "webrtc" });
-      }
-    } catch (error) {
-      console.error("Failed interaction:", error);
-      setAgentSubtitle("");
-    } finally {
-      isSessionTransitioningRef.current = false;
+    isSessionTransitioningRef.current = true;
+    if (conversation.status === "connected") {
+      conversation.endSession();
+    } else if (
+      conversation.status === "disconnected" ||
+      conversation.status === "error"
+    ) {
+      conversation.startSession({ agentId, connectionType: "websocket" });
     }
+    // Reset transition flag after a short delay (v1.0 startSession is sync)
+    setTimeout(() => {
+      isSessionTransitioningRef.current = false;
+    }, 500);
   };
 
   return (
@@ -378,8 +366,9 @@ function AvatarInner({
                       alt={latestProducts[safeIndex].name}
                       className="w-full h-full object-cover"
                       onError={(e) => {
-                        if (e.target.src !== product.image_url && product.image_url) {
-                          e.target.src = product.image_url;
+                        const currentProduct = latestProducts[safeIndex];
+                        if (currentProduct && e.target.src !== currentProduct.image_url && currentProduct.image_url) {
+                          e.target.src = currentProduct.image_url;
                         } else {
                           e.target.src = 'https://placehold.co/400x400?text=No+Image';
                         }
@@ -437,8 +426,8 @@ function AvatarInner({
                         alt={p.name}
                         className="w-full h-full object-cover"
                         onError={(e) => {
-                          if (e.target.src !== product.image_url && product.image_url) {
-                            e.target.src = product.image_url;
+                          if (p && e.target.src !== p.image_url && p.image_url) {
+                            e.target.src = p.image_url;
                           } else {
                             e.target.src = 'https://placehold.co/400x400?text=No+Image';
                           }

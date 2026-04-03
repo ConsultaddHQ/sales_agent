@@ -52,6 +52,54 @@
 
 ---
 
+## 2026-04-03: Adapter Pattern for Non-Shopify Store Onboarding
+
+- **Decision:** Use an adapter module (`threadless_adapter.py`) that normalizes store-specific scraper output to Shopify-compatible dicts, rather than modifying `build_product_rows()` or creating a parallel pipeline.
+- **Context:** The Threadless scraper returns different field names and formats (e.g., `name` vs `title`, price as `"$24.99"` string vs variant object, `/designs/` vs `/products/` URLs). The existing onboarding pipeline functions (`build_product_rows`, `store_products_in_supabase`, `create_agent_for_store`) are store-agnostic at the data level.
+- **Rationale:** Normalizing at the adapter layer means zero changes to existing pipeline functions. A new endpoint (`POST /onboard-threadless`) keeps Shopify and Threadless flows independently testable. If a 3rd store type is added, extract shared pipeline into `pipeline.py`.
+- **Alternatives considered:** Modifying `build_product_rows()` to accept multiple formats; creating a completely separate pipeline; extracting a shared `pipeline.py` module immediately.
+- **Consequences:**
+  - Each non-Shopify store type needs an adapter module and a new endpoint
+  - `_original_product_url` field preserves the real URL when Shopify's `/products/{handle}` pattern doesn't apply
+  - Demo page generation uses Playwright (not `requests.get`) to bypass Cloudflare on non-Shopify stores
+  - All existing scripts and HTML comments are stripped from demo pages to prevent browser parsing issues
+- **Status:** Active
+- **Agent/Author:** Claude Code
+
+---
+
+## 2026-04-03: ElevenLabs React SDK v1.0 Migration
+
+- **Decision:** Upgrade `@elevenlabs/react` from v0.14.x to v1.0.1 and use WebSocket connection type.
+- **Context:** ElevenLabs deprecated the LiveKit `/rtc/v1` WebRTC endpoint. The old SDK version couldn't connect to their servers. The new SDK v1.0 has breaking API changes.
+- **Rationale:** Required upgrade to maintain ElevenLabs voice agent functionality.
+- **Alternatives considered:** Staying on v0.14.x (broken), downgrading livekit-client (no control over bundled version).
+- **Consequences:**
+  - `<ConversationProvider>` wrapper required around all conversation hooks
+  - `clientTools` moved from `useConversation` options to individual `useConversationClientTool()` hooks (auto-register/unregister, always-fresh closures)
+  - `startSession()` is now synchronous (returns void, errors go to `onError` callback)
+  - `connectionType: "websocket"` must be set explicitly — default WebRTC path fails because installed `livekit-client@2.18.1` lacks ElevenLabs' RTC server patch
+  - Widget must be served as raw built IIFE (`/widget/widget.js` from onboarding service), NOT through Vite dev server (which injects React Fast Refresh globals that break on external pages)
+- **Status:** Active
+- **Agent/Author:** Claude Code
+
+---
+
+## 2026-04-03: Widget Served from Onboarding Service, Not Vite Dev Server
+
+- **Decision:** Demo pages reference `http://localhost:8005/widget/widget.js` (pre-built IIFE served by onboarding service) instead of `http://localhost:5173/dist/widget.js` (Vite dev server).
+- **Context:** Vite dev server injects React Fast Refresh globals (`$RefreshSig$`, `$RefreshReg$`) into every JS file it serves. These globals only exist on pages loaded through Vite itself (port 5173). Demo pages served from port 8005 don't have these globals, causing `ReferenceError` and the entire widget IIFE dying silently.
+- **Rationale:** The onboarding service already mounts `www.teampop/frontend/dist/` at `/widget/`. Using this path serves the raw built file without Vite transformations.
+- **Alternatives considered:** Running Vite in preview mode, disabling Fast Refresh in Vite config.
+- **Consequences:**
+  - `WIDGET_SCRIPT_URL` env var must point to `http://localhost:8005/widget/widget.js`
+  - `npm run build` must be run after any widget code changes before testing demo pages
+  - Vite dev server (port 5173) is only needed for widget development with HMR, not for demo page testing
+- **Status:** Active
+- **Agent/Author:** Claude Code
+
+---
+
 ## 2026-03: Shadow DOM for Widget Isolation
 
 - **Decision:** The embeddable widget uses Shadow DOM via a `<team-pop-agent>` custom element.

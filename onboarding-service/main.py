@@ -36,6 +36,11 @@ from bs4 import BeautifulSoup
 from shopify_validator import validate_shopify_store
 from error_codes import ErrorCodes, get_error_response, success_response
 from elevenlabs_agent import create_agent_for_store
+from threadless_adapter import (
+    scrape_threadless_store,
+    extract_threadless_store_context,
+    generate_threadless_test_page,
+)
 
 # Setup logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -321,8 +326,9 @@ def build_product_rows(
             if local_image_path:
                 db_image_url = f"{image_server_url}/images/{store_id}/{local_image_path}"
             
-            # Product URL
-            product_url = f"https://{domain}/products/{handle}"
+            # Product URL — use original URL if provided (e.g. Threadless /designs/ path),
+            # otherwise fall back to Shopify /products/ format
+            product_url = product.get("_original_product_url") or f"https://{domain}/products/{handle}"
             
             # Create embedding
             text_to_embed = f"{name} {description}"
@@ -692,12 +698,163 @@ def onboard(req: OnboardRequest) -> Dict[str, Any]:
     })
 
 
+class ThreadlessOnboardRequest(BaseModel):
+    url: str = Field(
+        default="https://nurdluv.threadless.com",
+        examples=["https://nurdluv.threadless.com"],
+    )
+
+
+@app.post("/onboard-threadless")
+def onboard_threadless(req: ThreadlessOnboardRequest) -> Dict[str, Any]:
+    """
+    Onboarding flow for Threadless artist stores:
+    1. Validate URL
+    2. Scrape products via ThreadlessScraper
+    3. Process products (images + embeddings)
+    4. Store in Supabase
+    5. Create ElevenLabs agent
+    6. Generate test page
+    7. Generate widget snippet
+
+    Returns same shape as /onboard.
+    """
+    logger.info(f"\n{'='*60}")
+    logger.info(f"🚀 THREADLESS ONBOARDING STARTED: {req.url}")
+    logger.info(f"{'='*60}\n")
+
+    # STEP 1: Validate URL
+    logger.info("📋 Step 1/7: Validating Threadless store URL...")
+    clean_url = req.url.strip().rstrip("/")
+    if not clean_url.startswith("http"):
+        clean_url = f"https://{clean_url}"
+
+    parsed = urlparse(clean_url)
+    domain = parsed.netloc
+
+    if "threadless.com" not in domain:
+        raise HTTPException(
+            status_code=400,
+            detail=get_error_response(
+                ErrorCodes.INVALID_URL,
+                "URL must be a threadless.com store"
+            ),
+        )
+    logger.info(f"✅ Validation passed: {domain}")
+
+    # Generate store_id
+    store_id = str(uuid.uuid4())
+    logger.info(f"🆔 Store ID: {store_id}")
+
+    # STEP 2: Scrape Products
+    logger.info(f"\n📦 Step 2/7: Scraping Threadless products (max {MAX_PRODUCTS})...")
+    try:
+        raw_products = scrape_threadless_store(max_products=MAX_PRODUCTS)
+    except Exception as e:
+        logger.error(f"❌ Scraping failed: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail=get_error_response(ErrorCodes.UNKNOWN_ERROR, str(e)),
+        )
+
+    if not raw_products:
+        raise HTTPException(
+            status_code=400,
+            detail=get_error_response(ErrorCodes.NO_PRODUCTS),
+        )
+
+    # STEP 3: Process Products & Download Images
+    logger.info(f"\n🖼️  Step 3/7: Processing products and downloading images...")
+    images_root = Path(os.getenv("STORE_IMAGES_PATH", "./images"))
+    store_images_dir = images_root / store_id
+
+    try:
+        product_rows = build_product_rows(domain, store_id, raw_products, store_images_dir)
+    except Exception as e:
+        logger.error(f"❌ Product processing failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=get_error_response(ErrorCodes.EMBEDDING_ERROR, str(e)),
+        )
+
+    # STEP 4: Store in Supabase
+    logger.info(f"\n💾 Step 4/7: Storing products in database...")
+    try:
+        store_products_in_supabase(product_rows)
+    except Exception as e:
+        logger.error(f"❌ Database storage failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=get_error_response(ErrorCodes.SUPABASE_ERROR, str(e)),
+        )
+
+    # STEP 5: Create ElevenLabs Agent
+    logger.info(f"\n🤖 Step 5/7: Creating ElevenLabs conversational agent...")
+    try:
+        store_context = extract_threadless_store_context(raw_products, domain)
+        search_api_url = os.getenv("SEARCH_API_URL", "http://localhost:8006")
+
+        agent_result = create_agent_for_store(
+            store_id=store_id,
+            store_context=store_context,
+            search_api_url=search_api_url,
+            tags=["teampop", "threadless", store_id],
+        )
+
+        agent_id = agent_result["agent_id"]
+        logger.info(f"✅ Agent created: {agent_id}")
+
+    except Exception as e:
+        logger.error(f"❌ Agent creation failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=get_error_response(ErrorCodes.ELEVENLABS_ERROR, str(e)),
+        )
+
+    # STEP 6: Generate Test Page (Playwright-based for Cloudflare bypass)
+    logger.info(f"\n🎨 Step 6/7: Generating static test page via Playwright...")
+    try:
+        filename = generate_threadless_test_page(clean_url, store_id, agent_id)
+        test_url = f"/demo/{filename}"
+    except Exception as e:
+        logger.warning(f"⚠️ Test page generation failed: {e}")
+        test_url = f"/demo/test_{store_id[:8]}.html"
+
+    # STEP 7: Generate Widget Snippet
+    logger.info(f"\n📝 Step 7/7: Generating widget snippet...")
+    widget_script_url = os.getenv("WIDGET_SCRIPT_URL", "http://localhost:5173/src/main.jsx")
+
+    widget_snippet = f"""<!-- TeamPop Voice Widget -->
+    <script>
+    window.__TEAM_POP_AGENT_ID__ = "{agent_id}";
+    </script>
+    <script src="{widget_script_url}"></script>
+    <team-pop-agent></team-pop-agent>"""
+
+    # SUCCESS
+    logger.info(f"\n{'='*60}")
+    logger.info(f"✅ THREADLESS ONBOARDING COMPLETE!")
+    logger.info(f"Store ID: {store_id}")
+    logger.info(f"Agent ID: {agent_id}")
+    logger.info(f"Products: {len(product_rows)}")
+    logger.info(f"{'='*60}\n")
+
+    return success_response({
+        "store_id": store_id,
+        "agent_id": agent_id,
+        "test_url": test_url,
+        "widget_snippet": widget_snippet,
+        "products_count": len(product_rows),
+        "store_url": clean_url,
+    })
+
+
 if __name__ == "__main__":
     import uvicorn
-    
+
     port = int(os.getenv("PORT", 8005))
     logger.info(f"🚀 Starting Onboarding Service on port {port}")
-    
+
     uvicorn.run(
         app,
         host="0.0.0.0",
