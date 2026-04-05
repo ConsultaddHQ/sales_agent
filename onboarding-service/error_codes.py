@@ -46,6 +46,9 @@ class ErrorCodes:
     IMAGE_DOWNLOAD_ERROR = "image_download_error"
     ELEVENLABS_ERROR = "agent_creation_error"
     
+    # Scraping errors
+    SCRAPING_BLOCKED = "scraping_blocked"
+
     # Generic
     UNKNOWN_ERROR = "unknown_error"
 
@@ -142,6 +145,12 @@ def get_error_response(
             "help": "There was an issue with the ElevenLabs API. Please retry or contact support."
         },
         
+        # Scraping errors
+        ErrorCodes.SCRAPING_BLOCKED: {
+            "message": "Unable to access the product catalog. The site's bot protection may be blocking our scraper.",
+            "help": "This can happen with heavily protected enterprise sites. Please try again later or contact support."
+        },
+
         # Generic
         ErrorCodes.UNKNOWN_ERROR: {
             "message": "An unexpected error occurred. Please try again.",
