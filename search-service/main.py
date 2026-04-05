@@ -72,6 +72,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ---------------------------------------------------------------------------
+# Request logging middleware — logs every incoming request for debugging
+# ---------------------------------------------------------------------------
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+import json as _json
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Logs method, path, status, and body for every request.
+
+    This is the FIRST thing to check when debugging 400/422 errors —
+    it shows you exactly what payload the caller sent.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        body = b""
+        if request.method in ("POST", "PUT", "PATCH"):
+            body = await request.body()
+
+        # Log the incoming request
+        body_preview = body[:500].decode("utf-8", errors="replace") if body else "<empty>"
+        logger.info(
+            f"➡️  {request.method} {request.url.path} "
+            f"| client={request.client.host if request.client else '?'} "
+            f"| body={body_preview}"
+        )
+
+        response = await call_next(request)
+
+        # Log the response status
+        level = logging.WARNING if response.status_code >= 400 else logging.INFO
+        logger.log(
+            level,
+            f"⬅️  {request.method} {request.url.path} → {response.status_code}"
+        )
+        return response
+
+
+app.add_middleware(RequestLoggingMiddleware)
+
 _supabase: Optional[Client] = None
 _openrouter_client: Optional[OpenAI] = None
 _embedder: Optional[SentenceTransformer] = None
@@ -313,17 +355,28 @@ def health() -> Dict[str, str]:
 
 @app.post("/search", response_model=SearchResponse)
 def search(req: SearchRequest) -> SearchResponse:
+    # --- Validation with clear diagnostic logging ---
     if not req.query.strip():
+        logger.warning(
+            f"🚫 400: Empty query received | store_id={req.store_id!r} | query={req.query!r}"
+        )
         raise HTTPException(status_code=400, detail="query must not be empty")
-    
-    
+
     # Validate store_id early
     try:
         uuid_obj = uuid.UUID(req.store_id)  # raises ValueError if invalid
     except ValueError:
+        hint = ""
+        if len(req.store_id) == 35:
+            hint = " (35 chars — looks like a truncated UUID, missing 1 character. Check the agent webhook config.)"
+        elif len(req.store_id) < 36:
+            hint = f" ({len(req.store_id)} chars — too short, expected 36.)"
+        logger.warning(
+            f"🚫 400: Invalid store_id | store_id={req.store_id!r} ({len(req.store_id)} chars) | query={req.query!r}"
+        )
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid store_id format: '{req.store_id}'. Must be a valid UUID (36 characters)."
+            detail=f"Invalid store_id format: '{req.store_id}'. Must be a valid UUID (36 characters).{hint}"
         )
     
     sb = get_supabase()

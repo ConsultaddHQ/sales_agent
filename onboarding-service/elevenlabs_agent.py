@@ -5,6 +5,7 @@ Automatically creates and configures agents with store-specific context
 
 import os
 import logging
+import uuid
 import requests
 from typing import Dict, Optional, List
 
@@ -140,41 +141,59 @@ class ElevenLabsAgentCreator:
     
     def _get_tool_config(self, search_api_url: str, store_id: str) -> List[Dict]:
         """
-        Configure server-side tools for the agent
-        
+        Configure tools for the agent using the current ElevenLabs API format.
+
         Args:
             search_api_url: URL of the search service API
             store_id: Store ID to pass to tools
-        
+
         Returns:
             List of tool configurations
         """
         return [
+            # --- Webhook tool: search_products ---
             {
                 "type": "webhook",
                 "name": "search_products",
-                "description": "Search for products in the store based on user query. Always use this when user asks for products.",
-                "url": f"{search_api_url}/search",
-                "method": "POST",
-                "body": {
-                    "store_id": store_id,
-                    "query": "{{query}}"
-                },
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Natural language search query (expanded with context, NOT raw user words)"
-                        }
+                "description": "Searches for products in the store. Use this when the user asks about products, items, recommendations, or searching the catalog.",
+                "response_timeout_secs": 20,
+                "execution_mode": "immediate",
+                "api_schema": {
+                    "url": f"{search_api_url}/search",
+                    "method": "POST",
+                    "path_params_schema": {},
+                    "query_params_schema": {
+                        "properties": {},
+                        "required": []
                     },
-                    "required": ["query"]
+                    "request_body_schema": {
+                        "type": "object",
+                        "properties": {
+                            "store_id": {
+                                "type": "string",
+                                "description": "The ID of the store to search in.",
+                                "value_type": "constant",
+                                "constant_value": store_id,
+                            },
+                            "query": {
+                                "type": "string",
+                                "description": "The user's search query — product name, description, category, or natural language request.",
+                                "value_type": "llm_prompt",
+                            }
+                        },
+                        "required": ["store_id", "query"]
+                    },
+                    "request_headers": {},
+                    "content_type": "application/json"
                 }
             },
+            # --- Client tool: update_products ---
             {
-                "type": "client_tool",
+                "type": "client",
                 "name": "update_products",
                 "description": "Update the product carousel with new products. Call immediately after search_products.",
+                "expects_response": False,
+                "execution_mode": "immediate",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -186,10 +205,13 @@ class ElevenLabsAgentCreator:
                     "required": ["products"]
                 }
             },
+            # --- Client tool: update_carousel_main_view ---
             {
-                "type": "client_tool",
+                "type": "client",
                 "name": "update_carousel_main_view",
                 "description": "Focus on a specific product in the carousel by index",
+                "expects_response": False,
+                "execution_mode": "immediate",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -201,10 +223,13 @@ class ElevenLabsAgentCreator:
                     "required": ["index"]
                 }
             },
+            # --- Client tool: product_desc_of_main_view ---
             {
-                "type": "client_tool",
+                "type": "client",
                 "name": "product_desc_of_main_view",
-                "description": "Get description of currently focused product. NEVER call this - frontend calls it automatically.",
+                "description": "Get description of currently focused product. NEVER call this — frontend calls it automatically.",
+                "expects_response": True,
+                "execution_mode": "immediate",
                 "parameters": {
                     "type": "object",
                     "properties": {}
@@ -242,34 +267,55 @@ class ElevenLabsAgentCreator:
         Raises:
             Exception if agent creation fails
         """
+        # Validate store_id is a proper UUID before baking it into the webhook
+        try:
+            uuid.UUID(store_id)
+        except ValueError:
+            raise ValueError(
+                f"store_id must be a valid UUID (36 chars), got: '{store_id}' ({len(store_id)} chars). "
+                f"A truncated UUID will cause 400 errors on every search request."
+            )
+
         # Get search API URL
         api_url = search_api_url or os.getenv('SEARCH_API_URL', 'http://localhost:8006')
-        
+
         # Build system prompt
         system_prompt = self._build_system_prompt(store_id, store_context)
         
         # Get tools configuration
         tools = self._get_tool_config(api_url, store_id)
         
-        # Build agent configuration
+        # Build agent configuration (current ElevenLabs API format)
+        resolved_voice_id = (
+            voice_id
+            or os.getenv('ELEVENLABS_VOICE_ID')
+            or "EXAVITQu4vr4xnSDxMaL"  # Sarah — ElevenLabs public default voice
+        )
+
         agent_config = {
-            "conversation_config": {
+            "conversational_config": {
                 "agent": {
                     "prompt": {
-                        "prompt": system_prompt
+                        "prompt": system_prompt,
+                        "temperature": 0.7,
+                        "tools": tools
                     },
                     "first_message": "Hey there! Welcome to the store. I'm here to help you find exactly what you're looking for. What can I show you today?",
                     "language": "en"
                 },
                 "tts": {
-                    "voice_id": (
-                        voice_id
-                        or os.getenv('ELEVENLABS_VOICE_ID')
-                        or "EXAVITQu4vr4xnSDxMaL"  # Sarah — ElevenLabs public default voice
-                    )
-                    # Uses ElevenLabs default voice if not specified
+                    "voice_id": resolved_voice_id,
+                    "model_id": os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2"),
+                    "stability": 0.5,
+                    "similarity_boost": 0.8
                 },
-                "tools": tools
+                "conversation": {
+                    "max_duration_seconds": 600,
+                    "client_events": ["audio", "user_transcript"]
+                },
+                "turn": {
+                    "turn_timeout": 7
+                }
             },
             "name": agent_name or f"Agent for Store {store_id[:8]}",
             "tags": tags or ["teampop", "shopify", store_id]
