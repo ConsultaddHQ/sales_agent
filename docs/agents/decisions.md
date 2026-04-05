@@ -52,6 +52,52 @@
 
 ---
 
+## 2026-04-05: API-Based Scraping for Supermicro (Internal JSON API Discovery)
+
+- **Decision:** Scrape Supermicro's GPU catalog via their internal JSON API (`/en/structuredbapi/ps2/system/gpu/all`) instead of parsing HTML.
+- **Context:** Supermicro's product listing page uses a React product selector that loads data dynamically. The static HTML only contains a loading spinner. Basic HTTP returns 403 (bot protection). Playwright bypasses bot protection and can call the API via `page.evaluate(fetch(...))`.
+- **Rationale:** The JSON API returns all 82 products with structured fields (SKU, form factor, GPU count, CPU type, etc.) in a single call. This is more reliable, faster, and provides richer data than HTML scraping with fragile CSS selectors.
+- **Alternatives considered:** HTML scraping with Playwright + BeautifulSoup (fragile selectors, JS-rendered content), sitemap discovery (sitemap also returns 403).
+- **Consequences:**
+  - Phase 1 (API) gives ~80% of data; Phase 2 (detail pages) enriches with remaining 20% (core count, memory capacity, key features)
+  - If Supermicro changes their internal API, the scraper breaks — but it will fail loudly (no data returned) rather than silently (wrong selectors returning partial data)
+  - Playwright is required even for the API call because session cookies from the initial page visit are needed to bypass bot protection
+- **Status:** Active
+- **Agent/Author:** Claude Code
+
+---
+
+## 2026-04-05: ElevenLabs Webhook store_id Must Be Constant, Not LLM-Generated
+
+- **Decision:** Set `store_id` as `value_type: "constant"` in ElevenLabs webhook tool config, not `"llm_prompt"`.
+- **Context:** The ElevenLabs agent was configured with `store_id` as an `llm_prompt` field, meaning the LLM had to read the 36-character UUID from the system prompt and type it into every tool call. The LLM consistently truncated the UUID (dropped 1 character), causing 400 errors from the search service.
+- **Rationale:** UUIDs are deterministic values that never change per agent. The LLM has no business generating them. Setting `value_type: "constant"` hardcodes the value at agent creation time — the LLM never touches it.
+- **Alternatives considered:** Adding the store_id to enum values (still LLM-selected), putting it in dynamic variables, adding retry logic in search service for near-miss UUIDs.
+- **Consequences:**
+  - `store_id` is frozen at agent creation time — correct by construction
+  - If store_id needs to change, the agent must be re-created
+  - Added UUID validation in `elevenlabs_agent.py` to catch truncated IDs at creation time
+  - Search service now logs truncated UUID detection in error messages
+- **Status:** Active
+- **Agent/Author:** Claude Code
+
+---
+
+## 2026-04-05: Flatten Supermicro Specs into Description Field (No DB Schema Change)
+
+- **Decision:** Store all Supermicro-specific specs (form factor, GPU count, CPU type, memory capacity, PCIe config, etc.) in the existing `description` text field rather than adding new columns to the `products` table.
+- **Context:** Supermicro products have ~20 spec fields not present in consumer stores (form factor, DIMM slots, cooling type, TDP, etc.). Adding columns would require a Supabase migration and search service changes.
+- **Rationale:** The embedding model (`all-MiniLM-L6-v2`) generates vectors from the description text. A rich natural-language description containing all specs enables semantic search for queries like "4U server with H100 GPUs" without any DB schema changes. The existing pipeline (`build_product_rows` → `store_products_in_supabase`) works unchanged.
+- **Alternatives considered:** Add spec columns (requires migration), add a `specs JSONB` column (one migration but enables exact filtering).
+- **Consequences:**
+  - No exact-match filtering (e.g., `WHERE form_factor = '4U'`) — all filtering is via semantic search
+  - Description text is ~1400-1700 chars per product — well within embedding model limits
+  - If exact filtering is needed later, a JSONB column can be added alongside the description
+- **Status:** Active
+- **Agent/Author:** Claude Code
+
+---
+
 ## 2026-04-03: Adapter Pattern for Non-Shopify Store Onboarding
 
 - **Decision:** Use an adapter module (`threadless_adapter.py`) that normalizes store-specific scraper output to Shopify-compatible dicts, rather than modifying `build_product_rows()` or creating a parallel pipeline.

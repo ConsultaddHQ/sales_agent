@@ -47,9 +47,24 @@ cp .env.example .env  # fill in your values
 uvicorn main:app --port 8006 --reload
 ```
 
+## Debugging
+
+The service includes a `RequestLoggingMiddleware` that logs every incoming request:
+
+```
+➡️  POST /search | client=34.59.11.47 | body={"store_id": "...", "query": "..."}
+🚫 400: Invalid store_id | store_id='...' (35 chars) | query='...'
+⬅️  POST /search → 400
+```
+
+Common 400 errors:
+- **Invalid store_id**: Not a valid UUID (36 chars). Often caused by ElevenLabs LLM truncating the UUID — fix by setting `store_id` as `value_type: "constant"` in the webhook tool config.
+- **Empty query**: Query string is empty or whitespace-only.
+
 ## Notes
 
 - The service assumes the Supabase table has been populated by onboarding-service.
 - Response shape may change as features (price filters, pagination) are added.
 - For production use, containerize with Docker and deploy behind a proper API
   gateway or Kubernetes.
+- The ElevenLabs agent webhook calls this service via ngrok — the tunnel URL changes on restart and the agent must be re-created.

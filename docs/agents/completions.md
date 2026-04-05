@@ -26,6 +26,40 @@ Copy this block for meaningful completed work:
 
 ---
 
+## 2026-04-05 — N/A — Supermicro GPU Server Onboarding Pipeline
+
+- **Status:** Completed
+- **Owner:** Claude Code
+- **Summary:** Built end-to-end onboarding pipeline for Supermicro's enterprise GPU server catalog (82 products). Includes two-phase scraper (JSON API + detail page enrichment), adapter, API endpoint, and fixes to ElevenLabs agent config and search service debugging.
+- **Why:** Supermicro is the first B2B enterprise catalog (no prices, hardware specs instead of fashion). Required a different scraping strategy (internal JSON API discovery) and exposed bugs in the ElevenLabs tool config.
+- **Files:**
+  - `universal-scraper/scripts/supermicro_scraper.py` — **NEW**: Two-phase scraper. Phase 1 fetches 82 products from Supermicro's internal JSON API (`/en/structuredbapi/ps2/system/gpu/all`). Phase 2 enriches each product from its detail page (core count, memory capacity, PCIe config, key features, cooling, dimensions, weight).
+  - `onboarding-service/supermicro_adapter.py` — **NEW**: Adapter normalizing scraper output to Shopify-compatible format, filesystem-safe handle sanitization for SKUs with spaces/`+`/parentheses, store context builder, test page generator.
+  - `onboarding-service/main.py` — Added `POST /onboard-supermicro` endpoint (7-step pipeline).
+  - `onboarding-service/elevenlabs_agent.py` — Updated to current ElevenLabs API format (`conversational_config`, tools inside `agent.prompt`, `type: "client"` not `"client_tool"`), changed `store_id` from `value_type: "llm_prompt"` to `"constant"`, added UUID validation at creation time.
+  - `onboarding-service/error_codes.py` — Added `SCRAPING_BLOCKED` error code.
+  - `search-service/main.py` — Added `RequestLoggingMiddleware` for debugging 400 errors, improved UUID validation error messages with truncation detection.
+  - `image-service/` — **DELETED**: Duplicate of `image_server.py`.
+- **Tradeoffs:**
+  - All specs flattened into `description` field instead of adding new DB columns — avoids migration, relies on embedding search for filtering
+  - Phase 2 detail page scraping adds ~3-5 min for 82 products but provides richer embeddings (key features, memory capacity, core count)
+  - Handle sanitization replaces `+` with `-plus` and removes parentheses — lossy but URL/filesystem safe
+- **Verification:**
+  - Standalone scraper test: 82 products fetched from API, 3 detail pages enriched successfully with ~1400-1700 char descriptions
+  - ElevenLabs agent created and connected, search webhook called with correct constant store_id
+  - Products found in search results after onboarding
+- **Bugs Found & Fixed:**
+  - **ElevenLabs `store_id` as `llm_prompt`**: The LLM was copying a 36-char UUID from the system prompt and truncating it (dropped one `5`), causing 400 on every search. Fixed by setting `value_type: "constant"`.
+  - **SKU handle sanitization**: Supermicro SKUs like `AS -4124GO-NART+` broke image filenames. Fixed with sanitization.
+  - **Dead ngrok tunnel**: Identified expired tunnel as cause of webhook failures.
+- **Related Decisions:** 2026-04-05 — API-based scraping for Supermicro; Constant store_id in ElevenLabs webhooks
+- **Notes:**
+  - Supermicro's internal API at `/en/structuredbapi/ps2/system/gpu/all` is undocumented — if they change it, the scraper breaks. Fallback: scrape HTML directly.
+  - Basic HTTP returns 403 for supermicro.com — Playwright is required.
+  - B2B catalog has no prices — agent responds with "contact sales for quote".
+
+---
+
 ## 2026-04-03 — N/A — Threadless (NurdLuv) Store Integration with Supabase Pipeline
 
 - **Status:** Completed

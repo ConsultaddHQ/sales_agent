@@ -2,7 +2,7 @@
 
 **Project:** sales-voice-agent (Team Pop)  
 **Status:** Early alpha / lab prototype  
-**Purpose:** Voice-first AI shopping assistant for Shopify storefronts and Threadless artist shops.
+**Purpose:** Voice-first AI shopping assistant for Shopify storefronts, Threadless artist shops, and Supermicro enterprise catalogs.
 
 This is the **canonical shared instruction file** for all coding agents working in this repo.
 
@@ -25,11 +25,11 @@ This is the **canonical shared instruction file** for all coding agents working 
 
 ## Repo Snapshot
 
-- `onboarding-service/`: FastAPI service for store validation, crawling, embeddings, agent creation (Shopify + Threadless)
+- `onboarding-service/`: FastAPI service for store validation, crawling, embeddings, agent creation (Shopify + Threadless + Supermicro)
 - `onboarding-service/threadless_adapter.py`: Adapter bridging Threadless scraper into the onboarding pipeline
-- `search-service/`: FastAPI hybrid search API
+- `onboarding-service/supermicro_adapter.py`: Adapter bridging Supermicro scraper into the onboarding pipeline
+- `search-service/`: FastAPI hybrid search API (includes request logging middleware)
 - `image_server.py`: primary image server used by `start_services.sh`
-- `image-service/`: near-duplicate image service
 - `www.teampop/dashboard/`: React onboarding dashboard
 - `www.teampop/frontend/`: embeddable React widget in Shadow DOM
 - `universal-scraper/`: scraping workflow and fallback strategies
@@ -64,6 +64,11 @@ curl -X POST http://localhost:8005/onboard-threadless \
   -H "Content-Type: application/json" \
   -d '{"url": "https://nurdluv.threadless.com"}'
 
+# Supermicro GPU onboarding (enterprise catalog)
+curl -X POST http://localhost:8005/onboard-supermicro \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.supermicro.com/en/products/gpu"}'
+
 # ngrok tunnel for search webhook (required for ElevenLabs agent)
 ngrok http 8006
 ```
@@ -83,6 +88,7 @@ ngrok http 8006
 - ElevenLabs agent tool names must match exactly across: dashboard config, system prompt, and widget code.
 - Never commit `.env` files or secrets.
 - User-facing onboarding errors must go through `error_codes.py`.
+- ElevenLabs webhook `store_id` must use `value_type: "constant"`, never `"llm_prompt"` (LLMs truncate UUIDs).
 
 For the full non-negotiable rules, read `docs/agents/constraints.md`.
 
@@ -149,7 +155,7 @@ For the full non-negotiable rules, read `docs/agents/constraints.md`.
 | Widget | `www.teampop/frontend/` | Shadow DOM custom element |
 | Dashboard | `www.teampop/dashboard/` | Merchant onboarding UI |
 | Scraper | `universal-scraper/` | HTTP -> Playwright -> LLM fallback chain |
-| Images | `image_server.py`, `image-service/` | Primary server + duplicate implementation |
+| Images | `image_server.py` | Primary image server (image-service/ removed) |
 | Database | Supabase | `products` table + `hybrid_search_products` RPC |
 
 ---

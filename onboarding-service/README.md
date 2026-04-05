@@ -27,6 +27,7 @@ Avatar Widget responses.
 |-----------|----------|---------|-------|
 | Shopify | `POST /onboard` | HTTP fetch `/products.json` | Standard flow |
 | Threadless | `POST /onboard-threadless` | Playwright + sitemap XML | Uses `threadless_adapter.py` to normalize data |
+| Supermicro | `POST /onboard-supermicro` | Playwright + internal JSON API + detail pages | Uses `supermicro_adapter.py`; B2B catalog, no prices |
 
 ## Setup & development
 
@@ -63,6 +64,7 @@ Endpoints:
 - `GET /health` – simple JSON `{"status":"ok"}`.
 - `POST /onboard` – Shopify stores. Body: `{"url":"example.myshopify.com"}`.
 - `POST /onboard-threadless` – Threadless artist shops. Body: `{"url":"https://nurdluv.threadless.com"}`.
+- `POST /onboard-supermicro` – Supermicro GPU catalog. Body: `{"url":"https://www.supermicro.com/en/products/gpu"}`.
 
 Both endpoints return:
 ```json
@@ -91,15 +93,21 @@ curl -X POST http://localhost:8005/onboard \
 curl -X POST http://localhost:8005/onboard-threadless \
   -H "Content-Type: application/json" \
   -d '{"url":"https://nurdluv.threadless.com"}'
+
+# Supermicro GPU catalog
+curl -X POST http://localhost:8005/onboard-supermicro \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://www.supermicro.com/en/products/gpu"}'
 ```
 
 ### Key files
 
 | File | Purpose |
 |------|---------|
-| `main.py` | FastAPI app, `/onboard` and `/onboard-threadless` endpoints |
+| `main.py` | FastAPI app, `/onboard`, `/onboard-threadless`, and `/onboard-supermicro` endpoints |
 | `threadless_adapter.py` | Normalizes Threadless scraper output to Shopify format, Playwright-based demo page generation |
-| `elevenlabs_agent.py` | ElevenLabs agent creation with store context and tools |
+| `supermicro_adapter.py` | Normalizes Supermicro scraper output to Shopify format, handle sanitization for special chars |
+| `elevenlabs_agent.py` | ElevenLabs agent creation with store context and tools (uses current `conversational_config` API format) |
 | `shopify_validator.py` | Shopify URL validation |
 | `error_codes.py` | Structured error responses |
 
