@@ -1,0 +1,194 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+@layer base {
+  :root {
+    --background: #000000;
+    --foreground: #ededed;
+    --card: #111111;
+    --card-foreground: #ededed;
+    --border: #222222;
+    --border-subtle: #1a1a1a;
+    --muted: #888888;
+    --muted-foreground: #666666;
+    --ring: #ffffff;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--background);
+    color: var(--foreground);
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  * {
+    box-sizing: border-box;
+    border-color: var(--border);
+  }
+}
+
+@layer utilities {
+  /* ── Card ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  /* ── Buttons ── */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #ffffff;
+    color: #000000;
+    font-weight: 500;
+    padding: 12px 28px;
+    border-radius: 8px;
+    transition: opacity 0.15s;
+    cursor: pointer;
+    border: none;
+    font-size: 14px;
+    font-family: var(--font-sans);
+    text-decoration: none;
+  }
+  .btn-primary:hover {
+    opacity: 0.85;
+  }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    color: var(--foreground);
+    font-weight: 400;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    transition: background 0.15s, border-color 0.15s;
+    cursor: pointer;
+    font-size: 14px;
+    font-family: var(--font-sans);
+    text-decoration: none;
+  }
+  .btn-ghost:hover {
+    background: #111111;
+    border-color: #333333;
+  }
+
+  /* ── Inputs ── */
+  .input-field {
+    width: 100%;
+    background: #0a0a0a;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .input-field::placeholder {
+    color: #555555;
+  }
+  .input-field:focus {
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: none;
+  }
+
+  /* ── Glow border hover (from Stitch) ── */
+  .glow-border:hover {
+    border-color: #333333;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.05);
+  }
+
+  /* ── Gradient divider ── */
+  .gradient-divider {
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #333333, transparent);
+  }
+
+  /* ── Voice Orb ── */
+  .orb-container {
+    perspective: 1000px;
+    position: relative;
+  }
+
+  .voice-orb {
+    width: 280px;
+    height: 280px;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle at 35% 35%,
+      #ffffff 0%,
+      #666666 30%,
+      #1a1a1a 70%,
+      #000000 100%
+    );
+    position: relative;
+    box-shadow:
+      0 0 80px rgba(255, 255, 255, 0.1),
+      inset -20px -20px 50px rgba(0, 0, 0, 0.8),
+      inset 20px 20px 50px rgba(255, 255, 255, 0.1);
+    transform-style: preserve-3d;
+    transition: transform 0.1s ease-out;
+  }
+
+  .orb-glow {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 380px;
+    height: 380px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 70%);
+    border-radius: 50%;
+    pointer-events: none;
+    filter: blur(20px);
+  }
+
+  .orb-reflection {
+    position: absolute;
+    top: 15%;
+    left: 15%;
+    width: 40%;
+    height: 40%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 80%);
+    border-radius: 50%;
+    filter: blur(5px);
+    pointer-events: none;
+  }
+
+  .orb-shimmer {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.06) 10%,
+      transparent 20%,
+      transparent 100%
+    );
+    pointer-events: none;
+    mix-blend-mode: screen;
+  }
+
+  .voice-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+}

@@ -68,5 +68,5 @@ Every service directory must have a `README.md` describing purpose, setup, endpo
 ### 13. Never merge to `main` without a Linear ticket reference
 All commits and PRs must reference a `HPF-XXX` Linear ticket. Use `Closes HPF-XXX` in PR descriptions. This is required for traceability across agents and engineers.
 
-### 14. Never make breaking changes to the onboarding API without updating the dashboard
-`POST /onboard` is called directly by the dashboard. Changing its request/response schema without updating `www.teampop/dashboard/src/pages/Onboarding.jsx` will silently break the UI.
+### 14. Never make breaking changes to the onboarding API without updating consumers
+`POST /onboard` is called by external clients. Changing its request/response schema is a breaking change that requires updating all consumers.

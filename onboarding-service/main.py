@@ -21,7 +21,8 @@ from datetime import datetime
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from concurrent.futures import ThreadPoolExecutor
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from PIL import Image
@@ -45,6 +46,12 @@ from supermicro_adapter import (
     scrape_supermicro_store,
     extract_supermicro_store_context,
     generate_supermicro_test_page,
+)
+from notifications import (
+    send_slack_notification,
+    send_client_ack_email,
+    send_admin_notification_email,
+    send_delivery_email,
 )
 
 # Setup logging
@@ -1007,6 +1014,227 @@ def onboard_supermicro(req: SupermicroOnboardRequest) -> Dict[str, Any]:
         "products_count": len(product_rows),
         "store_url": clean_url,
     })
+
+
+# ── Client Acquisition Workflow ──────────────────────────────────────────────
+# New endpoints for the Hyperflex client funnel:
+#   submit-request → admin reviews → process → send delivery email
+
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "changeme")
+_bg_executor = ThreadPoolExecutor(max_workers=4)
+
+
+class SubmitRequestBody(BaseModel):
+    name: str
+    email: str
+    url: str
+
+
+class ProcessRequestBody(BaseModel):
+    scrape_url: str
+    store_type: str = "auto"
+
+
+class UpdateRequestBody(BaseModel):
+    notes: Optional[str] = None
+    calendly_booked: Optional[bool] = None
+
+
+class SendAgentBody(BaseModel):
+    base_url: str
+
+
+def _verify_admin(x_admin_password: str = Header(...)):
+    if x_admin_password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _detect_store_type(url: str) -> str:
+    domain = urlparse(url if url.startswith("http") else f"https://{url}").netloc
+    if "threadless.com" in domain:
+        return "threadless"
+    if "supermicro.com" in domain:
+        return "supermicro"
+    return "shopify"
+
+
+def _run_onboarding_pipeline(request_id: str, scrape_url: str, store_type: str):
+    """Background job: scrape, embed, create agent, generate test page."""
+    sb = get_supabase()
+    try:
+        parsed = urlparse(scrape_url if scrape_url.startswith("http") else f"https://{scrape_url}")
+        domain = parsed.netloc
+        store_id = str(uuid.uuid4())
+
+        if store_type == "auto":
+            store_type = _detect_store_type(scrape_url)
+
+        if store_type == "threadless":
+            raw = scrape_threadless_store()
+            context = extract_threadless_store_context(raw, domain)
+            images_dir = Path(os.getenv("STORE_IMAGES_PATH", "./images")) / store_id
+            rows = build_product_rows(domain, store_id, raw, images_dir)
+            store_products_in_supabase(rows)
+            agent = create_agent_for_store(
+                store_id=store_id, store_context=context,
+                search_api_url=os.getenv("SEARCH_API_URL", "http://localhost:8006"),
+            )
+            filename = generate_threadless_test_page(scrape_url, store_id, agent["agent_id"])
+        elif store_type == "supermicro":
+            raw = scrape_supermicro_store(url=scrape_url)
+            context = extract_supermicro_store_context(raw, domain)
+            images_dir = Path(os.getenv("STORE_IMAGES_PATH", "./images")) / store_id
+            rows = build_product_rows(domain, store_id, raw, images_dir)
+            store_products_in_supabase(rows)
+            agent = create_agent_for_store(
+                store_id=store_id, store_context=context,
+                search_api_url=os.getenv("SEARCH_API_URL", "http://localhost:8006"),
+            )
+            filename = generate_supermicro_test_page(scrape_url, store_id, agent["agent_id"])
+        else:
+            raw = fetch_shopify_products(domain)
+            context = extract_store_context(raw, domain)
+            images_dir = Path(os.getenv("STORE_IMAGES_PATH", "./images")) / store_id
+            rows = build_product_rows(domain, store_id, raw, images_dir)
+            store_products_in_supabase(rows)
+            agent = create_agent_for_store(
+                store_id=store_id, store_context=context,
+                search_api_url=os.getenv("SEARCH_API_URL", "http://localhost:8006"),
+            )
+            filename = generate_static_test_page(scrape_url, store_id, agent["agent_id"])
+
+        sb.table("agent_requests").update({
+            "status": "ready",
+            "agent_id": agent["agent_id"],
+            "test_url": f"/demo/{filename}",
+            "updated_at": datetime.now().isoformat(),
+        }).eq("id", request_id).execute()
+        logger.info(f"Onboarding pipeline complete for request {request_id}")
+
+    except Exception as e:
+        logger.error(f"Onboarding pipeline failed for {request_id}: {e}")
+        sb.table("agent_requests").update({
+            "status": "failed",
+            "error_message": str(e)[:500],
+            "updated_at": datetime.now().isoformat(),
+        }).eq("id", request_id).execute()
+
+
+@app.post("/api/submit-request")
+def submit_request(body: SubmitRequestBody):
+    """Public: client submits interest. Triggers Slack + email notifications."""
+    sb = get_supabase()
+    url = body.url.strip()
+    if not url.startswith("http"):
+        url = f"https://{url}"
+
+    result = sb.table("agent_requests").insert({
+        "name": body.name.strip(),
+        "email": body.email.strip().lower(),
+        "url": url,
+        "status": "pending",
+    }).execute()
+
+    request_id = result.data[0]["id"]
+
+    # Fire-and-forget notifications
+    _bg_executor.submit(send_slack_notification, body.name, body.email, url, request_id)
+    _bg_executor.submit(send_client_ack_email, body.name, body.email, url)
+    _bg_executor.submit(send_admin_notification_email, body.name, body.email, url, request_id)
+
+    return {"success": True, "request_id": request_id}
+
+
+@app.post("/api/admin/login")
+def admin_login(body: dict):
+    """Validate admin password."""
+    if body.get("password") != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid password")
+    return {"authenticated": True}
+
+
+@app.get("/api/requests")
+def list_requests(x_admin_password: str = Header(...)):
+    """Admin: list all client requests."""
+    _verify_admin(x_admin_password)
+    sb = get_supabase()
+    result = sb.table("agent_requests").select("*").order("created_at", desc=True).execute()
+    return result.data
+
+
+@app.post("/api/process-request/{request_id}")
+def process_request(request_id: str, body: ProcessRequestBody, x_admin_password: str = Header(...)):
+    """Admin: start the onboarding pipeline with admin-provided scrape URL."""
+    _verify_admin(x_admin_password)
+    sb = get_supabase()
+
+    row = sb.table("agent_requests").select("*").eq("id", request_id).single().execute().data
+    if not row:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if row["status"] not in ("pending", "failed"):
+        raise HTTPException(status_code=400, detail=f"Cannot process request in status '{row['status']}'")
+
+    scrape_url = body.scrape_url.strip()
+    if not scrape_url.startswith("http"):
+        scrape_url = f"https://{scrape_url}"
+
+    sb.table("agent_requests").update({
+        "status": "processing",
+        "scrape_url": scrape_url,
+        "error_message": None,
+        "updated_at": datetime.now().isoformat(),
+    }).eq("id", request_id).execute()
+
+    _bg_executor.submit(_run_onboarding_pipeline, request_id, scrape_url, body.store_type)
+
+    return {"success": True, "message": "Processing started"}
+
+
+@app.post("/api/update-request/{request_id}")
+def update_request(request_id: str, body: UpdateRequestBody, x_admin_password: str = Header(...)):
+    """Admin: update request metadata (notes, calendly_booked, etc.)."""
+    _verify_admin(x_admin_password)
+    sb = get_supabase()
+
+    updates = {"updated_at": datetime.now().isoformat()}
+    if body.notes is not None:
+        updates["notes"] = body.notes
+    if body.calendly_booked is not None:
+        updates["calendly_booked"] = body.calendly_booked
+
+    sb.table("agent_requests").update(updates).eq("id", request_id).execute()
+    return {"success": True}
+
+
+@app.post("/api/send-agent/{request_id}")
+def send_agent(request_id: str, body: SendAgentBody, x_admin_password: str = Header(...)):
+    """Admin: send the delivery email with test link to the client."""
+    _verify_admin(x_admin_password)
+    sb = get_supabase()
+
+    row = sb.table("agent_requests").select("*").eq("id", request_id).single().execute().data
+    if not row:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if row["status"] != "ready":
+        raise HTTPException(status_code=400, detail=f"Agent not ready (status: {row['status']})")
+
+    base = body.base_url.rstrip("/")
+    full_test_url = f"{base}{row['test_url']}"
+
+    send_delivery_email(
+        name=row["name"],
+        email=row["email"],
+        test_url=full_test_url,
+        calendly_booked=row.get("calendly_booked", False),
+    )
+
+    sb.table("agent_requests").update({
+        "status": "sent",
+        "test_url": full_test_url,
+        "updated_at": datetime.now().isoformat(),
+    }).eq("id", request_id).execute()
+
+    return {"success": True, "test_url": full_test_url}
 
 
 if __name__ == "__main__":
