@@ -123,6 +123,7 @@ For the full non-negotiable rules, read `docs/agents/constraints.md`.
 - Update `docs/agents/decisions.md` for durable decisions only.
 - Update `docs/agents/memory.md` for active work only.
 - Update `docs/agents/completions.md` for meaningful completed work, rationale, tradeoffs, and verification.
+- Update `docs/agents/roadmap.md` to mark tasks done, add discovered tasks/bugs, update priorities.
 - Update `docs/agents/handoff.md` only when handing incomplete work to another agent.
 - Keep one owner per piece of information; delete duplicates instead of maintaining two copies.
 
@@ -137,6 +138,7 @@ For the full non-negotiable rules, read `docs/agents/constraints.md`.
 | `docs/agents/decisions.md` | Append-only architectural decisions |
 | `docs/agents/memory.md` | Current work in progress and active edits |
 | `docs/agents/completions.md` | Durable summaries of completed work, tradeoffs, and verification |
+| `docs/agents/roadmap.md` | Tasks, improvements, pending work, and known bugs |
 | `docs/agents/handoff.md` | Structured task-transfer log |
 | `docs/COLLABORATIVE.md` | Human-readable explainer for this collaboration system |
 | `docs/AGENT_DOCS_GUIDE.md` | Human maintenance guide for this agent-doc system |
