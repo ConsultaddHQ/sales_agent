@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -15,7 +16,10 @@ from supabase import Client, create_client
 from sentence_transformers import SentenceTransformer
 import uuid
 
-
+# Add repo root for shared/ imports
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -114,26 +118,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestLoggingMiddleware)
 
-_supabase: Optional[Client] = None
+from shared.config import get_env, IMAGE_SERVER_URL
+from shared.db import get_supabase
+from shared.embeddings import get_embedder
+
 _openrouter_client: Optional[OpenAI] = None
-_embedder: Optional[SentenceTransformer] = None
-
-
-def _get_env(name: str) -> str:
-    v = os.getenv(name)
-    if not v:
-        raise RuntimeError(f"Missing required env var: {name}")
-    return v
-
-
-def get_supabase() -> Client:
-    global _supabase
-    if _supabase is not None:
-        return _supabase
-    url = _get_env("SUPABASE_URL").rstrip("/")
-    key = _get_env("SUPABASE_KEY")
-    _supabase = create_client(url, key)
-    return _supabase
 
 
 def get_openrouter_client() -> OpenAI:
@@ -141,20 +130,11 @@ def get_openrouter_client() -> OpenAI:
     if _openrouter_client is not None:
         return _openrouter_client
 
-    api_key = _get_env("OPENROUTER_API_KEY")
+    api_key = get_env("OPENROUTER_API_KEY")
     base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
     _openrouter_client = OpenAI(api_key=api_key, base_url=base_url)
     return _openrouter_client
-
-
-
-def get_embedder() -> SentenceTransformer:
-    global _embedder
-    if _embedder is None:
-        logger.info("Loading embedding model all-MiniLM-L6-v2 (first request may be slow).")
-        _embedder = SentenceTransformer("all-MiniLM-L6-v2")
-    return _embedder
 
 def _hybrid_search_products(
     sb: Client,
@@ -260,8 +240,7 @@ def _hybrid_search_products(
         
         # If we have local image, prefer our server
         if local_path:
-            image_server_url = os.getenv("IMAGE_SERVER_URL", "http://localhost:8000")
-            local_image_url = f"{image_server_url}/images/{local_path}"
+            local_image_url = f"{IMAGE_SERVER_URL()}/images/{local_path}"
         else:
             local_image_url = None
         

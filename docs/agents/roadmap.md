@@ -69,6 +69,9 @@ These cannot be done by an agent — they require account access, credentials, o
 | ngrok URL changes on restart | Medium | Agent webhook URL baked in at creation time — must re-create agent |
 | Image server path mismatch | Low | Images saved to `onboarding-service/images/` but served from `./images/` |
 | Supermicro internal API undocumented | Low | `/en/structuredbapi/ps2/system/gpu/all` may change without notice |
+| Universal adapter not integration-tested | Medium | JSON-LD, platform selectors, sitemap discovery need live-site testing |
+| Old adapter files still in repo | Low | `threadless_adapter.py`, `supermicro_adapter.py` kept as legacy — can be removed after verifying new adapters work |
+| `sys.path.insert` for shared/ imports | Low | Upgrade to `pip install -e .` when team grows |
 
 ---
 
@@ -78,8 +81,8 @@ Move items here when done (keep last 5 for reference, then delete oldest).
 
 | Date | Task | Who |
 |------|------|-----|
+| 2026-04-07 | Monorepo refactoring: shared/, adapter registry, unified pipeline, universal scraping chain | Agent |
 | 2026-04-07 | Marketing website redesign (monochrome + GSAP orb) | Agent |
 | 2026-04-07 | Client acquisition backend (6 endpoints + notifications) | Agent |
-| 2026-04-07 | Winterfell-style cards + FAQ section | Agent |
 | 2026-04-06 | Repo cleanup (removed dashboard, dead code, stale scripts) | Agent |
 | 2026-04-05 | Supermicro GPU onboarding pipeline | Agent |

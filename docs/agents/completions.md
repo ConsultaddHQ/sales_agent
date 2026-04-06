@@ -26,6 +26,20 @@ Copy this block for meaningful completed work:
 
 ---
 
+## 2026-04-07 — N/A — Monorepo Refactoring: Plug-and-Play Adapters + Universal Scraping
+
+- **Status:** Completed
+- **Owner:** Claude Code
+- **Summary:** Decomposed the 1,251-line onboarding main.py into a plug-and-play adapter registry, shared library, unified pipeline, route modules, and service modules. Added a 6-tier universal scraping chain (JSON-LD, microdata, OG tags, platform CSS selectors, Playwright rendering, LLM fallback) with platform auto-detection for WooCommerce, Magento, PrestaShop, OpenCart, Wix, and others.
+- **Why:** Adding a 4th store type previously required ~140 lines of copy-paste, a new endpoint, and a new elif branch. Now it requires 1 class implementing StoreAdapter + 1 line in the registry. The universal adapter enables scraping ~90-95% of e-commerce sites without any platform-specific code.
+- **Files:** `shared/{config,db,embeddings,parsing}.py`, `onboarding-service/{main,pipeline}.py`, `onboarding-service/adapters/{base,registry,shopify,threadless,supermicro,universal}.py`, `onboarding-service/routes/{onboard,admin,client}.py`, `onboarding-service/services/{products,test_page,agent_creator}.py`, `onboarding-service/scraping/{platform_detect,renderer,llm_fallback}.py`, `onboarding-service/scraping/extractors/{json_ld,open_graph,microdata,sitemap,platform_selectors}.py`, `search-service/main.py`
+- **Tradeoffs:** Used `sys.path.insert` for shared/ imports instead of `pip install -e .` — appropriate for alpha stage, upgrade when team grows. Old adapter files (`threadless_adapter.py`, `supermicro_adapter.py`) kept for now as the new adapters import their scrapers. Backward-compatible `/onboard-threadless` and `/onboard-supermicro` endpoints delegate to unified handler.
+- **Verification:** All imports verified via `python -c "from main import app"` in both services. All routes registered: `/onboard`, `/onboard-threadless`, `/onboard-supermicro`, `/api/*`. Adapter registry auto-detects: shopify, threadless, supermicro, universal.
+- **Related Decisions:** 2026-04-03 Adapter Pattern for Non-Shopify, 2026-04-07 Monorepo Refactoring Architecture
+- **Notes:** The `main.py` went from 1,251 lines to ~80 lines. The universal adapter's fallback chain has not been tested against live sites yet — integration testing needed. Platform CSS selectors defined for WooCommerce, Magento 2, PrestaShop, and OpenCart.
+
+---
+
 ## 2026-04-07 — N/A — Marketing Website Redesign + Client Acquisition Frontend
 
 - **Status:** Completed

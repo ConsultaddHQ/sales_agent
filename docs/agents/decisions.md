@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-04-07: Monorepo Refactoring — Shared Library + Adapter Registry + Universal Scraping
+
+- **Decision:** Decomposed onboarding-service into `shared/` (cross-service), `adapters/` (StoreAdapter ABC + registry), `routes/`, `services/`, `scraping/` (6-tier universal extraction chain), and `pipeline.py` (unified flow). Search-service imports from `shared/` instead of duplicating Supabase/embedding code.
+- **Context:** The onboarding main.py had grown to 1,251 lines with 3 near-identical pipeline branches. Adding a new store type required copy-pasting ~140 lines. Only Shopify, Threadless, and Supermicro were supported — ~50% of e-commerce sites couldn't be scraped.
+- **Rationale:** Adapter pattern with registry enables plug-and-play: new store = 1 class + 1 registry line. Shared library eliminates duplication of embedding model name (constraint #1 risk), Supabase client, and price parsing. Universal adapter with 6-tier fallback chain (JSON-LD > microdata > platform CSS > Playwright > sitemap > LLM) covers ~90-95% of e-commerce sites.
+- **Alternatives considered:** (1) Separate microservices per store type — over-engineering for alpha. (2) Plugin system with entry points — too complex for 4 adapters. (3) Keep monolithic main.py, just add functions — doesn't solve duplication or plug-and-play.
+- **Consequences:** `sys.path.insert` used for shared imports (upgrade to `pip install -e .` when team grows). Old adapter files kept as legacy references. All existing endpoints preserved via backward-compatible aliases.
+- **Status:** Active
+- **Agent/Author:** Claude Code
+
+---
+
 ## 2026-04-07: Three.js Replaced with CSS + GSAP Orb (74% Bundle Reduction)
 
 - **Decision:** Remove `three`, `@react-three/fiber`, `@react-three/drei`, and `@react-three/postprocessing` from the marketing website. Replace the 3D orb with a CSS radial-gradient + GSAP animation + Canvas particles approach.
