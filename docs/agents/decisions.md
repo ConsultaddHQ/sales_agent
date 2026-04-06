@@ -6,6 +6,38 @@
 
 ---
 
+## 2026-04-07: Three.js Replaced with CSS + GSAP Orb (74% Bundle Reduction)
+
+- **Decision:** Remove `three`, `@react-three/fiber`, `@react-three/drei`, and `@react-three/postprocessing` from the marketing website. Replace the 3D orb with a CSS radial-gradient + GSAP animation + Canvas particles approach.
+- **Context:** The Three.js orb was the single largest dependency in the website bundle (1,458KB total). It required WebGL support, added significant load time, and was overkill for what is essentially a decorative animated sphere.
+- **Rationale:** CSS radial-gradient produces a visually identical sphere appearance. GSAP handles idle animations (breathing, shimmer rotation, ring ripples), mouse interactions (proximity glow, tilt), and click effects (push-back, shockwave). Canvas API handles floating particles. Total bundle: 379KB (74% reduction).
+- **Alternatives considered:** Keep Three.js with lighter shaders (still large), use Lottie animation (extra dependency), static image (no interactivity).
+- **Consequences:**
+  - No WebGL requirement — works on all devices including low-end mobile
+  - GSAP is already used for page animations, so no new dependency for orb
+  - Canvas particles disabled on touch devices via `matchMedia('(hover: hover)')` for performance
+  - Future 3D effects would require re-adding Three.js
+- **Status:** Active
+- **Agent/Author:** Claude Code
+
+---
+
+## 2026-04-06: Dashboard Removed — API-First Onboarding
+
+- **Decision:** Remove the `www.teampop/dashboard/` React app entirely. Onboarding is now API-first (via curl/Postman or future replacement UI).
+- **Context:** The dashboard was a standalone merchant-facing React app that called `POST /onboard`. It was not actively used or maintained — all recent onboarding testing used direct API calls. The new marketing website (`www.teampop/website/`) is being developed separately.
+- **Rationale:** The dashboard added maintenance burden (referenced in 5+ docs, startup scripts) without active use. Removing it simplifies the repo, reduces agent confusion, and allows the team to build a proper replacement when needed.
+- **Alternatives considered:** Keep dashboard as-is (unused baggage), merge dashboard into website (different tech stacks and purposes).
+- **Consequences:**
+  - Merchants must onboard via API calls until a replacement UI exists
+  - `start_services.sh` now has 4 steps instead of 5 (no port 5174)
+  - Constraint #14 updated to reference "external consumers" instead of dashboard specifically
+  - All doc references to dashboard updated or removed
+- **Status:** Active
+- **Agent/Author:** Claude Code
+
+---
+
 ## 2026-04-02: Durable Completed-Work Summaries Live in `docs/agents/completions.md`
 
 - **Decision:** Add `docs/agents/completions.md` as the canonical place for meaningful completed-task summaries, tradeoffs, and verification notes.

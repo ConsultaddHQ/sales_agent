@@ -3,7 +3,7 @@
 ## 🎯 Overview
 
 **What This System Does:**
-1. Client enters Shopify store URL in dashboard
+1. Client submits Shopify store URL via onboarding API
 2. System validates, scrapes products, creates embeddings
 3. Auto-creates ElevenLabs conversational agent
 4. Generates static test page (clone of client's site + widget)
@@ -13,7 +13,6 @@
 - **onboarding-service** (FastAPI, port 8005) - Orchestration
 - **search-service** (FastAPI, port 8006) - Product search
 - **image-server** (FastAPI, port 8000) - Image serving
-- **dashboard** (React, port 5174) - Client interface
 - **widget** (React, builds to static) - Voice assistant
 
 ---

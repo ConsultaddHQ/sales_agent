@@ -17,7 +17,7 @@ echo -e "${BLUE}================================${NC}\n"
 stop_service() {
     local name=$1
     local pid_file="${name}.pid"
-    
+
     if [ -f "$pid_file" ]; then
         local pid=$(cat "$pid_file")
         if ps -p $pid > /dev/null 2>&1; then
@@ -42,7 +42,6 @@ stop_service() {
 stop_service "image-server"
 stop_service "search-service"
 stop_service "onboarding-service"
-stop_service "dashboard"
 stop_service "widget"
 
 echo -e "\n${GREEN}✅ All services stopped${NC}"

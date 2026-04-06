@@ -12,14 +12,14 @@ sales-voice-agent/
 ├── onboarding-service/      # Python FastAPI crawler & embedder
 ├── search-service/          # Python FastAPI semantic search API
 └── www.teampop/             # front‑end applications
-    ├── dashboard/           # SaaS onboarding dashboard
-    └── frontend/            # Embeddable Avatar Widget
+    ├── frontend/            # Embeddable Avatar Widget
+    └── website/             # Marketing website
 ```
 
 ### How the system works
 
-1. A merchant visits the **dashboard**, enters their store URL.
-2. Dashboard sends a request to **onboarding-service** which crawls the site,
+1. A merchant submits their store URL to the **onboarding-service** API.
+2. Onboarding-service crawls the site,
    extracts product data, and embeds text with `all-MiniLM-L6-v2` before
    saving into Supabase.
 3. Later, the **frontend widget** uses **search-service** to perform hybrid
@@ -52,9 +52,8 @@ cd ../search-service && python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --port 8006 &        # search service
 
-# frontends
-cd ../www.teampop/dashboard && npm install && npm run dev &
-cd ../frontend && npm install && npm run dev &
+# widget
+cd ../www.teampop/frontend && npm install && npm run dev &
 ```
 
 Adjust ports as needed; environment variables are managed via `.env` files in each

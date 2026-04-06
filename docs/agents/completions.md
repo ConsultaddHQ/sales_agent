@@ -26,6 +26,98 @@ Copy this block for meaningful completed work:
 
 ---
 
+## 2026-04-07 — N/A — Marketing Website Redesign + Client Acquisition Frontend
+
+- **Status:** Completed
+- **Owner:** Claude Code
+- **Summary:** Complete redesign of the marketing website (`www.teampop/website/`) from an AI-generic indigo/purple theme to a Resend.com-inspired black/white monochrome design. Replaced Three.js 3D orb with CSS + GSAP orb (74% bundle reduction). Built full client acquisition frontend: request form, admin dashboard, and confirmation flow. Added Winterfell-style enhanced step cards with scroll-driven animation, 3D hover tilt, tag pills, and accent dots. Added 2-column FAQ section with accordion.
+- **Why:** The original design looked too "AI-generated" and wouldn't convert real clients. The monochrome redesign gives a premium, professional feel. The client acquisition flow (form → notifications → admin processing → delivery) is the core business workflow for Hyperflex.
+- **Files:**
+  - `www.teampop/website/src/index.css` — Full design system: CSS variables, orb classes (voice-orb, orb-glow, orb-shimmer, voice-ring), card/button/input utilities
+  - `www.teampop/website/src/components/VoiceOrb.jsx` — CSS radial-gradient orb with GSAP idle animations, canvas particles, mouse proximity glow, hover escalation, click effect (push-back + shockwave ring)
+  - `www.teampop/website/src/components/HowItWorks.jsx` — 3-col equal grid with scroll-driven entrance (translateY + scale + rotation like Winterfell), 3D tilt on hover, tag pills, colored accent dots
+  - `www.teampop/website/src/components/FAQ.jsx` — **NEW**: 2-column layout (large heading + CTA left, accordion right), Plus icon rotates to × on open, smooth height animation
+  - `www.teampop/website/src/components/Hero.jsx` — 2-col hero with staggered text animation
+  - `www.teampop/website/src/components/CTA.jsx`, `Navbar.jsx`, `Footer.jsx` — Monochrome styling
+  - `www.teampop/website/src/pages/RequestPage.jsx` — Form (name, email, URL) + confirmation with Calendly embed
+  - `www.teampop/website/src/pages/AdminPage.jsx` — Password-gated dashboard with request table, process/send dialogs, 30s auto-refresh
+  - `www.teampop/website/src/lib/api.js` — 6 API functions (submitRequest, adminLogin, getRequests, processRequest, updateRequest, sendAgent)
+  - `www.teampop/website/src/pages/Landing.jsx` — Composes Navbar → Hero → HowItWorks → FAQ → CTA → Footer
+  - `www.teampop/website/package.json` — Removed three/r3f/postprocessing, added @gsap/react
+- **Tradeoffs:**
+  - Removed Three.js entirely — no 3D orb, but 74% smaller bundle (1,458KB → 379KB) and no WebGL compatibility issues
+  - GSAP ScrollTrigger replaced with vanilla scroll listeners + IntersectionObserver — GSAP ScrollTrigger was unreliable in headless preview and some browser contexts
+  - Admin auth is simple password header (X-Admin-Password), not JWT — acceptable for internal tool, should upgrade before production
+  - Dark-on-dark monochrome (#111 cards on #000 bg) has low contrast in JPEG screenshots but looks correct in real browsers
+- **Verification:**
+  - `npm run build` succeeds at 379KB (down from 1,458KB)
+  - All components render correctly (verified via accessibility tree snapshots and DOM inspection)
+  - 3-col card grid: each card 379px wide, equal height
+  - FAQ: 2-column grid (560px + 560px), 6 accordion items functional
+  - Card scroll animation: cards enter from bottom with staggered rotation
+  - Orb: idle breathing + shimmer + ring ripples + mouse tilt + click shockwave all working
+- **Related Decisions:** None (design choices, not architectural)
+- **Notes:**
+  - Backend endpoints for client acquisition are in `onboarding-service/main.py` (6 new endpoints added in same session)
+  - `notifications.py` handles Resend emails + Slack webhooks (fire-and-forget via ThreadPoolExecutor)
+  - Manual setup required before testing: Supabase `agent_requests` table, Resend API key, Slack webhook, Calendly link, ADMIN_PASSWORD env var
+  - 2s fallback timer on scroll animations ensures cards always appear even if scroll listeners don't fire
+
+---
+
+## 2026-04-07 — N/A — Client Acquisition Backend (Request Pipeline + Notifications)
+
+- **Status:** Completed
+- **Owner:** Claude Code
+- **Summary:** Added 6 API endpoints to onboarding-service for the full client acquisition workflow: submit-request, admin login, list requests, process request, update request, send agent. Added multi-channel notifications via Resend (email) and Slack (webhooks).
+- **Why:** Core business flow — clients submit their store URL, team gets notified, admin processes and delivers the voice agent demo.
+- **Files:**
+  - `onboarding-service/main.py` — 6 new endpoints with Pydantic models, ThreadPoolExecutor for background tasks
+  - `onboarding-service/notifications.py` — **NEW**: send_slack_notification, send_client_ack_email, send_admin_notification_email, send_delivery_email
+  - `onboarding-service/.env.example` — Added RESEND_API_KEY, FROM_EMAIL, ADMIN_EMAIL, ADMIN_PASSWORD, SLACK_WEBHOOK_URL, CALENDLY_URL
+  - `onboarding-service/requirements.txt` — Added `resend`
+- **Tradeoffs:**
+  - Notifications are fire-and-forget (ThreadPoolExecutor, errors logged not raised) — acceptable for non-critical alerts
+  - Admin auth via X-Admin-Password header — simple but not production-grade
+  - No rate limiting on submit-request — needs adding before public launch
+- **Verification:**
+  - Build compiles, all imports resolve
+  - Endpoint signatures match frontend api.js calls
+  - Error handling uses error_codes.py for user-facing responses
+- **Related Decisions:** None
+- **Notes:**
+  - Requires `agent_requests` table in Supabase (SQL provided in project docs)
+  - Resend free tier: 100 emails/day, requires domain verification for custom FROM address
+  - Status flow: pending → processing → ready → sent (or failed → retry)
+
+---
+
+## 2026-04-06 — N/A — Repo Cleanup: Removed Dashboard, Dead Code, Stale Scripts
+
+- **Status:** Completed
+- **Owner:** Claude Code
+- **Summary:** Removed the unused merchant onboarding dashboard (`www.teampop/dashboard/`), dead frontend pages/components (Home, Docs, GetStarted, Header), stale startup scripts (`scripts/`), and miscellaneous artifacts. Updated all documentation references.
+- **Why:** The dashboard was a standalone React app no longer in active use. The frontend widget contained ~40% dead code from an abandoned multi-page routing attempt. The `scripts/` directory referenced the deleted `image-service/`. All of this was clutter adding confusion for agents and engineers.
+- **Files:**
+  - Deleted: `www.teampop/dashboard/` (15 files), `scripts/` (2 files), `test_shopify_flow.py`, `www.teampop/index.html`, `www.teampop/test_widget.html`, `www.teampop/demo_click_pattern.md`, stray JPG
+  - Deleted from frontend: `src/pages/` (Home, Docs, GetStarted), `src/components/Header.jsx`, `src/styles/` (Header.css, GetStarted.css), `src/App.css` (entirely dead)
+  - Modified: `src/App.jsx` (removed App.css import), `package.json` (removed `react-router-dom`)
+  - Updated docs: `AGENTS.md`, `README.md`, `www.teampop/README.md`, `SHOPIFY_FLOW_COMPLETE.md`, `docs/agents/constraints.md`
+  - Updated scripts: `start_services.sh` (4 steps instead of 5), `stop_services.sh` (removed dashboard)
+- **Tradeoffs:**
+  - Dashboard deletion means onboarding must happen via API calls (curl/Postman) until a replacement UI is built
+  - `SHOPIFY_FLOW_COMPLETE.md` still has some dashboard references in deeper sections — kept as historical context rather than rewriting the entire doc
+- **Verification:**
+  - `npm run build` in `www.teampop/frontend/` succeeds — widget builds cleanly without deleted files
+  - `grep` confirms no remaining imports of deleted components in frontend source
+  - `git status` shows only intended deletions and modifications
+- **Related Decisions:** 2026-04-06 — Dashboard removed in favor of API-first onboarding
+- **Notes:**
+  - `www.teampop/website/` (untracked React + Three.js project) was intentionally kept — it's the new marketing website in active development
+  - `react-router-dom` was removed from frontend dependencies since no routing is configured in the widget
+
+---
+
 ## 2026-04-05 — N/A — Supermicro GPU Server Onboarding Pipeline
 
 - **Status:** Completed

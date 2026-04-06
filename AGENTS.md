@@ -25,13 +25,14 @@ This is the **canonical shared instruction file** for all coding agents working 
 
 ## Repo Snapshot
 
-- `onboarding-service/`: FastAPI service for store validation, crawling, embeddings, agent creation (Shopify + Threadless + Supermicro)
+- `onboarding-service/`: FastAPI service for store validation, crawling, embeddings, agent creation + client acquisition API
+- `onboarding-service/notifications.py`: Resend email + Slack webhook notifications for client acquisition
 - `onboarding-service/threadless_adapter.py`: Adapter bridging Threadless scraper into the onboarding pipeline
 - `onboarding-service/supermicro_adapter.py`: Adapter bridging Supermicro scraper into the onboarding pipeline
 - `search-service/`: FastAPI hybrid search API (includes request logging middleware)
 - `image_server.py`: primary image server used by `start_services.sh`
-- `www.teampop/dashboard/`: React onboarding dashboard
 - `www.teampop/frontend/`: embeddable React widget in Shadow DOM
+- `www.teampop/website/`: marketing website + client acquisition flow (React + GSAP + Tailwind)
 - `universal-scraper/`: scraping workflow and fallback strategies
 - `docs/`: human-facing project docs and agent support files
 
@@ -51,9 +52,6 @@ cd onboarding-service && source .venv/bin/activate && python main.py
 
 # Search service
 cd search-service && source .venv/bin/activate && uvicorn main:app --port 8006
-
-# Dashboard
-cd www.teampop/dashboard && npm run dev
 
 # Widget
 cd www.teampop/frontend && npm run dev
@@ -85,7 +83,7 @@ ngrok http 8006
 - `image_server.py` is the active image server used by startup scripts.
 - Widget must be served as built IIFE from `/widget/widget.js`, NOT via Vite dev server (Fast Refresh breaks it).
 - `@elevenlabs/react` v1.0+ requires `<ConversationProvider>` wrapper and `useConversationClientTool` for tool registration.
-- ElevenLabs agent tool names must match exactly across: dashboard config, system prompt, and widget code.
+- ElevenLabs agent tool names must match exactly across: ElevenLabs config, system prompt, and widget code.
 - Never commit `.env` files or secrets.
 - User-facing onboarding errors must go through `error_codes.py`.
 - ElevenLabs webhook `store_id` must use `value_type: "constant"`, never `"llm_prompt"` (LLMs truncate UUIDs).
@@ -150,13 +148,13 @@ For the full non-negotiable rules, read `docs/agents/constraints.md`.
 
 | Area | Path | Notes |
 |------|------|-------|
-| Onboarding | `onboarding-service/` | Crawl, validate, embed, create voice agent |
+| Onboarding | `onboarding-service/` | Crawl, validate, embed, create voice agent + client acquisition API |
 | Search | `search-service/` | Semantic + full-text product search |
 | Widget | `www.teampop/frontend/` | Shadow DOM custom element |
-| Dashboard | `www.teampop/dashboard/` | Merchant onboarding UI |
+| Website | `www.teampop/website/` | Marketing site + client request form + admin dashboard |
 | Scraper | `universal-scraper/` | HTTP -> Playwright -> LLM fallback chain |
 | Images | `image_server.py` | Primary image server (image-service/ removed) |
-| Database | Supabase | `products` table + `hybrid_search_products` RPC |
+| Database | Supabase | `products` + `agent_requests` tables + `hybrid_search_products` RPC |
 
 ---
 
