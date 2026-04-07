@@ -26,6 +26,20 @@ Copy this block for meaningful completed work:
 
 ---
 
+## 2026-04-08 — N/A — ElevenLabs API Migration + Latency Optimization + Single-Tunnel Sharing
+
+- **Status:** Completed
+- **Owner:** Claude Code
+- **Summary:** Migrated ElevenLabs agent creation to current API format (`conversation_config.agent` nesting), fixed tool config validation errors, added `ignore_default_personality`, switched to low-latency ElevenLabs-hosted LLM (`glm-45-air-fp8`), optimized TTS/turn settings, consolidated all services behind single ngrok tunnel, and added widget-side latency instrumentation.
+- **Why:** Agent creation was silently failing to store prompt/tools due to API format changes. Agent was behaving as generic chatbot (missing personality). Latency was high due to external API LLM. Sharing demos required 3 ngrok tunnels (impossible on free tier).
+- **Files:** `onboarding-service/elevenlabs_agent.py` (major rewrite — API format, tool config, latency settings, verification), `onboarding-service/main.py` (added `/images` static mount + `/search` proxy), `image_server.py` (fixed default images path), `www.teampop/frontend/src/components/AvatarWidget.jsx` (latency timing instrumentation), `onboarding-service/routes/admin.py` + `client.py` (error logging), `onboarding-service/.env.example` (new LLM/TTS defaults)
+- **Tradeoffs:** (1) `glm-45-air-fp8` is faster but less proven than `gpt-4o-mini` for complex tool-calling — fallback via env var. (2) `optimize_streaming_latency: 3` trades slight audio quality for speed. (3) Search proxy adds one local hop but eliminates need for separate ngrok tunnel. (4) `eager` turn mode may occasionally interrupt user — acceptable for shopping assistant.
+- **Verification:** Agent verification log confirms prompt stored (3800+ chars with "Sam"), 4 tools configured, `ignore_default_personality: true`, `llm=glm-45-air-fp8`. Browser console shows colored latency breakdown per conversation cycle. Single ngrok tunnel serves demo pages, widget JS, images, and search webhook.
+- **Related Decisions:** 2026-04-08: ElevenLabs API format migration, 2026-04-08: Latency-optimized agent config
+- **Notes:** Key API discoveries: (1) `agent_config` as top-level key is silently ignored — must nest under `conversation_config.agent`. (2) `constant_value` and `description` cannot coexist on same webhook param. (3) Array-type tool params require `items` field. (4) Default `ignore_default_personality: false` injects generic ElevenLabs personality that overrides custom prompt.
+
+---
+
 ## 2026-04-07 — N/A — Monorepo Refactoring: Plug-and-Play Adapters + Universal Scraping
 
 - **Status:** Completed

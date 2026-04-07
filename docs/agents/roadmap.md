@@ -1,7 +1,7 @@
 # Roadmap — Tasks, Improvements & Pending Work
 
 > **Purpose:** Single source of truth for what needs to be done, by whom, and priority.
-> **Updated:** 2026-04-07
+> **Updated:** 2026-04-08
 > **Rule:** Agents update this after completing work or discovering new tasks. Remove done items, add new ones.
 
 ---
@@ -12,15 +12,15 @@ These cannot be done by an agent — they require account access, credentials, o
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1 | Create `agent_requests` table in Supabase | ⬜ Pending | SQL provided in project docs |
-| 2 | Sign up for Resend → get API key | ⬜ Pending | [resend.com](https://resend.com), verify sending domain |
-| 3 | Create Slack incoming webhook | ⬜ Pending | Slack workspace → Apps → Incoming Webhooks |
-| 4 | Get Calendly booking link | ⬜ Pending | [calendly.com](https://calendly.com) free account |
-| 5 | Fill `.env` in `onboarding-service/` | ⬜ Pending | RESEND_API_KEY, ADMIN_PASSWORD, SLACK_WEBHOOK_URL, CALENDLY_URL, FROM_EMAIL, ADMIN_EMAIL |
-| 6 | Fill `.env` in `www.teampop/website/` | ⬜ Pending | VITE_API_URL, VITE_CALENDLY_URL |
-| 7 | `pip install resend` in onboarding venv | ⬜ Pending | `cd onboarding-service && source .venv/bin/activate && pip install resend` |
-| 8 | End-to-end test of full flow | ⬜ Pending | Submit form → check Slack/email → admin process → send agent |
-| 9 | Merge PR #4 after testing | ⬜ Pending | `workflow/client` → `main` |
+| 1 | Create `agent_requests` table in Supabase | ✅ Done | SQL provided and executed |
+| 2 | Sign up for Resend → get API key | ✅ Done | Free tier, sends from `@resend.dev` |
+| 3 | Create Slack incoming webhook | ⏭️ Skipped | Deferred — not needed for demo |
+| 4 | Get Calendly booking link | ✅ Done | Free account created |
+| 5 | Fill `.env` in `onboarding-service/` | ✅ Done | All keys set including ElevenLabs, Resend, Calendly |
+| 6 | Fill `.env` in `www.teampop/website/` | ✅ Done | VITE_API_URL, VITE_CALENDLY_URL set |
+| 7 | `pip install resend` in onboarding venv | ✅ Done | Already in requirements.txt |
+| 8 | End-to-end test of full flow | ⬜ In Progress | Agent + onboarding works; admin flow has 422 issue under investigation |
+| 9 | Merge PR after testing | ⬜ Pending | After full flow verified |
 
 ---
 
@@ -66,11 +66,12 @@ These cannot be done by an agent — they require account access, credentials, o
 
 | Issue | Severity | Notes |
 |-------|----------|-------|
-| ngrok URL changes on restart | Medium | Agent webhook URL baked in at creation time — must re-create agent |
-| Image server path mismatch | Low | Images saved to `onboarding-service/images/` but served from `./images/` |
+| ngrok URL changes on restart | Medium | Single-tunnel setup mitigates (only 1 URL). Must re-onboard after restart. |
+| Admin dashboard 422 on process-request | Medium | Needs investigation — may be Supabase schema or CORS issue |
+| ngrok free interstitial blocks widget | Low | External users must click "Visit Site" before widget JS loads |
 | Supermicro internal API undocumented | Low | `/en/structuredbapi/ps2/system/gpu/all` may change without notice |
 | Universal adapter not integration-tested | Medium | JSON-LD, platform selectors, sitemap discovery need live-site testing |
-| Old adapter files still in repo | Low | `threadless_adapter.py`, `supermicro_adapter.py` kept as legacy — can be removed after verifying new adapters work |
+| `glm-45-air-fp8` tool-calling unverified | Medium | New ElevenLabs-hosted LLM — may struggle with complex prompts, fallback to `gpt-4o-mini` via env var |
 | `sys.path.insert` for shared/ imports | Low | Upgrade to `pip install -e .` when team grows |
 
 ---
@@ -81,8 +82,8 @@ Move items here when done (keep last 5 for reference, then delete oldest).
 
 | Date | Task | Who |
 |------|------|-----|
+| 2026-04-08 | ElevenLabs API migration + latency optimization + single-tunnel sharing + widget latency tracking | Agent |
 | 2026-04-07 | Monorepo refactoring: shared/, adapter registry, unified pipeline, universal scraping chain | Agent |
 | 2026-04-07 | Marketing website redesign (monochrome + GSAP orb) | Agent |
 | 2026-04-07 | Client acquisition backend (6 endpoints + notifications) | Agent |
 | 2026-04-06 | Repo cleanup (removed dashboard, dead code, stale scripts) | Agent |
-| 2026-04-05 | Supermicro GPU onboarding pipeline | Agent |

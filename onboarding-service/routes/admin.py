@@ -52,18 +52,28 @@ def admin_login(body: dict):
 def list_requests(x_admin_password: str = Header(...)):
     """Admin: list all client requests."""
     _verify_admin(x_admin_password)
-    sb = get_supabase()
-    result = sb.table("agent_requests").select("*").order("created_at", desc=True).execute()
-    return result.data
+    try:
+        sb = get_supabase()
+        result = sb.table("agent_requests").select("*").order("created_at", desc=True).execute()
+        return result.data
+    except Exception as e:
+        logger.error(f"Failed to list requests: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
 @router.post("/process-request/{request_id}")
 def process_request(request_id: str, body: ProcessRequestBody, x_admin_password: str = Header(...)):
     """Admin: start the onboarding pipeline."""
     _verify_admin(x_admin_password)
-    sb = get_supabase()
+    logger.info(f"Processing request {request_id}: scrape_url={body.scrape_url}, store_type={body.store_type}")
 
-    row = sb.table("agent_requests").select("*").eq("id", request_id).single().execute().data
+    try:
+        sb = get_supabase()
+        row = sb.table("agent_requests").select("*").eq("id", request_id).single().execute().data
+    except Exception as e:
+        logger.error(f"Failed to fetch request {request_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
     if not row:
         raise HTTPException(status_code=404, detail="Request not found")
     if row["status"] not in ("pending", "failed"):
@@ -73,12 +83,16 @@ def process_request(request_id: str, body: ProcessRequestBody, x_admin_password:
     if not scrape_url.startswith("http"):
         scrape_url = f"https://{scrape_url}"
 
-    sb.table("agent_requests").update({
-        "status": "processing",
-        "scrape_url": scrape_url,
-        "error_message": None,
-        "updated_at": datetime.now().isoformat(),
-    }).eq("id", request_id).execute()
+    try:
+        sb.table("agent_requests").update({
+            "status": "processing",
+            "scrape_url": scrape_url,
+            "error_message": None,
+            "updated_at": datetime.now().isoformat(),
+        }).eq("id", request_id).execute()
+    except Exception as e:
+        logger.error(f"Failed to update request status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Database update error: {str(e)}")
 
     _bg_executor.submit(pipeline.run_background, request_id, scrape_url, body.store_type)
 

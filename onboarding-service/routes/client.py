@@ -47,26 +47,32 @@ def _verify_admin(x_admin_password: str = Header(...)):
 @router.post("/submit-request")
 def submit_request(body: SubmitRequestBody):
     """Public: client submits interest. Triggers Slack + email notifications."""
-    sb = get_supabase()
-    url = body.url.strip()
-    if not url.startswith("http"):
-        url = f"https://{url}"
+    logger.info(f"New request: name={body.name}, email={body.email}, url={body.url}")
+    try:
+        sb = get_supabase()
+        url = body.url.strip()
+        if not url.startswith("http"):
+            url = f"https://{url}"
 
-    result = sb.table("agent_requests").insert({
-        "name": body.name.strip(),
-        "email": body.email.strip().lower(),
-        "url": url,
-        "status": "pending",
-    }).execute()
+        result = sb.table("agent_requests").insert({
+            "name": body.name.strip(),
+            "email": body.email.strip().lower(),
+            "url": url,
+            "status": "pending",
+        }).execute()
 
-    request_id = result.data[0]["id"]
+        request_id = result.data[0]["id"]
+        logger.info(f"Request created: {request_id}")
 
-    # Fire-and-forget notifications
-    _bg_executor.submit(send_slack_notification, body.name, body.email, url, request_id)
-    _bg_executor.submit(send_client_ack_email, body.name, body.email, url)
-    _bg_executor.submit(send_admin_notification_email, body.name, body.email, url, request_id)
+        # Fire-and-forget notifications
+        _bg_executor.submit(send_slack_notification, body.name, body.email, url, request_id)
+        _bg_executor.submit(send_client_ack_email, body.name, body.email, url)
+        _bg_executor.submit(send_admin_notification_email, body.name, body.email, url, request_id)
 
-    return {"success": True, "request_id": request_id}
+        return {"success": True, "request_id": request_id}
+    except Exception as e:
+        logger.error(f"Failed to submit request: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to submit request: {str(e)}")
 
 
 @router.post("/send-agent/{request_id}")

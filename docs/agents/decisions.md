@@ -6,6 +6,30 @@
 
 ---
 
+## 2026-04-08: Single-Tunnel Architecture — All Services Through One ngrok Tunnel
+
+- **Decision:** Route all external traffic through the onboarding service (port 8005) instead of requiring separate tunnels for image server, search service, and widget. Added `/images` StaticFiles mount, `/search` proxy route (forwards to localhost:8006), and widget served from `/widget/widget.js` (built IIFE).
+- **Context:** ngrok free tier allows only 1 tunnel per account. Sharing demos externally required 3 tunnels (onboarding, images, search webhook). This blocked demo sharing without paid ngrok.
+- **Rationale:** Proxy pattern keeps services independently deployable while consolidating external access. Search proxy adds <1ms local overhead. Images served directly via StaticFiles (no separate server needed for dev). Widget already built as IIFE in dist/.
+- **Alternatives considered:** (1) 3 ngrok accounts — messy, fragile. (2) Cloudflare Tunnel — requires account setup. (3) Deploy to Railway — premature for alpha. (4) Combine all services into one — violates separation of concerns.
+- **Consequences:** `IMAGE_SERVER_URL`, `SEARCH_API_URL`, and `WIDGET_SCRIPT_URL` all point to same ngrok URL. Must re-onboard after ngrok restart. Image server (`image_server.py`) still works standalone for local dev.
+- **Status:** Active
+- **Agent/Author:** Claude Code
+
+---
+
+## 2026-04-08: ElevenLabs API Format — conversation_config.agent Nesting + Latency Config
+
+- **Decision:** Use `conversation_config.agent.prompt.tools` nesting (not top-level `agent_config`). Set `ignore_default_personality: true`. Use ElevenLabs-hosted LLM `glm-45-air-fp8` as default. Enable `turn_eagerness: "eager"`, `speculative_turn: true`, `optimize_streaming_latency: 3`.
+- **Context:** ElevenLabs API silently ignores `agent_config` as a top-level key — verified by GET response showing empty prompt. Their docs show `agent_config` but the actual API expects it nested inside `conversation_config.agent`. Additionally, `ignore_default_personality` defaults to `false`, causing ElevenLabs' generic personality to override custom prompts. Latency was 2-3s per turn due to external API LLM calls.
+- **Rationale:** Nesting confirmed by GET response inspection. `glm-45-air-fp8` is ElevenLabs-hosted (no external API hop, ~634ms vs ~1-2s) and labeled "great for agentic use cases". Eager turn + speculative turn reduce perceived latency by 300-500ms. LLM configurable via `ELEVENLABS_LLM_MODEL` env var for easy fallback.
+- **Alternatives considered:** (1) `qwen3-30b-a3b` (~187ms) — faster but uncertain tool-calling reliability. (2) `gpt-4o-mini` — reliable but 2-3x slower due to external API. (3) `gpt-4o` — best quality but slowest.
+- **Consequences:** Must test `glm-45-air-fp8` with complex tool-calling prompts. Webhook `constant_value` cannot coexist with `description` on same param. Array tool params require `items` field.
+- **Status:** Active
+- **Agent/Author:** Claude Code
+
+---
+
 ## 2026-04-07: Monorepo Refactoring — Shared Library + Adapter Registry + Universal Scraping
 
 - **Decision:** Decomposed onboarding-service into `shared/` (cross-service), `adapters/` (StoreAdapter ABC + registry), `routes/`, `services/`, `scraping/` (6-tier universal extraction chain), and `pipeline.py` (unified flow). Search-service imports from `shared/` instead of duplicating Supabase/embedding code.

@@ -141,6 +141,41 @@ function AvatarInner({
     [activeView],
   );
 
+  // --- Latency tracking ---
+  const latencyRef = useRef({ userSpeechAt: null, firstAiAt: null, productsAt: null, cycle: 0 });
+
+  function _startLatencyTimer(userText) {
+    const now = performance.now();
+    latencyRef.current = { userSpeechAt: now, firstAiAt: null, productsAt: null, cycle: latencyRef.current.cycle + 1 };
+    console.log(`%c⏱ [Cycle ${latencyRef.current.cycle}] User spoke: "${userText.slice(0, 50)}"`, "color: #4fc3f7; font-weight: bold");
+  }
+
+  function _markFirstAi() {
+    const lc = latencyRef.current;
+    if (lc.userSpeechAt && !lc.firstAiAt) {
+      lc.firstAiAt = performance.now();
+      const ms = Math.round(lc.firstAiAt - lc.userSpeechAt);
+      console.log(`%c⏱ [Cycle ${lc.cycle}] First AI response: ${ms}ms`, "color: #81c784; font-weight: bold");
+    }
+  }
+
+  function _markProductsArrived(count) {
+    const lc = latencyRef.current;
+    if (lc.userSpeechAt) {
+      lc.productsAt = performance.now();
+      const totalMs = Math.round(lc.productsAt - lc.userSpeechAt);
+      const fromAi = lc.firstAiAt ? Math.round(lc.productsAt - lc.firstAiAt) : "N/A";
+      console.log(
+        `%c⏱ [Cycle ${lc.cycle}] Products in carousel (${count} items): ${totalMs}ms total | ${fromAi}ms after first AI`,
+        "color: #ffb74d; font-weight: bold; font-size: 13px"
+      );
+      console.log(
+        `%c⏱ [Cycle ${lc.cycle}] BREAKDOWN → User→AI: ${lc.firstAiAt ? Math.round(lc.firstAiAt - lc.userSpeechAt) : "?"}ms | User→Products: ${totalMs}ms`,
+        "color: #ce93d8; font-weight: bold; font-size: 14px"
+      );
+    }
+  }
+
   // --- ElevenLabs v1.0 conversation hook ---
   const conversation = useConversation({
     onMessage: (message) => {
@@ -157,6 +192,11 @@ function AvatarInner({
       if (source === "user" && isSyntheticMessageRef.current) {
         isSyntheticMessageRef.current = false;
         return;
+      }
+
+      // Start latency timer when user speaks
+      if (source === "user" && text) {
+        _startLatencyTimer(text);
       }
 
       if (text) {
@@ -178,6 +218,7 @@ function AvatarInner({
       }
 
       if (source === "ai") {
+        _markFirstAi();
         setAgentSubtitle(text);
         if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
         subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 3000);
@@ -207,6 +248,8 @@ function AvatarInner({
     const products = Array.isArray(parameters?.products)
       ? parameters.products
       : [];
+
+    _markProductsArrived(products.length);
 
     setLatestProducts(products);
     latestProductsRef.current = products;

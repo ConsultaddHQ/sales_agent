@@ -57,6 +57,12 @@ DEMO_PAGES_DIR = Path("./demo_pages")
 DEMO_PAGES_DIR.mkdir(exist_ok=True)
 app.mount("/demo", StaticFiles(directory=str(DEMO_PAGES_DIR), html=True), name="demo")
 
+# Serve product images directly (so everything works through a single tunnel)
+IMAGES_DIR = Path(__file__).resolve().parent / "images"
+IMAGES_DIR.mkdir(exist_ok=True)
+app.mount("/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
+logger.info(f"Images served from: {IMAGES_DIR}")
+
 # Register routes
 from routes.onboard import router as onboard_router
 from routes.admin import router as admin_router
@@ -77,6 +83,35 @@ def health_check():
         "service": "onboarding-service",
         "version": "3.0.0",
     }
+
+
+# ── Search proxy (so ElevenLabs webhook can hit the same ngrok tunnel) ──
+import httpx
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+SEARCH_SERVICE_URL = os.getenv("SEARCH_SERVICE_INTERNAL", "http://localhost:8006")
+
+
+@app.post("/search")
+async def search_proxy(request: Request):
+    """Proxy search requests to the search service.
+
+    This allows a single ngrok tunnel on port 8005 to serve everything:
+    demo pages, widget, images, AND the search webhook for ElevenLabs.
+    """
+    body = await request.body()
+    try:
+        async with httpx.AsyncClient(timeout=25) as client:
+            resp = await client.post(
+                f"{SEARCH_SERVICE_URL}/search",
+                content=body,
+                headers={"Content-Type": "application/json"},
+            )
+        return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except Exception as e:
+        logger.error(f"Search proxy error: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=502)
 
 
 if __name__ == "__main__":
