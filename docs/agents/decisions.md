@@ -6,6 +6,51 @@
 
 ---
 
+## 2026-04-09: Tools-First Gemini Prompt + Latency/Interruption Settings Overhaul
+
+- **Decision:** Rewrote `PROMPT_GEMINI` to remove "say a brief phrase first" step. Agent now calls tools immediately (search_products → update_products → speak). Updated conversation settings: `turn_eagerness: "high"`, expanded `client_events` to include `interruption`, `agent_response`, `agent_response_correction`. Bumped TTS speed to 1.08. Shortened first_message.
+- **Context:** Three UX problems: (1) agent said filler ("okay", "I am finding") before executing tools, adding 2-3s latency; (2) filler speech caused Gemini to lose context and forget tool chain; (3) agent didn't yield to user interruptions. The 2.5s soft timeout with pre-set message "Hhmmmm...yeah." handles silence during tool execution.
+- **Rationale:** Gemini drops instructions mid-prompt, so the "say something first" step was competing with tool execution. Tools-first eliminates the distraction. "high" eagerness makes agent respond faster after user pauses. Client `interruption` event enables proper interrupt handling in the widget. TTS speed 1.08 makes responses snappier and easier to interrupt.
+- **Consequences:** Agents created with Gemini model will execute tools silently before speaking. Soft timeout message fills the gap. Must test that Gemini reliably calls both tools before speaking. Supersedes the Gemini-specific prompt from 2026-04-08 decision.
+- **Status:** Active
+- **Agent/Author:** Claude Code (prompt + latency optimization for NurdLuv testing)
+
+---
+
+## 2026-04-08: Model-Specific System Prompts for ElevenLabs Agent
+
+- **Decision:** Use three separate system prompt templates optimized per LLM model family (Gemini, Qwen, GLM), auto-selected based on `ELEVENLABS_LLM_MODEL`.
+- **Context:** Agent was inconsistently following the tool chain (search_products → update_products → speak). The 79-line / 7-rule prompt was too complex for smaller models. Research showed each model family responds to different prompt strategies.
+- **Rationale:**
+  - **Gemini 2.5 Flash:** Positive framing only (negatives get dropped mid-prompt), critical constraints at END in `# Guardrails`. Google docs say avoid broad negatives.
+  - **Qwen3-30B-A3B:** Aggressive reinforcement, one-shot example of correct tool sequence, repeat critical rules. Known to omit tool calls without explicit examples.
+  - **GLM-4.5-Air:** Must-haves at TOP (too many instructions cause competing asks to get dropped). `# Guardrails` heading goes first for special model attention.
+  - All prompts use ElevenLabs-recommended markdown headings (`# Personality`, `# Goal`, `# Guardrails`, `# Tools`) and append "This step is important." to critical lines per ElevenLabs prompting guide.
+- **Consequences:**
+  - `_select_prompt_for_model()` in `elevenlabs_agent.py` maps model name → prompt template
+  - Changing `ELEVENLABS_LLM_MODEL` env var auto-selects the matching prompt
+  - Unknown models fall back to GLM prompt
+  - Agent must be re-created after changing the model to pick up the new prompt
+- **Status:** Active
+- **Agent/Author:** Claude agent (latency + tool reliability optimization sprint)
+
+---
+
+## 2026-04-08: Remove Pitch LLM from Search Service
+
+- **Decision:** Remove the synchronous OpenRouter LLM call (`_build_pitch()`) from search-service and replace with a static string.
+- **Context:** End-to-end voice agent latency was 24-26 seconds. ElevenLabs model latency was only 634ms. Investigation found `_build_pitch()` was calling `xai/grok-beta` via OpenRouter on every search request, taking 8-15 seconds — 67-83% of total latency.
+- **Rationale:** The pitch field was redundant: the ElevenLabs agent generates its own speech from product data. No frontend or agent code reads the `pitch` field. The SearchResponse schema keeps the field with a static string to avoid breaking the API contract.
+- **Consequences:**
+  - Search endpoint latency dropped from ~10-17s to ~500-800ms
+  - `openai`, `requests` imports removed from search-service
+  - `OPENROUTER_API_KEY` no longer needed by search-service (still used by scraper)
+  - Webhook timeout reduced from 10s to 5s
+- **Status:** Active
+- **Agent/Author:** Claude agent (latency optimization sprint)
+
+---
+
 ## 2026-04-08: Single-Tunnel Architecture — All Services Through One ngrok Tunnel
 
 - **Decision:** Route all external traffic through the onboarding service (port 8005) instead of requiring separate tunnels for image server, search service, and widget. Added `/images` StaticFiles mount, `/search` proxy route (forwards to localhost:8006), and widget served from `/widget/widget.js` (built IIFE).

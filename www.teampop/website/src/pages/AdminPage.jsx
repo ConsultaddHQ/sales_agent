@@ -1,9 +1,23 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Loader2, LogOut, ExternalLink, Send, RefreshCw,
-  Play, Eye, X, ChevronDown, ChevronUp,
+  Play, Eye, X, ChevronDown, ChevronUp, Zap, Check,
 } from 'lucide-react'
-import { adminLogin, getRequests, processRequest, sendAgent } from '../lib/api'
+import { adminLogin, getRequests, processRequest, sendAgent, switchModel } from '../lib/api'
+
+const LLM_MODELS = [
+  { id: 'qwen3-30b-a3b',         label: 'Qwen3 30B',             latency: '~187ms', cost: '$0.0020/min' },
+  { id: 'gpt-oss-120b',          label: 'GPT-OSS 120B',          latency: '~356ms', cost: '$0.0016/min' },
+  { id: 'gpt-4.1-nano',          label: 'GPT-4.1 Nano',          latency: '~504ms', cost: '$0.0006/min' },
+  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', latency: '~571ms', cost: '$0.0006/min' },
+  { id: 'glm-45-air-fp8',        label: 'GLM 4.5 Air',           latency: '~634ms', cost: '$0.0066/min' },
+  { id: 'claude-haiku-4-5',      label: 'Claude Haiku 4.5',      latency: '~686ms', cost: '$0.0064/min' },
+  { id: 'gpt-4o-mini',           label: 'GPT-4o Mini',           latency: '~767ms', cost: '$0.0009/min' },
+  { id: 'gpt-5-nano',            label: 'GPT-5 Nano',            latency: '~768ms', cost: '$0.0003/min' },
+  { id: 'gpt-5-mini',            label: 'GPT-5 Mini',            latency: '~840ms', cost: '$0.0017/min' },
+  { id: 'gemini-2.5-flash',      label: 'Gemini 2.5 Flash',      latency: '~1.04s', cost: '$0.0009/min' },
+]
+
 import { timeAgo, STATUS_COLORS } from '../lib/utils'
 import Navbar from '../components/Navbar'
 
@@ -203,6 +217,104 @@ function SendDialog({ row, password, baseUrl, onClose, onSent }) {
   )
 }
 
+// ── Model Switch Dialog ─────────────────────────────────────────────────────
+
+function ModelSwitchDialog({ row, password, onClose, onSwitched }) {
+  const [selected, setSelected] = useState(row.llm_model || '')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+
+  const currentModel = row.llm_model || 'unknown'
+
+  async function handleSwitch() {
+    if (!selected || selected === currentModel) return
+    setLoading(true)
+    setError('')
+    try {
+      await switchModel(password, row.agent_id, row.store_id, selected)
+      setSuccess(true)
+      onSwitched(row.id, selected)
+      setTimeout(onClose, 1200)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-6" onClick={onClose}>
+      <div className="card w-full max-w-lg p-6 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <Zap size={18} className="text-yellow-400" /> Switch LLM Model
+          </h2>
+          <button onClick={onClose} className="text-[#666666] hover:text-white transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="text-sm text-[#888888] space-y-1">
+          <p><span className="text-[#666666]">Agent:</span> <span className="text-[#ededed] font-mono text-xs">{row.agent_id}</span></p>
+          <p><span className="text-[#666666]">Current model:</span> <span className="text-[#ededed]">{currentModel}</span></p>
+        </div>
+
+        <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto pr-1">
+          {LLM_MODELS.map((m) => {
+            const isActive = m.id === currentModel
+            const isSelected = m.id === selected
+            return (
+              <button
+                key={m.id}
+                onClick={() => setSelected(m.id)}
+                className={`flex items-center justify-between px-3 py-2.5 rounded-lg border text-left text-sm transition-all ${
+                  isSelected
+                    ? 'border-yellow-500/50 bg-yellow-500/10 text-white'
+                    : 'border-[#222222] bg-[#111111] text-[#aaaaaa] hover:border-[#444444] hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${
+                    isSelected ? 'border-yellow-400' : 'border-[#444444]'
+                  }`}>
+                    {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />}
+                  </div>
+                  <span className="font-medium">{m.label}</span>
+                  {isActive && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">
+                      active
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 text-xs text-[#666666]">
+                  <span>{m.latency}</span>
+                  <span>{m.cost}</span>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+
+        {error && <p className="text-sm text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+        {success && <p className="text-sm text-green-400 bg-green-500/10 px-3 py-2 rounded-lg flex items-center gap-1.5"><Check size={14} /> Model switched successfully</p>}
+
+        <div className="flex gap-3 justify-end mt-1">
+          <button onClick={onClose} className="btn-ghost text-sm">Cancel</button>
+          <button
+            onClick={handleSwitch}
+            className="btn-primary text-sm"
+            disabled={loading || !selected || selected === currentModel || success}
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+            Switch Model
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 function Dashboard({ password, onLogout }) {
@@ -210,6 +322,7 @@ function Dashboard({ password, onLogout }) {
   const [baseUrl, setBaseUrl] = useState(() => localStorage.getItem('admin_base_url') || '')
   const [processRow, setProcessRow] = useState(null)
   const [sendRow, setSendRow] = useState(null)
+  const [modelRow, setModelRow] = useState(null)
   const [expandedError, setExpandedError] = useState(null)
 
   const fetchRequests = useCallback(async () => {
@@ -319,6 +432,15 @@ function Dashboard({ password, onLogout }) {
 
                         {row.status === 'ready' && (
                           <>
+                            {row.agent_id && row.store_id && (
+                              <button
+                                onClick={() => setModelRow(row)}
+                                className="btn-ghost !py-1.5 !px-3 text-xs"
+                                title={row.llm_model || 'Switch model'}
+                              >
+                                <Zap size={12} className="text-yellow-400" /> Model
+                              </button>
+                            )}
                             {baseUrl && row.test_url && (
                               <a
                                 href={`${baseUrl.replace(/\/$/, '')}${row.test_url}`}
@@ -340,6 +462,15 @@ function Dashboard({ password, onLogout }) {
 
                         {row.status === 'sent' && (
                           <>
+                            {row.agent_id && row.store_id && (
+                              <button
+                                onClick={() => setModelRow(row)}
+                                className="btn-ghost !py-1.5 !px-3 text-xs"
+                                title={row.llm_model || 'Switch model'}
+                              >
+                                <Zap size={12} className="text-yellow-400" /> Model
+                              </button>
+                            )}
                             {baseUrl && row.test_url && (
                               <a
                                 href={row.test_url.startsWith('http') ? row.test_url : `${baseUrl.replace(/\/$/, '')}${row.test_url}`}
@@ -407,6 +538,18 @@ function Dashboard({ password, onLogout }) {
           baseUrl={baseUrl}
           onClose={() => setSendRow(null)}
           onSent={(id) => optimisticUpdate(id, 'sent')}
+        />
+      )}
+      {modelRow && (
+        <ModelSwitchDialog
+          row={modelRow}
+          password={password}
+          onClose={() => setModelRow(null)}
+          onSwitched={(id, model) => {
+            setRequests((prev) =>
+              prev.map((r) => (r.id === id ? { ...r, llm_model: model } : r))
+            )
+          }}
         />
       )}
     </div>

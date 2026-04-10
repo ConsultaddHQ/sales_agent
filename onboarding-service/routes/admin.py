@@ -17,6 +17,7 @@ if _REPO_ROOT not in sys.path:
 from shared.config import ADMIN_PASSWORD
 from shared.db import get_supabase
 from pipeline import pipeline
+from elevenlabs_agent import update_agent_model, MODEL_PROMPT_MAP
 
 logger = logging.getLogger("onboarding-service")
 
@@ -113,3 +114,40 @@ def update_request(request_id: str, body: UpdateRequestBody, x_admin_password: s
 
     sb.table("agent_requests").update(updates).eq("id", request_id).execute()
     return {"success": True}
+
+
+class SwitchModelBody(BaseModel):
+    agent_id: str
+    store_id: str
+    llm_model: str
+
+
+@router.post("/switch-model")
+def switch_agent_model(body: SwitchModelBody, x_admin_password: str = Header(...)):
+    """Admin: hot-swap an agent's LLM model + prompt. No re-scraping needed.
+
+    curl -X POST http://localhost:8005/api/switch-model \\
+      -H "Content-Type: application/json" \\
+      -H "x-admin-password: YOUR_PASSWORD" \\
+      -d '{"agent_id":"abc123","store_id":"c5a0c8a1-...","llm_model":"gemini-2.5-flash"}'
+    """
+    _verify_admin(x_admin_password)
+    logger.info(f"Switching agent {body.agent_id} to model {body.llm_model}")
+    try:
+        result = update_agent_model(
+            agent_id=body.agent_id,
+            store_id=body.store_id,
+            llm_model=body.llm_model,
+        )
+        # Persist the active model so the dashboard can show it
+        try:
+            sb = get_supabase()
+            sb.table("agent_requests").update({
+                "llm_model": body.llm_model,
+            }).eq("agent_id", body.agent_id).execute()
+        except Exception as db_err:
+            logger.warning(f"Could not persist llm_model to DB: {db_err}")
+        return result
+    except Exception as e:
+        logger.error(f"Failed to switch model: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

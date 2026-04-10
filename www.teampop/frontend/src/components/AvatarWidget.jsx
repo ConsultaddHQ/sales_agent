@@ -240,6 +240,16 @@ function AvatarInner({
       }
     },
     onError: (error) => console.error("ElevenLabs error:", error),
+    onDisconnect: (details) => {
+      console.error(
+        "[ElevenLabs] Disconnected:",
+        "reason=", details?.reason,
+        "closeCode=", details?.closeCode,
+        "closeReason=", details?.closeReason,
+        "message=", details?.message,
+        "context=", details?.context,
+      );
+    },
   });
 
   // --- Client tools via v1.0 useConversationClientTool (always-fresh closures) ---

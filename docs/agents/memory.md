@@ -1,7 +1,7 @@
 # Agent Memory — Active Work State
 
 > **Keep this file under 2KB.** It is read by every agent at session start.
-> **Last updated:** 2026-04-08
+> **Last updated:** 2026-04-09
 
 ---
 
@@ -23,6 +23,7 @@
 
 | Date | What Was Done | Files Changed | Agent/Author |
 |------|--------------|---------------|--------------|
+| 2026-04-09 | Tools-first Gemini prompt + WebSocket disconnect diagnostic logging + complete agent conversation cycle docs | `elevenlabs_agent.py`, `AvatarWidget.jsx`, `completions.md`, `decisions.md` | Claude Code |
 | 2026-04-08 | ElevenLabs API migration + latency optimization + single-tunnel sharing + widget latency tracking | `elevenlabs_agent.py`, `main.py`, `AvatarWidget.jsx`, `image_server.py`, `admin.py`, `client.py` | Claude Code |
 | 2026-04-07 | Monorepo refactoring: adapter registry, shared/ library, unified pipeline, universal scraping chain | `shared/`, `onboarding-service/` | Claude Code |
 | 2026-04-07 | Website redesign: monochrome theme, CSS+GSAP orb, request form + admin dashboard | `www.teampop/website/src/` | Claude Code |
@@ -31,6 +32,21 @@
 | 2026-04-05 | Supermicro GPU onboarding + search service debugging | `supermicro_scraper.py`, `supermicro_adapter.py` | Claude Code |
 | 2026-04-08 | Auto: fb58ef88 | 0 | Hook |
 | 2026-04-08 | Auto: 7d827691 | 0 | Hook |
+| 2026-04-08 | Auto: 7d827691 | 0 | Hook |
+| 2026-04-08 | Auto: fb58ef88 | 0 | Hook |
+| 2026-04-08 | Auto: fb58ef88 | 0 | Hook |
+| 2026-04-08 | Auto: fb58ef88 | 0 | Hook |
+| 2026-04-08 | Auto: fb58ef88 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
 
 ---
 

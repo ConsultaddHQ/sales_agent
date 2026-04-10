@@ -132,6 +132,7 @@ class OnboardingPipeline:
             sb.table("agent_requests").update({
                 "status": "ready",
                 "agent_id": result["agent_id"],
+                "store_id": result["store_id"],
                 "test_url": result["test_url"],
                 "updated_at": datetime.now().isoformat(),
             }).eq("id", request_id).execute()
