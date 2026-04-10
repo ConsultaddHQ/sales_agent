@@ -9,11 +9,16 @@ demonstrations; expect breaking changes and frequent refactors.
 
 ```
 sales-voice-agent/
-├── onboarding-service/      # Python FastAPI crawler & embedder
+├── shared/                  # Shared Python library (config, db, embeddings, parsing)
+├── onboarding-service/      # Python FastAPI onboarding pipeline
+│   ├── adapters/            # Plug-and-play store adapters (shopify, threadless, supermicro, universal)
+│   ├── scraping/            # Universal extractors (JSON-LD, microdata, OG, sitemap, platform CSS, LLM)
+│   ├── routes/              # API endpoints (onboard, admin, client)
+│   └── services/            # Business logic (products, test pages, agent creation)
 ├── search-service/          # Python FastAPI semantic search API
-└── www.teampop/             # front‑end applications
+└── www.teampop/             # front-end applications
     ├── frontend/            # Embeddable Avatar Widget
-    └── website/             # Marketing website
+    └── website/             # Marketing website + admin dashboard
 ```
 
 ### How the system works

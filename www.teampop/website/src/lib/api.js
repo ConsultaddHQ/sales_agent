@@ -59,3 +59,11 @@ export function sendAgent(id, password, baseUrl) {
     body: JSON.stringify({ base_url: baseUrl }),
   })
 }
+
+export function switchModel(password, agentId, storeId, llmModel) {
+  return request('/api/switch-model', {
+    method: 'POST',
+    headers: adminHeaders(password),
+    body: JSON.stringify({ agent_id: agentId, store_id: storeId, llm_model: llmModel }),
+  })
+}

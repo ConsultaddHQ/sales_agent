@@ -25,15 +25,17 @@ This is the **canonical shared instruction file** for all coding agents working 
 
 ## Repo Snapshot
 
-- `onboarding-service/`: FastAPI service for store validation, crawling, embeddings, agent creation + client acquisition API
-- `onboarding-service/notifications.py`: Resend email + Slack webhook notifications for client acquisition
-- `onboarding-service/threadless_adapter.py`: Adapter bridging Threadless scraper into the onboarding pipeline
-- `onboarding-service/supermicro_adapter.py`: Adapter bridging Supermicro scraper into the onboarding pipeline
-- `search-service/`: FastAPI hybrid search API (includes request logging middleware)
+- `shared/`: shared Python library (config, db, embeddings, parsing) used by both services
+- `onboarding-service/`: FastAPI onboarding service (routes/, adapters/, services/, scraping/, pipeline.py)
+- `onboarding-service/adapters/`: plug-and-play store adapters (shopify, threadless, supermicro, universal)
+- `onboarding-service/scraping/`: universal extraction strategies (JSON-LD, microdata, OG, sitemap, platform selectors, LLM fallback)
+- `onboarding-service/routes/`: API endpoints split by domain (onboard, admin, client)
+- `onboarding-service/services/`: business logic (products, test_page, agent_creator)
+- `search-service/`: FastAPI hybrid search API (imports from shared/)
 - `image_server.py`: primary image server used by `start_services.sh`
 - `www.teampop/frontend/`: embeddable React widget in Shadow DOM
 - `www.teampop/website/`: marketing website + client acquisition flow (React + GSAP + Tailwind)
-- `universal-scraper/`: scraping workflow and fallback strategies
+- `universal-scraper/`: legacy scraping scripts (referenced by adapters)
 - `docs/`: human-facing project docs and agent support files
 
 ---
@@ -150,12 +152,15 @@ For the full non-negotiable rules, read `docs/agents/constraints.md`.
 
 | Area | Path | Notes |
 |------|------|-------|
-| Onboarding | `onboarding-service/` | Crawl, validate, embed, create voice agent + client acquisition API |
-| Search | `search-service/` | Semantic + full-text product search |
+| Shared | `shared/` | Config, DB, embeddings, parsing — used by both services |
+| Onboarding | `onboarding-service/` | Unified pipeline + plug-and-play adapters + client acquisition API |
+| Adapters | `onboarding-service/adapters/` | StoreAdapter ABC + registry (shopify, threadless, supermicro, universal) |
+| Scraping | `onboarding-service/scraping/` | Universal extractors: JSON-LD, microdata, OG, sitemap, platform CSS, LLM |
+| Search | `search-service/` | Semantic + full-text product search (imports shared/) |
 | Widget | `www.teampop/frontend/` | Shadow DOM custom element |
 | Website | `www.teampop/website/` | Marketing site + client request form + admin dashboard |
-| Scraper | `universal-scraper/` | HTTP -> Playwright -> LLM fallback chain |
-| Images | `image_server.py` | Primary image server (image-service/ removed) |
+| Legacy Scraper | `universal-scraper/` | Threadless/Supermicro scrapers (referenced by adapters) |
+| Images | `image_server.py` | Primary image server |
 | Database | Supabase | `products` + `agent_requests` tables + `hybrid_search_products` RPC |
 
 ---

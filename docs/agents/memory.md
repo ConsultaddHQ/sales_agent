@@ -1,7 +1,7 @@
 # Agent Memory — Active Work State
 
 > **Keep this file under 2KB.** It is read by every agent at session start.
-> **Last updated:** 2026-04-07
+> **Last updated:** 2026-04-09
 
 ---
 
@@ -23,22 +23,38 @@
 
 | Date | What Was Done | Files Changed | Agent/Author |
 |------|--------------|---------------|--------------|
-| 2026-04-07 | Website redesign: Resend-inspired monochrome theme, CSS+GSAP orb (replaced Three.js), enhanced cards with Winterfell-style scroll animation + tilt + tag pills, 2-column FAQ section, request form + admin dashboard | `www.teampop/website/src/` (all components, pages, index.css, api.js), `package.json` | Claude Code |
-| 2026-04-07 | Client acquisition backend: submit-request, admin auth, process/send pipelines, Resend+Slack notifications | `onboarding-service/main.py`, `notifications.py` (new), `.env.example`, `requirements.txt` | Claude Code |
-| 2026-04-06 | Repo cleanup: removed dashboard, dead frontend pages, stale scripts, updated all docs | Deleted `dashboard/`, `scripts/`, dead pages/CSS; updated `AGENTS.md`, `README.md` | Claude Code |
-| 2026-04-05 | Supermicro GPU onboarding pipeline + ElevenLabs API update + search service debugging | `supermicro_scraper.py`, `supermicro_adapter.py`, `main.py`, `elevenlabs_agent.py` | Claude Code |
-| 2026-04-07 | Auto: 899ded9c | 0 | Hook |
-| 2026-04-07 | Auto: 899ded9c | 0 | Hook |
-| 2026-04-07 | Auto: 899ded9c | 0 | Hook |
-| 2026-04-07 | Auto: 0082de94 | 0 | Hook |
-| 2026-04-07 | Auto: 0082de94 | 0 | Hook |
+| 2026-04-09 | Tools-first Gemini prompt + WebSocket disconnect diagnostic logging + complete agent conversation cycle docs | `elevenlabs_agent.py`, `AvatarWidget.jsx`, `completions.md`, `decisions.md` | Claude Code |
+| 2026-04-08 | ElevenLabs API migration + latency optimization + single-tunnel sharing + widget latency tracking | `elevenlabs_agent.py`, `main.py`, `AvatarWidget.jsx`, `image_server.py`, `admin.py`, `client.py` | Claude Code |
+| 2026-04-07 | Monorepo refactoring: adapter registry, shared/ library, unified pipeline, universal scraping chain | `shared/`, `onboarding-service/` | Claude Code |
+| 2026-04-07 | Website redesign: monochrome theme, CSS+GSAP orb, request form + admin dashboard | `www.teampop/website/src/` | Claude Code |
+| 2026-04-07 | Client acquisition backend: submit-request, admin auth, process/send pipelines, notifications | `onboarding-service/main.py`, `notifications.py` | Claude Code |
+| 2026-04-06 | Repo cleanup: removed dashboard, dead scripts, updated docs | Deleted `dashboard/`, `scripts/` | Claude Code |
+| 2026-04-05 | Supermicro GPU onboarding + search service debugging | `supermicro_scraper.py`, `supermicro_adapter.py` | Claude Code |
+| 2026-04-08 | Auto: fb58ef88 | 0 | Hook |
+| 2026-04-08 | Auto: 7d827691 | 0 | Hook |
+| 2026-04-08 | Auto: 7d827691 | 0 | Hook |
+| 2026-04-08 | Auto: fb58ef88 | 0 | Hook |
+| 2026-04-08 | Auto: fb58ef88 | 0 | Hook |
+| 2026-04-08 | Auto: fb58ef88 | 0 | Hook |
+| 2026-04-08 | Auto: fb58ef88 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-09 | Auto: 1f65f923 | 0 | Hook |
+| 2026-04-10 | Auto: fb58ef88 | 0 | Hook |
+| 2026-04-10 | Auto: 7d827691 | 0 | Hook |
+| 2026-04-10 | Auto: 899ded9c | 0 | Hook |
 
 ---
 
 ## Open Questions / Blockers
 
-- ngrok URL changes on restart — agent webhook URL is baked in at creation time
-- Supermicro internal API (`/en/structuredbapi/ps2/system/gpu/all`) is undocumented
-- Image server path mismatch: images saved to `onboarding-service/images/` but served from `./images/`
-- `agent_requests` table not yet created in Supabase (manual step required)
-- External services not yet configured: Resend API key, Slack webhook, Calendly link
+- ngrok URL changes on restart — agent webhook URL is baked in at creation time; single-tunnel setup mitigates (only 1 URL to update)
+- ngrok free tier interstitial may block widget script load on first visit for external users
+- `glm-45-air-fp8` LLM needs validation on complex tool-calling prompts — fallback to `gpt-4o-mini` via env var

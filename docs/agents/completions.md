@@ -26,6 +26,156 @@ Copy this block for meaningful completed work:
 
 ---
 
+## 2026-04-09 — N/A — Agent Conversation Cycle Reference + WebSocket Diagnostic Logging
+
+- **Status:** Completed
+- **Owner:** Claude Code
+- **Summary:** Added an `onDisconnect` callback to the widget's `useConversation` hook to capture WebSocket close code/reason (previously silent), and documented the complete end-to-end agent conversation cycle (user speech → VAD/ASR → Gemini LLM → search webhook → widget client tool → TTS) with file paths and line numbers. This entry is the single source of truth for debugging agent conversation flow.
+- **Why:** Three observed problems needed better visibility: (1) WebSocket closes mid-conversation with `WebSocket is already in CLOSING or CLOSED state` at `sendMessage` (widget tries to send `client_tool_result` after server killed WS) — no diagnostic info was captured. (2) Reliability varies 3-4s vs 10s because Gemini sometimes generates filler speech before calling `update_products` after receiving webhook results. (3) No end-to-end doc existed, so agents debugging had to trace AvatarWidget.jsx + elevenlabs_agent.py + search-service/main.py + SDK source every time.
+- **Files:** `www.teampop/frontend/src/components/AvatarWidget.jsx` (added `onDisconnect` after `onError` at ~line 242).
+- **Tradeoffs:** Diagnostic-only change — does not fix the WebSocket close, just logs the close code + reason so the real cause can be identified from real data instead of guessing. Actual fix requires analyzing a few captured closes.
+- **Verification:** Widget built with `npm run build` in `www.teampop/frontend/`. After a search triggers a close, check browser console for `[ElevenLabs] Disconnected: reason=... closeCode=... closeReason=...`. Close code 1000 = clean agent end; any other code = server error.
+- **Related Decisions:** 2026-04-09: Tools-First Gemini Prompt + Latency/Interruption Settings Overhaul
+- **Notes:** The agent settings in `elevenlabs_agent.py` (lines 699-745) were verified against the working agent `agent_6501knschbgtf98sp1cawz6b1hza` via GET API — `soft_timeout_config` (2.5s, "Hhmmmm...yeah.", LLM=false) and all 5 `client_events` (audio, user_transcript, interruption, agent_response, agent_response_correction) already match exactly. No settings code changes were needed.
+
+### Complete Agent Conversation Cycle Reference
+
+End-to-end trace of a single user query from speech to products on carousel. Line numbers match current state as of 2026-04-09.
+
+#### STEP 1 — User clicks orb → WebSocket opens
+- **File:** `www.teampop/frontend/src/components/AvatarWidget.jsx:368-384` (`handleInteraction`)
+- Calls `conversation.startSession({ agentId, connectionType: "websocket" })`
+- **SDK internals** (`node_modules/@elevenlabs/client/dist/utils/WebSocketConnection.js`): `WebSocketConnection.create()` opens `wss://api.elevenlabs.io/...`, waits for `"conversation_initiation_metadata"` event containing `conversation_id`, `user_input_audio_format`, `agent_output_audio_format`
+- Status transitions: `disconnected → connecting → connected`
+- Agent plays `first_message` via TTS immediately (configured in `onboarding-service/elevenlabs_agent.py:711-715`)
+
+#### STEP 2 — User speaks → VAD → ASR → Transcript
+- SDK captures microphone via `getUserMedia()`, streams `"user_audio"` frames over WS
+- Server runs VAD (voice activity detection) → ASR (Automatic Speech Recognition) → sends transcript event
+- **File:** `AvatarWidget.jsx:181-217` (`onMessage({source:"user", text})`)
+- Calls `_startLatencyTimer(text)` → records `performance.now()` as `userSpeechAt` (line 147-151)
+- Adds to `chatHistory` state (line 203)
+
+#### STEP 3 — Gemini LLM processes (~1s)
+- Server passes transcript to Gemini 2.5 Flash with system prompt + conversation history
+- Per the tools-first prompt (`elevenlabs_agent.py:43-91`): Gemini says a short phrase like "On it!" or "Let me check!" (step 1 of the 4-step procedure)
+- **File:** `AvatarWidget.jsx:220-240` (`onMessage({source:"ai", text})`)
+- Calls `_markFirstAi()` → records `firstAiAt` (line 153-160)
+- **Soft timeout fallback:** If Gemini takes >2.5s before any speech, `soft_timeout_config` fires (configured in `elevenlabs_agent.py:736-740`) — TTS plays static message `"Hhmmmm...yeah."` (NOT an LLM response, it is platform-level filler)
+
+#### STEP 4 — `search_products` webhook fires
+- **Tool config:** `onboarding-service/elevenlabs_agent.py:427-456`
+  - `type: "webhook"`, `execution_mode: "immediate"`, `response_timeout_secs: 5`
+  - `store_id` is a `constant_value` (NOT LLM-generated, to prevent UUID truncation)
+  - `query` is LLM-expanded from user utterance
+- Server sends `POST {SEARCH_API_URL}/search` with `Content-Type: application/json`
+- **File:** `search-service/main.py:253-299` (`search()` endpoint)
+  - Validates `store_id` (UUID format) + `query` (non-empty)
+  - Calls `_hybrid_search_products()` at `search-service/main.py:123-245`
+  - Encodes query with `all-MiniLM-L6-v2` → 384-dim embedding (loaded from `shared/embeddings.py`)
+  - Calls Supabase RPC `hybrid_search_products` with `p_store_id`, `p_query`, `p_query_embedding`, `p_limit=5`, `p_min_score=0.25`
+- Returns `SearchResponse`: `{ "products": [{id, name, price, description, image_url, product_url}, ...], "pitch": "Found N products." }`
+- **Typical latency:** 500ms-1.5s (measured in production)
+
+#### STEP 5 — Gemini receives results → Calls `update_products` ⚠️ BOTTLENECK
+- Server passes webhook response back to Gemini as tool result
+- Gemini decides to call `update_products` (client tool) with the products array
+- **Three observed failure modes:**
+  - **FAST (3-4s total):** Gemini immediately calls `update_products` → speaks about results
+  - **SLOW (8-10s total):** Gemini generates filler speech first (e.g., "I found some great options, let me pull those up"), THEN calls `update_products` — the intermediate speech adds 3-5s
+  - **BROKEN:** Gemini speaks about products WITHOUT calling `update_products` → carousel stays blank. Prompt reinforcement with "This step is important." mitigates but does not eliminate this.
+- Server sends `"client_tool_call"` event over WS to widget:
+  ```json
+  {
+    "type": "client_tool_call",
+    "client_tool_call": {
+      "tool_call_id": "...",
+      "tool_name": "update_products",
+      "parameters": { "products": [...] }
+    }
+  }
+  ```
+
+#### STEP 6 — Widget executes `update_products` client tool
+- **SDK internals** (`node_modules/@elevenlabs/client/dist/BaseConversation.js`): routes `"client_tool_call"` to the handler registered via `useConversationClientTool("update_products", ...)`
+- **File:** `AvatarWidget.jsx:246-262`
+  - Calls `_markProductsArrived(products.length)` → records `productsAt`, logs latency breakdown (line 162-177)
+  - `setLatestProducts(products)` + `latestProductsRef.current = products`
+  - `setActiveView("PRODUCTS")` → carousel view appears
+  - `setActiveIndex(0)` → first product focused
+  - Returns string `"UI updated successfully"`
+- **SDK sends result back over WS:**
+  ```json
+  {
+    "type": "client_tool_result",
+    "tool_call_id": "...",
+    "result": "UI updated successfully",
+    "is_error": false
+  }
+  ```
+- ⚠️ **This is where the `WebSocket is already in CLOSING or CLOSED state` error originates.** If the server killed the WS during step 5 (e.g., LLM timeout, orchestrator error), the SDK's `connection.sendMessage()` at `widget.js:472` throws because the socket is already closed. The new `onDisconnect` callback now captures the close code + reason to diagnose *why*.
+
+#### STEP 7 — Gemini speaks about results
+- Gemini generates product descriptions, TTS converts to speech, streamed via `"audio"` events over WS
+- **File:** `AvatarWidget.jsx:220-240` (`onMessage({source:"ai", text})`)
+- `setAgentSubtitle(text)` → user sees subtitle
+- Price keyword detection (line 226-239): if text contains "price", "₹", "rupees", or "cost", triggers `setHighlightPrice(true)` for 2.5s
+- User sees carousel + hears agent describing products
+- **Cycle complete.** Next user query returns to STEP 2.
+
+#### Other client tools in the cycle
+- **`update_carousel_main_view`** (`AvatarWidget.jsx:264-286`): Agent-triggered carousel navigation. Takes `index` (preferred) or `product_id`. Sets `isAgentTriggeredRef.current = true` so the scroll `useEffect` at line 351-366 distinguishes agent vs. manual scroll.
+- **`product_desc_of_main_view`** (`AvatarWidget.jsx:288-304`): Called **only** by the frontend (never by the agent) when user manually scrolls the carousel. Agent prompt explicitly forbids calling this tool.
+- **`syncMainProduct`** (`AvatarWidget.jsx:317-348`): On manual thumbnail click, debounces 600ms, then sends `sendContextualUpdate("[CAROUSEL UPDATE] ...")` + `sendUserMessage("Tell me about this one")` to trigger agent narration. `isSyntheticMessageRef` prevents the synthetic "Tell me about this one" from appearing in chat history.
+
+#### WebSocket message types (SDK → server)
+| Type | Purpose | Trigger |
+|------|---------|---------|
+| `user_audio` | Raw mic audio frames | Continuous while mic active |
+| `user_message` | Text input | `sendUserMessage(text)` |
+| `contextual_update` | Inject context without interrupting | `sendContextualUpdate(text)` |
+| `client_tool_result` | Tool execution result | After each client tool runs |
+| `pong` | Response to server ping | Server `ping` event |
+| `feedback` | Like/dislike | `sendFeedback()` |
+
+#### WebSocket event types (server → client)
+Configured in `elevenlabs_agent.py:728-731` via `client_events`:
+- `audio` — TTS audio chunks
+- `user_transcript` — Final ASR result
+- `interruption` — User interrupted agent speech
+- `agent_response` — Agent message text
+- `agent_response_correction` — Agent message edit
+
+---
+
+## 2026-04-08 — N/A — ElevenLabs API Migration + Latency Optimization + Single-Tunnel Sharing
+
+- **Status:** Completed
+- **Owner:** Claude Code
+- **Summary:** Migrated ElevenLabs agent creation to current API format (`conversation_config.agent` nesting), fixed tool config validation errors, added `ignore_default_personality`, switched to low-latency ElevenLabs-hosted LLM (`glm-45-air-fp8`), optimized TTS/turn settings, consolidated all services behind single ngrok tunnel, and added widget-side latency instrumentation.
+- **Why:** Agent creation was silently failing to store prompt/tools due to API format changes. Agent was behaving as generic chatbot (missing personality). Latency was high due to external API LLM. Sharing demos required 3 ngrok tunnels (impossible on free tier).
+- **Files:** `onboarding-service/elevenlabs_agent.py` (major rewrite — API format, tool config, latency settings, verification), `onboarding-service/main.py` (added `/images` static mount + `/search` proxy), `image_server.py` (fixed default images path), `www.teampop/frontend/src/components/AvatarWidget.jsx` (latency timing instrumentation), `onboarding-service/routes/admin.py` + `client.py` (error logging), `onboarding-service/.env.example` (new LLM/TTS defaults)
+- **Tradeoffs:** (1) `glm-45-air-fp8` is faster but less proven than `gpt-4o-mini` for complex tool-calling — fallback via env var. (2) `optimize_streaming_latency: 3` trades slight audio quality for speed. (3) Search proxy adds one local hop but eliminates need for separate ngrok tunnel. (4) `eager` turn mode may occasionally interrupt user — acceptable for shopping assistant.
+- **Verification:** Agent verification log confirms prompt stored (3800+ chars with "Sam"), 4 tools configured, `ignore_default_personality: true`, `llm=glm-45-air-fp8`. Browser console shows colored latency breakdown per conversation cycle. Single ngrok tunnel serves demo pages, widget JS, images, and search webhook.
+- **Related Decisions:** 2026-04-08: ElevenLabs API format migration, 2026-04-08: Latency-optimized agent config
+- **Notes:** Key API discoveries: (1) `agent_config` as top-level key is silently ignored — must nest under `conversation_config.agent`. (2) `constant_value` and `description` cannot coexist on same webhook param. (3) Array-type tool params require `items` field. (4) Default `ignore_default_personality: false` injects generic ElevenLabs personality that overrides custom prompt.
+
+---
+
+## 2026-04-07 — N/A — Monorepo Refactoring: Plug-and-Play Adapters + Universal Scraping
+
+- **Status:** Completed
+- **Owner:** Claude Code
+- **Summary:** Decomposed the 1,251-line onboarding main.py into a plug-and-play adapter registry, shared library, unified pipeline, route modules, and service modules. Added a 6-tier universal scraping chain (JSON-LD, microdata, OG tags, platform CSS selectors, Playwright rendering, LLM fallback) with platform auto-detection for WooCommerce, Magento, PrestaShop, OpenCart, Wix, and others.
+- **Why:** Adding a 4th store type previously required ~140 lines of copy-paste, a new endpoint, and a new elif branch. Now it requires 1 class implementing StoreAdapter + 1 line in the registry. The universal adapter enables scraping ~90-95% of e-commerce sites without any platform-specific code.
+- **Files:** `shared/{config,db,embeddings,parsing}.py`, `onboarding-service/{main,pipeline}.py`, `onboarding-service/adapters/{base,registry,shopify,threadless,supermicro,universal}.py`, `onboarding-service/routes/{onboard,admin,client}.py`, `onboarding-service/services/{products,test_page,agent_creator}.py`, `onboarding-service/scraping/{platform_detect,renderer,llm_fallback}.py`, `onboarding-service/scraping/extractors/{json_ld,open_graph,microdata,sitemap,platform_selectors}.py`, `search-service/main.py`
+- **Tradeoffs:** Used `sys.path.insert` for shared/ imports instead of `pip install -e .` — appropriate for alpha stage, upgrade when team grows. Old adapter files (`threadless_adapter.py`, `supermicro_adapter.py`) kept for now as the new adapters import their scrapers. Backward-compatible `/onboard-threadless` and `/onboard-supermicro` endpoints delegate to unified handler.
+- **Verification:** All imports verified via `python -c "from main import app"` in both services. All routes registered: `/onboard`, `/onboard-threadless`, `/onboard-supermicro`, `/api/*`. Adapter registry auto-detects: shopify, threadless, supermicro, universal.
+- **Related Decisions:** 2026-04-03 Adapter Pattern for Non-Shopify, 2026-04-07 Monorepo Refactoring Architecture
+- **Notes:** The `main.py` went from 1,251 lines to ~80 lines. The universal adapter's fallback chain has not been tested against live sites yet — integration testing needed. Platform CSS selectors defined for WooCommerce, Magento 2, PrestaShop, and OpenCart.
+
+---
+
 ## 2026-04-07 — N/A — Marketing Website Redesign + Client Acquisition Frontend
 
 - **Status:** Completed

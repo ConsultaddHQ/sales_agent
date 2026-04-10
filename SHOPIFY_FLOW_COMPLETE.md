@@ -54,9 +54,10 @@ OPENROUTER_MODEL=xai/grok-beta
 LOG_LEVEL=INFO
 ```
 
-**`www.teampop/dashboard/.env`:**
+**`www.teampop/website/.env`** (marketing site + admin dashboard):
 ```env
-VITE_BACKEND_URL=http://localhost:8005
+VITE_API_URL=http://localhost:8005
+VITE_CALENDLY_URL=https://calendly.com/your-link
 ```
 
 ### 2. Supabase Setup
@@ -149,8 +150,8 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Dashboard
-cd ../www.teampop/dashboard
+# Marketing Website + Admin Dashboard
+cd ../www.teampop/website
 npm install
 
 # Widget Frontend
@@ -160,7 +161,7 @@ npm install
 
 ### Step 2: Start All Services
 
-Open **4 terminal windows**:
+Open **3 terminal windows** (or use `./start_services.sh`):
 
 **Terminal 1 - Onboarding Service (port 8005):**
 ```bash
@@ -181,15 +182,9 @@ uvicorn main:app --port 8006 --reload
 python image_server.py
 ```
 
-**Terminal 4 - Dashboard (port 5174):**
+**Optional - Website + Admin Dashboard (port 5173):**
 ```bash
-cd www.teampop/dashboard
-npm run dev
-```
-
-**Terminal 5 (Optional) - Widget Dev Server (port 5173):**
-```bash
-cd www.teampop/frontend
+cd www.teampop/website
 npm run dev
 ```
 
@@ -202,38 +197,40 @@ curl http://localhost:8006/health  # Search
 curl http://localhost:8000/health  # Images
 ```
 
-Visit dashboard: `http://localhost:5174`
+Admin dashboard: `http://localhost:5173/admin`
 
 ---
 
 ## 🧪 Testing Flow
 
-### Test Case 1: Happy Path (sensesindia.in)
+### Test Case 1: Happy Path — Shopify (sensesindia.in)
 
-1. **Open Dashboard**: `http://localhost:5174`
-
-2. **Enter Store URL**: `sensesindia.in`
-
-3. **Expected Flow**:
-   ```
-   ✅ Validating Shopify store...
-   ✅ Scraping products (max 200)...
-   ✅ Processing products and downloading images...
-   ✅ Storing products in database...
-   ✅ Creating ElevenLabs conversational agent...
-   ✅ Generating static test page...
-   ✅ Your AI Agent is Ready!
+1. **Onboard via API** (unified endpoint auto-detects Shopify):
+   ```bash
+   curl -X POST http://localhost:8005/onboard \
+     -H "Content-Type: application/json" \
+     -d '{"url": "sensesindia.in"}'
    ```
 
-4. **Verify Response**:
+2. **Expected Flow** (check onboarding-service logs):
+   ```
+   Step 1/7: Scraping products (max 200)...
+   Step 2/7: Processing products and downloading images...
+   Step 3/7: Storing products in database...
+   Step 4/7: Creating ElevenLabs agent...
+   Step 5/7: Generating test page...
+   Pipeline complete
+   ```
+
+3. **Verify Response**:
    - Store ID (UUID)
    - Agent ID (ElevenLabs ID)
-   - Widget snippet (copy button)
-   - "Preview Widget" button
+   - Widget snippet
+   - Test URL (`/demo/test_xxx.html`)
 
-5. **Test Widget**:
-   - Click "Preview Widget"
-   - Should open cloned sensesindia.in with widget
+4. **Test Widget**:
+   - Open `http://localhost:8005{test_url}` in browser
+   - Should show cloned sensesindia.in with widget
    - Click widget orb
    - Ask: "Show me blue shirts"
    - Should see product carousel
@@ -394,10 +391,10 @@ services:
     startCommand: python image_server.py
 ```
 
-### Option 3: Vercel (Dashboard Only)
+### Option 3: Vercel (Website + Admin Dashboard)
 
 ```bash
-cd www.teampop/dashboard
+cd www.teampop/website
 vercel --prod
 
 # Update .env.production with deployed backend URLs

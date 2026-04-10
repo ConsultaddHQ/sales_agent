@@ -1,21 +1,22 @@
 import logging
 import os
+import sys
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from openai import OpenAI
 from pydantic import BaseModel, Field
-from supabase import Client, create_client
-from sentence_transformers import SentenceTransformer
+from supabase import Client
 import uuid
 
-
+# Add repo root for shared/ imports
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -114,47 +115,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestLoggingMiddleware)
 
-_supabase: Optional[Client] = None
-_openrouter_client: Optional[OpenAI] = None
-_embedder: Optional[SentenceTransformer] = None
+from shared.config import get_env, IMAGE_SERVER_URL
+from shared.db import get_supabase
+from shared.embeddings import get_embedder
 
-
-def _get_env(name: str) -> str:
-    v = os.getenv(name)
-    if not v:
-        raise RuntimeError(f"Missing required env var: {name}")
-    return v
-
-
-def get_supabase() -> Client:
-    global _supabase
-    if _supabase is not None:
-        return _supabase
-    url = _get_env("SUPABASE_URL").rstrip("/")
-    key = _get_env("SUPABASE_KEY")
-    _supabase = create_client(url, key)
-    return _supabase
-
-
-def get_openrouter_client() -> OpenAI:
-    global _openrouter_client
-    if _openrouter_client is not None:
-        return _openrouter_client
-
-    api_key = _get_env("OPENROUTER_API_KEY")
-    base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-
-    _openrouter_client = OpenAI(api_key=api_key, base_url=base_url)
-    return _openrouter_client
-
-
-
-def get_embedder() -> SentenceTransformer:
-    global _embedder
-    if _embedder is None:
-        logger.info("Loading embedding model all-MiniLM-L6-v2 (first request may be slow).")
-        _embedder = SentenceTransformer("all-MiniLM-L6-v2")
-    return _embedder
 
 def _hybrid_search_products(
     sb: Client,
@@ -260,8 +224,7 @@ def _hybrid_search_products(
         
         # If we have local image, prefer our server
         if local_path:
-            image_server_url = os.getenv("IMAGE_SERVER_URL", "http://localhost:8000")
-            local_image_url = f"{image_server_url}/images/{local_path}"
+            local_image_url = f"{IMAGE_SERVER_URL()}/images/{local_path}"
         else:
             local_image_url = None
         
@@ -280,72 +243,6 @@ def _hybrid_search_products(
         )
         
     return results
-
-
-def _build_pitch(products: List[ProductResult], query: str) -> str:
-    """
-    Generate a friendly sales pitch for the best matching product,
-    or a helpful no-results message when nothing matches.
-    """
-    if not products:
-        # You can customize this message — keep it warm and inviting
-        return (
-            "Hmm, I couldn't find anything that quite matches your request right now. "
-            "Would you like me to suggest similar items or help refine the search?"
-        )
-
-    # If we have results, proceed with the best one
-    client = get_openrouter_client()
-    model = os.getenv("OPENROUTER_MODEL", "xai/grok-beta")
-    best = products[0]  # Assuming results are already sorted by score descending
-
-    feature_bits: List[str] = []
-    if best.description:
-        feature_bits.append(best.description.strip())
-    if best.product_url:
-        feature_bits.append(f"Product link: {best.product_url}")
-    if best.image_url:
-        feature_bits.append(f"Image: {best.image_url}")
-
-    price_str = "Unknown price"
-    if best.price is not None:
-        price_str = f"${float(best.price):.2f}"   # safer conversion
-
-    system_prompt = (
-        "You are a friendly, enthusiastic retail assistant. "
-        "Write a short, engaging 2-sentence sales pitch for the best matching product. "
-        "Always mention the price if known, and highlight 1-2 key features or benefits. "
-        "Keep it natural, positive, and under 100 words."
-    )
-
-    user_content = (
-        f"Customer's search: {query}\n\n"
-        f"Best matching product:\n"
-        f"- Name: {best.name}\n"
-        f"- Price: {price_str}\n"
-        f"- Details: {' | '.join(feature_bits) if feature_bits else 'No extra details available'}"
-    )
-
-    try:
-        completion = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-            max_tokens=160,
-            temperature=0.8,
-        )
-        pitch = completion.choices[0].message.content.strip() if completion.choices else ""
-        return pitch or "Great choice! This looks like a perfect match for you."
-
-    except Exception as e:
-        logger.exception("OpenRouter pitch generation failed")
-        # Fallback pitch in case the LLM call fails
-        return (
-            f"I love that you're looking for {query}! "
-            f"The top match is {best.name} at {price_str} — check it out!"
-        )
 
 
 @app.get("/health")
@@ -384,7 +281,7 @@ def search(req: SearchRequest) -> SearchResponse:
     products = _hybrid_search_products(
         sb=sb, store_id=req.store_id, query=req.query, limit=5
     )
-    pitch = _build_pitch(products, query=req.query)
+    pitch = f"Found {len(products)} products." if products else "No matching products found."
 
     serialized_products: List[ProductOut] = []
     for p in products:

@@ -26,8 +26,10 @@ app.add_middleware(
 )
 
 # Base directory for images
-# Images are organized as: ./images/{store_id}/{filename}.jpg
-IMAGES_BASE_DIR = Path(os.getenv("STORE_IMAGES_PATH", "./images")).resolve()
+# Images are organized as: {base}/images/{store_id}/{filename}.jpg
+# Default: onboarding-service/images/ (where the pipeline saves them)
+_DEFAULT_IMAGES_PATH = str(Path(__file__).resolve().parent / "onboarding-service" / "images")
+IMAGES_BASE_DIR = Path(os.getenv("STORE_IMAGES_PATH", _DEFAULT_IMAGES_PATH)).resolve()
 
 logger.info(f"📁 Serving images from: {IMAGES_BASE_DIR}")
 
