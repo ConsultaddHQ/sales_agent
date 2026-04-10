@@ -5,6 +5,12 @@ This repository implements the Team‑Pop voice‑first AI agent platform and su
 > **Status:** early‑alpha / lab prototype. Components work end‑to‑end for internal
 demonstrations; expect breaking changes and frequent refactors.
 
+## Knowledge Transfer Docs
+
+For the human-facing architecture and KT handbook, start at `docs/knowledge-base/README.md`.
+
+Use that folder to understand the current system, repo layout, core flows, risks, and roadmap without relying on chat history.
+
 ## Repository layout
 
 ```
@@ -75,6 +81,8 @@ service.
 
 Add new features as separate microservices or components. Follow the existing
 folder organization and update this README when adding a new top‑level folder.
+If you change architecture or major flows, also update the relevant summary in
+`docs/knowledge-base/` and the underlying source doc in `docs/agents/`.
 
 ## License
 

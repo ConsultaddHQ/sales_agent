@@ -30,15 +30,6 @@ const faqs = [
 ]
 
 function FAQItem({ faq, isOpen, onToggle }) {
-  const contentRef = useRef(null)
-  const [height, setHeight] = useState(0)
-
-  useEffect(() => {
-    if (contentRef.current) {
-      setHeight(isOpen ? contentRef.current.scrollHeight : 0)
-    }
-  }, [isOpen])
-
   return (
     <div className="border-t border-[#222]">
       <button
@@ -56,10 +47,10 @@ function FAQItem({ faq, isOpen, onToggle }) {
       </button>
 
       <div
-        className="overflow-hidden transition-all duration-300 ease-out"
-        style={{ maxHeight: height }}
+        className="grid overflow-hidden transition-all duration-300 ease-out"
+        style={{ gridTemplateRows: isOpen ? '1fr' : '0fr' }}
       >
-        <div ref={contentRef} className="pb-5 pr-12">
+        <div className="min-h-0 pb-5 pr-12">
           <p className="text-sm text-[#666] leading-relaxed">{faq.a}</p>
         </div>
       </div>

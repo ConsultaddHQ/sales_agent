@@ -6,6 +6,32 @@
 
 ---
 
+## 2026-04-10 — N/A — Human-Facing Knowledge Base Handbook
+
+- **Status:** Completed
+- **Owner:** Codex
+- **Summary:** Added a new canonical human-facing KT hub under `docs/knowledge-base/` with layered docs for system overview, repo map, core flows, architecture decisions, technology rationale, risks, roadmap, and glossary. Added lightweight pointers from `README.md` and `AGENTS.md`, and updated personal learning notes to point back to the new handbook instead of older shared-study paths.
+- **Why:** The repo already had durable agent-oriented source docs, but it lacked one readable handbook that helps humans understand the current system, flows, contracts, tradeoffs, and risks without depending on chat history or tribal memory.
+- **Files:** `docs/knowledge-base/*.md`, `README.md`, `AGENTS.md`, `.personal/learning/{LEARNING_PATH,ENGINEERING_OPERATING_SYSTEM}.md`, `docs/agents/{memory,roadmap}.md`
+- **Tradeoffs:** The new handbook intentionally summarizes and links to `docs/agents/*` instead of copying long sections. Some “why this tech” explanations are marked as informed inference where the codebase/history implies rationale more strongly than it states it outright.
+- **Verification:** Audited `AGENTS.md`, `docs/agents/{constraints,memory,decisions,completions,roadmap}.md`, live backend/frontend code paths, and current service READMEs before writing. Confirmed the KT docs call out the main stable contracts: `hybrid_search_products`, `all-MiniLM-L6-v2` + `vector(384)`, `<team-pop-agent>`, onboarding response shape, and ElevenLabs tool-name consistency. Confirmed root docs now point to `docs/knowledge-base/README.md`.
+- **Related Decisions:** 2026-04-07: Monorepo Refactoring — Shared Library + Adapter Registry + Universal Scraping; 2026-04-08: Single-Tunnel Architecture — All Services Through One ngrok Tunnel; 2026-04-03: Widget Served from Onboarding Service, Not Vite Dev Server
+- **Notes:** The handbook is intentionally human-facing and should stay synchronized with the underlying source docs in `docs/agents/`. `.personal/learning/` remains optional and non-canonical.
+
+---
+
+## 2026-04-10 — N/A — Conservative Repo Cleanup Audit
+
+- **Status:** Completed
+- **Owner:** Codex
+- **Summary:** Removed two detached legacy onboarding adapter modules, deleted the stale `WidgetZIndexFix.jsx` helper after inlining its only live wrapper usage into `AvatarWidget.jsx`, removed unreferenced website starter assets, and trimmed low-risk dead comments/imports in the frontend.
+- **Why:** The repo still contained duplicated adapter-era files, placeholder widget helper code, and starter assets/comments that no longer matched the live architecture. Keeping them added confusion during maintenance without providing runtime value.
+- **Files:** `onboarding-service/threadless_adapter.py`, `onboarding-service/supermicro_adapter.py`, `www.teampop/frontend/src/components/{AvatarWidget,WidgetZIndexFix}.jsx`, `www.teampop/frontend/{index.html,src/App.jsx,src/main.jsx,vite.config.js}`, `www.teampop/website/src/components/VoiceOrb.jsx`, `docs/Engineering Standards.md`
+- **Tradeoffs:** Historical docs mentioning the old adapter files were preserved unless they would become misleading as current guidance. Existing unrelated lint issues in the website were not addressed as part of this conservative cleanup.
+- **Verification:** Repo-wide `rg` checks confirmed no live code references to the removed adapters, widget helper, or website assets. `python3` adapter smoke test confirmed `detect_store_type()` and `get_adapter()` still resolve both Threadless and Supermicro through `onboarding-service/adapters/`. `npm run build` succeeded in both `www.teampop/frontend/` and `www.teampop/website/`. `npm run lint` in `www.teampop/frontend/` now reports only one `react-hooks/exhaustive-deps` warning in `AvatarWidget.jsx`; `npm run lint` in `www.teampop/website/` still reports pre-existing `react-hooks/set-state-in-effect` errors in `FAQ.jsx` and `AdminPage.jsx`.
+- **Related Decisions:** 2026-04-07: Monorepo Refactoring — Shared Library + Adapter Registry + Universal Scraping
+- **Notes:** `docs/Engineering Standards.md` was updated to point to `AvatarWidget.jsx` for z-index isolation guidance after removing `WidgetZIndexFix.jsx`.
+
 ## Entry Template
 
 Copy this block for meaningful completed work:

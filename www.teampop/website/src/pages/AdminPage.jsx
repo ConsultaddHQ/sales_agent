@@ -335,9 +335,12 @@ function Dashboard({ password, onLogout }) {
   }, [password])
 
   useEffect(() => {
-    fetchRequests()
     const id = setInterval(fetchRequests, 30000)
-    return () => clearInterval(id)
+    const kickoffId = setTimeout(fetchRequests, 0)
+    return () => {
+      clearInterval(id)
+      clearTimeout(kickoffId)
+    }
   }, [fetchRequests])
 
   function handleBaseUrlChange(e) {

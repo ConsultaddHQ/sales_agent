@@ -1,9 +1,6 @@
 """Consolidated test page generator.
 
-Replaces 3 duplicate implementations:
-  - main.py:generate_static_test_page (HTTP fetch)
-  - threadless_adapter.py:generate_threadless_test_page (Playwright)
-  - supermicro_adapter.py:generate_supermicro_test_page (Playwright)
+Replaces the older per-store test-page generators with one shared flow.
 """
 
 import logging

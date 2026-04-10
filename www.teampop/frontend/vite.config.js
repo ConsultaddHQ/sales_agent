@@ -6,9 +6,8 @@ export default defineConfig({
   plugins: [
     react(),
     cssInjectedByJsPlugin({
-      // Use topExecutionPriority to ensure CSS runs before everything
       topExecutionPriority: true,
-      injectCode: (cssCode, options) => {
+      injectCode: (cssCode) => {
         const escaped = JSON.stringify(cssCode)
         return `try{window.__TEAM_POP_CSS__=${escaped};}catch(e){console.error('[TeamPop] CSS inject failed',e);}`
       }

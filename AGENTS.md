@@ -8,6 +8,7 @@ This is the **canonical shared instruction file** for all coding agents working 
 
 - Read this file first.
 - Use `docs/agents/` for specialized state.
+- Use `docs/knowledge-base/` for the human-facing system handbook and KT summaries.
 - Do not create a second full agent handbook elsewhere.
 
 ---
@@ -37,6 +38,7 @@ This is the **canonical shared instruction file** for all coding agents working 
 - `www.teampop/website/`: marketing website + client acquisition flow (React + GSAP + Tailwind)
 - `universal-scraper/`: legacy scraping scripts (referenced by adapters)
 - `docs/`: human-facing project docs and agent support files
+- `docs/knowledge-base/`: canonical human-facing KT hub for system understanding
 
 ---
 
@@ -170,6 +172,7 @@ For the full non-negotiable rules, read `docs/agents/constraints.md`.
 - `docs/Engineering Standards.md`: commits, tickets, PRs, workflow
 - `docs/AI Collaboration Guide - Project Tickets.md`: AI request patterns
 - `docs/AGENT_DOCS_GUIDE.md`: how to maintain this doc system
+- `docs/knowledge-base/README.md`: human-facing system handbook and reading order
 - `docs/ticket_creation_standards.md`: ticket structure
 - `SHOPIFY_FLOW_COMPLETE.md`: env vars, SQL, troubleshooting
 - `README.md`: high-level project overview

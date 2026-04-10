@@ -1,7 +1,7 @@
 # Agent Memory — Active Work State
 
 > **Keep this file under 2KB.** It is read by every agent at session start.
-> **Last updated:** 2026-04-09
+> **Last updated:** 2026-04-10
 
 ---
 
@@ -9,13 +9,13 @@
 
 | Task | Files | Owner | Status | Notes |
 |------|-------|-------|--------|-------|
-| *(none active)* | — | — | — | Update this before significant work |
+| Conservative cleanup pass 2: remaining lint-safe cleanup and stale current-guidance references | `docs/agents/memory.md`, `www.teampop/frontend/`, `www.teampop/website/` | Codex | In progress | Fix only low-risk lint items and preserve historical docs |
 
 ---
 
 ## Files Currently Being Modified
 
-*(none)*
+- `docs/agents/memory.md` — Codex
 
 ---
 
@@ -23,6 +23,7 @@
 
 | Date | What Was Done | Files Changed | Agent/Author |
 |------|--------------|---------------|--------------|
+| 2026-04-10 | Conservative cleanup: removed legacy adapters, stale widget z-index helper, unused website starter assets, and low-risk dead comments/imports after verification | `onboarding-service/`, `www.teampop/frontend/`, `www.teampop/website/`, `docs/Engineering Standards.md` | Codex |
 | 2026-04-09 | Tools-first Gemini prompt + WebSocket disconnect diagnostic logging + complete agent conversation cycle docs | `elevenlabs_agent.py`, `AvatarWidget.jsx`, `completions.md`, `decisions.md` | Claude Code |
 | 2026-04-08 | ElevenLabs API migration + latency optimization + single-tunnel sharing + widget latency tracking | `elevenlabs_agent.py`, `main.py`, `AvatarWidget.jsx`, `image_server.py`, `admin.py`, `client.py` | Claude Code |
 | 2026-04-07 | Monorepo refactoring: adapter registry, shared/ library, unified pipeline, universal scraping chain | `shared/`, `onboarding-service/` | Claude Code |
@@ -50,6 +51,7 @@
 | 2026-04-10 | Auto: fb58ef88 | 0 | Hook |
 | 2026-04-10 | Auto: 7d827691 | 0 | Hook |
 | 2026-04-10 | Auto: 899ded9c | 0 | Hook |
+| 2026-04-10 | Auto: bd854b47 | 0 | Hook |
 
 ---
 

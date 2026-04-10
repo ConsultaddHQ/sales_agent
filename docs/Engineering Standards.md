@@ -498,7 +498,7 @@ Add headers to complex files:
  * 
  * Related Files:
  * - ShoppingCard.jsx (product card UI)
- * - WidgetZIndexFix.jsx (z-index isolation HOC)
+ * - AvatarWidget.jsx (widget layering and z-index isolation)
  * 
  * @see HPF-174 for Shadow DOM architecture
  * @see HPF-173 for agent tool integration

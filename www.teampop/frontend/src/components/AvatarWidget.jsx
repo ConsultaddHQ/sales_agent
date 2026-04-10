@@ -3,13 +3,21 @@ import {
   useConversation,
   useConversationClientTool,
 } from "@elevenlabs/react";
-import { withMaxZIndex } from "./WidgetZIndexFix";
 import "../styles/AvatarWidget.css";
 
 const DUMMY_IMAGE = "/image.png";
+const WIDGET_LAYER_STYLE = {
+  position: "fixed",
+  bottom: "0",
+  left: "0",
+  width: "100%",
+  height: "100%",
+  zIndex: 2147483647,
+  pointerEvents: "none",
+  isolation: "isolate",
+};
 
-// --- SHOPPING CARD (Style A) ---
-const ShoppingCard = ({ product, isActive, highlightPrice, highlightDesc }) => {
+const ShoppingCard = ({ product, isActive, highlightPrice }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -56,7 +64,6 @@ const ShoppingCard = ({ product, isActive, highlightPrice, highlightDesc }) => {
   );
 };
 
-// --- MARKDOWN FORMATTER ---
 const formatMessage = (text) => {
   if (!text) return "";
   let formatted = text
@@ -67,7 +74,6 @@ const formatMessage = (text) => {
   return formatted;
 };
 
-// --- INNER COMPONENT ---
 function AvatarInner({
   agentId,
   activeView,
@@ -78,18 +84,13 @@ function AvatarInner({
   setActiveIndex,
   carouselRef,
   handleCarouselScroll,
-  isProgrammaticScrollRef,
 }) {
   const [agentSubtitle, setAgentSubtitle] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
-  const [transientMessage, setTransientMessage] = useState(null);
-  const [isFadingOut, setIsFadingOut] = useState(false);
   const [highlightPrice, setHighlightPrice] = useState(false);
 
-  const transientTimeoutRef = useRef(null);
   const priceTimerRef = useRef(null);
   const subtitleTimerRef = useRef(null);
-  const subtitleContainerRef = useRef(null);
   const chatContainerRef = useRef(null);
   const isSessionTransitioningRef = useRef(false);
   const latestProductsRef = useRef([]);
@@ -100,8 +101,6 @@ function AvatarInner({
 
   useEffect(() => {
     return () => {
-      // Clean up all timers when component unmounts
-      clearTimeout(transientTimeoutRef.current);
       clearTimeout(priceTimerRef.current);
       clearTimeout(subtitleTimerRef.current);
       clearTimeout(syncDebounceRef.current);
@@ -124,24 +123,6 @@ function AvatarInner({
     Math.max(0, latestProducts.length - 1),
   );
 
-  const showTransientMessage = useCallback(
-    (text) => {
-      if (activeView !== "NONE") return;
-      if (transientTimeoutRef.current)
-        clearTimeout(transientTimeoutRef.current);
-
-      setIsFadingOut(false);
-      setTransientMessage(text);
-
-      transientTimeoutRef.current = setTimeout(() => {
-        setIsFadingOut(true);
-        setTimeout(() => setTransientMessage(null), 300);
-      }, 5000);
-    },
-    [activeView],
-  );
-
-  // --- Latency tracking ---
   const latencyRef = useRef({ userSpeechAt: null, firstAiAt: null, productsAt: null, cycle: 0 });
 
   function _startLatencyTimer(userText) {
@@ -176,7 +157,6 @@ function AvatarInner({
     }
   }
 
-  // --- ElevenLabs v1.0 conversation hook ---
   const conversation = useConversation({
     onMessage: (message) => {
       const source = message?.source;
@@ -252,7 +232,6 @@ function AvatarInner({
     },
   });
 
-  // --- Client tools via v1.0 useConversationClientTool (always-fresh closures) ---
   useConversationClientTool("update_products", (parameters) => {
     console.log("Update tool called : ", parameters);
     const products = Array.isArray(parameters?.products)
@@ -322,8 +301,6 @@ function AvatarInner({
         ? "ERROR"
         : "IDLE";
 
-  // Called on manual thumbnail click — injects product context and triggers agent speech
-
   const syncMainProduct = useCallback(
     (product) => {
       if (!product?.id) return;
@@ -336,7 +313,6 @@ function AvatarInner({
         return;
       }
 
-      // Debounce — only fire if user has settled on this product for 600ms
       if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
       syncDebounceRef.current = setTimeout(() => {
         console.log("[sync] Sending product context to agent:", product.name);
@@ -357,23 +333,23 @@ function AvatarInner({
     [conversation.status, sendContextualUpdate, sendUserMessage],
   );
 
-  // Scroll the active thumbnail into view — deps are [activeIndex] ONLY
   useEffect(() => {
-    if (!carouselRef.current || latestProducts.length === 0) return;
+    const carouselEl = carouselRef.current;
+    if (!carouselEl || !latestProducts[safeIndex]) return;
     console.log(
-      `[Index Changed] activeIndex = ${activeIndex}, agentTriggered = ${isAgentTriggeredRef.current} -  ${safeIndex}`,
+      `[Index Changed] safeIndex = ${safeIndex}, agentTriggered = ${isAgentTriggeredRef.current}`,
     );
-    const thumbnailEl = carouselRef.current.children[safeIndex];
+    const thumbnailEl = carouselEl.children[safeIndex];
     if (thumbnailEl) {
       thumbnailEl.scrollIntoView({
         behavior: "smooth",
         block: "nearest",
         inline: "center",
       });
-      console.log(`[Scroll OK] Thumbnail ${activeIndex} scrolled into view`);
+      console.log(`[Scroll OK] Thumbnail ${safeIndex} scrolled into view`);
     }
     isAgentTriggeredRef.current = false;
-  }, [safeIndex]); // ← activeIndex ONLY — prevents duplicate fires
+  }, [latestProducts, safeIndex]);
 
   const handleInteraction = () => {
     if (isSessionTransitioningRef.current) return;
@@ -387,7 +363,6 @@ function AvatarInner({
     ) {
       conversation.startSession({ agentId, connectionType: "websocket" });
     }
-    // Reset transition flag after a short delay (v1.0 startSession is sync)
     setTimeout(() => {
       isSessionTransitioningRef.current = false;
     }, 500);
@@ -395,10 +370,8 @@ function AvatarInner({
 
   return (
     <>
-      {/* 1. SHOPPING / PRODUCTS MODE OVERLAY */}
       {activeView === "PRODUCTS" && (
         <div className="shopping-mode-overlay flex flex-col h-[100dvh] w-screen bg-black overflow-hidden relative z-40">
-          {/* TOP Header */}
           <div className="flex-none p-4 flex justify-end items-start absolute top-0 w-full z-50 pointer-events-none">
             <button
               className="bg-black/40 hover:bg-black/60 backdrop-blur-md text-white rounded-full w-10 h-10 flex items-center justify-center text-xl shadow-lg transition-all pointer-events-auto"
@@ -410,7 +383,6 @@ function AvatarInner({
 
           {latestProducts.length > 0 ? (
             <>
-              {/* MID: Hero Stage */}
               <div className="flex-1 w-full relative min-h-0 bg-zinc-900">
                 {latestProducts[safeIndex] && (
                   <>
@@ -432,7 +404,6 @@ function AvatarInner({
                 )}
               </div>
 
-              {/* BOTTOM: The Interaction Zone */}
               <div className="flex-none w-full flex flex-col justify-end bg-black pb-4 px-4 z-10 pt-2 pointer-events-auto shrink-0">
                 <div className="w-full mb-3">
                   {latestProducts[safeIndex] && (
@@ -445,7 +416,6 @@ function AvatarInner({
                 </div>
 
                 <div
-                  ref={subtitleContainerRef}
                   className="w-full max-h-20 overflow-y-auto mb-3 no-scrollbar"
                 >
                   {agentSubtitle && (
@@ -469,9 +439,9 @@ function AvatarInner({
                         console.log(
                           `[Thumbnail] Click → index ${idx} (${latestProducts[idx]?.name || "unknown"})`,
                         );
-                        isAgentTriggeredRef.current = false; // ensure manual flag is clear
+                        isAgentTriggeredRef.current = false;
                         setActiveIndex(idx);
-                        syncMainProduct(latestProducts[idx]); // narrate directly here, not via useEffect
+                        syncMainProduct(latestProducts[idx]);
                       }}
                     >
                       <img
@@ -492,7 +462,6 @@ function AvatarInner({
               </div>
             </>
           ) : (
-            // EMPTY STATE
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-900 pointer-events-auto pt-16">
               <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mb-6 border border-zinc-700 shadow-xl">
                 <svg
@@ -518,7 +487,6 @@ function AvatarInner({
             </div>
           )}
 
-          {/* DOCK FOR SHOPPING MODE */}
           <div className="flex-none w-full bg-black pb-6 px-4 z-10 pointer-events-auto">
             <div className="w-full flex items-center justify-center mt-2">
               <div
@@ -541,7 +509,6 @@ function AvatarInner({
                 </div>
 
                 <div className="relative flex-shrink-0 flex flex-col items-center justify-center">
-                  {/* Status pill ABOVE the orb */}
                   <span
                     className={`absolute -top-7 text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap transition-colors ${visualState !== "IDLE" ? "bg-green-500/20 text-green-400 border border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.2)]" : "bg-zinc-800/80 text-gray-400 border border-white/5"}`}
                   >
@@ -570,23 +537,9 @@ function AvatarInner({
         </div>
       )}
 
-      {/* 2. MAIN WIDGET CONTAINER (Normal Home Dock) */}
       {activeView === "NONE" && (
         <div className="avatar-widget mode-closed">
           <div className="avatar-controls-column">
-            {transientMessage && (
-              <div
-                className={`transient-bubble ${isFadingOut ? "fading-out" : ""}`}
-              >
-                <span
-                  dangerouslySetInnerHTML={{
-                    __html: formatMessage(transientMessage),
-                  }}
-                />
-              </div>
-            )}
-
-            {/* SYMMETRICAL HOME DOCK */}
             <div className="orb-dock px-4 min-w-[280px] shadow-2xl border border-white/10 mt-6">
               <div className="flex-1 flex justify-start items-center">
                 <button
@@ -598,7 +551,6 @@ function AvatarInner({
               </div>
 
               <div className="relative flex-shrink-0 flex flex-col items-center justify-center">
-                {/* Status pill ABOVE the orb */}
                 <span
                   className={`absolute -top-8 text-[9px] uppercase font-bold tracking-widest px-2.5 py-1 rounded-full whitespace-nowrap transition-all duration-300 ${visualState !== "IDLE" ? "bg-green-500/20 text-green-400 border border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.3)]" : "bg-zinc-800/80 text-gray-400 border border-white/5"}`}
                 >
@@ -626,11 +578,9 @@ function AvatarInner({
         </div>
       )}
 
-      {/* 3. FULL CHAT UI */}
       {activeView === "CHAT" && (
         <div className="avatar-widget mode-open">
           <div className="bubble flex flex-col h-[70vh] max-h-[600px] overflow-hidden shadow-2xl border border-white/10 relative pointer-events-auto">
-            {/* Header with strictly enforced Close Button */}
             <div className="bubble-header flex-shrink-0 bg-zinc-900 border-b border-white/10 px-4 py-3 flex justify-between items-center z-50">
               <span className="font-semibold text-white tracking-wide text-sm flex items-center gap-2">
                 <div
@@ -639,7 +589,6 @@ function AvatarInner({
                 Live Session
               </span>
 
-              {/* Overriding previous generic CSS to guarantee clickability */}
               <button
                 className="text-gray-400 hover:text-white transition-colors cursor-pointer p-1 -mr-1 rounded-md hover:bg-white/10 z-50 pointer-events-auto"
                 onClick={(e) => {
@@ -750,10 +699,14 @@ function AvatarWidget({ agentId, preview = false }) {
       setActiveIndex={setActiveIndex}
       carouselRef={carouselRef}
       handleCarouselScroll={handleCarouselScroll}
-      isProgrammaticScrollRef={isProgrammaticScrollRef}
     />
   );
 }
 
-
-export default withMaxZIndex(AvatarWidget);
+export default function LayeredAvatarWidget(props) {
+  return (
+    <div style={WIDGET_LAYER_STYLE}>
+      <AvatarWidget {...props} />
+    </div>
+  );
+}
