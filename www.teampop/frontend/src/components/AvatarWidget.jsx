@@ -321,8 +321,6 @@ function AvatarInner({
           `[CAROUSEL UPDATE] The user just manually selected a new product on screen. ` +
           `Product name: "${product.name}". ` +
           `Price: ₹${Number(product.price).toLocaleString("en-IN")}. ` +
-          `Description: ${product.description || "No description"}. ` +
-          `Product URL: ${product.product_url || ""}. ` +
           `Please talk about this product naturally in your next response.`,
         );
 

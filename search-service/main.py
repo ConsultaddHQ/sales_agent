@@ -45,6 +45,25 @@ class ProductOut(BaseModel):
     product_url: Optional[str] = None
 
 
+def _truncate_for_voice(text: Optional[str], max_chars: int = 200) -> Optional[str]:
+    """Shorten description for voice + UI card use without mid-word cuts.
+
+    Full text is still stored in DB and used for embeddings; this only
+    affects what ElevenLabs and the widget carousel see per turn.
+    """
+    if not text:
+        return text
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    for sep in (". ", "\n", " "):
+        idx = cut.rfind(sep)
+        if idx >= max_chars // 2:
+            cut = cut[:idx]
+            break
+    return cut.rstrip(" .,-") + "…"
+
+
 class SearchResponse(BaseModel):
     products: List[ProductOut]
     pitch: str
@@ -290,7 +309,7 @@ def search(req: SearchRequest) -> SearchResponse:
                 id=p.id,
                 name=p.name,
                 price=float(p.price) if p.price is not None else None,
-                description=p.description,  # Changed from desc to description
+                description=_truncate_for_voice(p.description, 200),
                 image_url=p.image_url,
                 product_url=p.product_url,
             )
