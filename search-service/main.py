@@ -1,15 +1,19 @@
+import asyncio
 import logging
 import os
 import sys
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from supabase import Client
 import uuid
 
@@ -28,6 +32,10 @@ logger = logging.getLogger("search-service")
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
+
+SEARCH_RATE_LIMIT = os.getenv("SEARCH_RATE_LIMIT", "30/minute")
+UVICORN_WORKERS = max(1, int(os.getenv("UVICORN_WORKERS", "4")))
+RELOAD_ENABLED = os.getenv("RELOAD", "true").lower() == "true"
 
 
 
@@ -83,6 +91,9 @@ class ProductResult:
 
 
 app = FastAPI(title="search-service", version="1.0.0")
+limiter = Limiter(key_func=get_remote_address, default_limits=[])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -97,8 +108,6 @@ app.add_middleware(
 # Request logging middleware — logs every incoming request for debugging
 # ---------------------------------------------------------------------------
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-import json as _json
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
@@ -134,15 +143,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestLoggingMiddleware)
 
-from shared.config import get_env, IMAGE_SERVER_URL
+from shared.config import IMAGE_SERVER_URL
 from shared.db import get_supabase
 from shared.embeddings import get_embedder
 
 
-def _hybrid_search_products(
+async def _encode_query_embedding(query: str) -> List[float]:
+    """Encode in a worker thread so concurrent requests do not block the event loop."""
+    return await asyncio.to_thread(
+        lambda: get_embedder().encode(query, normalize_embeddings=True).tolist()
+    )
+
+
+def _execute_hybrid_search_rpc(
     sb: Client,
     store_id: str,
     query: str,
+    query_embedding: List[float],
     limit: int = 10          # Increased default – you can still override from caller
 ) -> List[ProductResult]:
     """
@@ -156,11 +173,7 @@ def _hybrid_search_products(
     - p_limit
     - p_min_score
     """
-    # 1. Embed the user query (must use same model as onboarding)
-    embedder = get_embedder()
-    query_embedding = embedder.encode(query, normalize_embeddings=True).tolist()
-
-    # 2. Optional: Parse max price from query (e.g. "under 150", "less than 80 dollars")
+    # 1. Optional: Parse max price from query (e.g. "under 150", "less than 80 dollars")
     max_price = None
     # try:
     #     client = get_openrouter_client()
@@ -190,7 +203,7 @@ def _hybrid_search_products(
     # except Exception as e:
     #     logger.warning(f"Failed to parse price from query '{query}': {e}", exc_info=True)
 
-    # 3. Prepare RPC parameters
+    # 2. Prepare RPC parameters
     rpc_params = {
         "p_store_id": store_id,
         "p_query": query,
@@ -205,7 +218,7 @@ def _hybrid_search_products(
     logger.info(f"Max price parsed: {max_price}")
     logger.info(f"Query: '{query}' → Parsed max_price = {max_price} (type: {type(max_price)})")
     
-    # 4. Call the RPC
+    # 3. Call the RPC
     try:
         resp = sb.rpc("hybrid_search_products", rpc_params).execute()
     except Exception as e:
@@ -226,7 +239,7 @@ def _hybrid_search_products(
     if not resp.data:
        logger.warning(f"No results from RPC for query='{query}', store_id={store_id}. Check threshold={rpc_params['p_min_score']}, max_price={max_price}")
     
-    # 5. Parse results (same as your original)
+    # 4. Parse results (same as your original)
     results: List[ProductResult] = []
     for row in resp.data:
         try:
@@ -264,13 +277,31 @@ def _hybrid_search_products(
     return results
 
 
+async def _hybrid_search_products(
+    sb: Client,
+    store_id: str,
+    query: str,
+    limit: int = 10,
+) -> List[ProductResult]:
+    query_embedding = await _encode_query_embedding(query)
+    return await asyncio.to_thread(
+        _execute_hybrid_search_rpc,
+        sb,
+        store_id,
+        query,
+        query_embedding,
+        limit,
+    )
+
+
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
 @app.post("/search", response_model=SearchResponse)
-def search(req: SearchRequest) -> SearchResponse:
+@limiter.limit(SEARCH_RATE_LIMIT)
+async def search(request: Request, req: SearchRequest) -> SearchResponse:
     # --- Validation with clear diagnostic logging ---
     if not req.query.strip():
         logger.warning(
@@ -280,7 +311,7 @@ def search(req: SearchRequest) -> SearchResponse:
 
     # Validate store_id early
     try:
-        uuid_obj = uuid.UUID(req.store_id)  # raises ValueError if invalid
+        uuid.UUID(req.store_id)  # raises ValueError if invalid
     except ValueError:
         hint = ""
         if len(req.store_id) == 35:
@@ -297,7 +328,7 @@ def search(req: SearchRequest) -> SearchResponse:
     
     sb = get_supabase()
 
-    products = _hybrid_search_products(
+    products = await _hybrid_search_products(
         sb=sb, store_id=req.store_id, query=req.query, limit=5
     )
     pitch = f"Found {len(products)} products." if products else "No matching products found."
@@ -321,10 +352,15 @@ def search(req: SearchRequest) -> SearchResponse:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", "8002")),
-        reload=True,
-    )
+    uvicorn_kwargs = {
+        "app": "main:app",
+        "host": "0.0.0.0",
+        "port": int(os.getenv("PORT", "8006")),
+        "reload": RELOAD_ENABLED,
+    }
+    if not RELOAD_ENABLED:
+        uvicorn_kwargs["workers"] = UVICORN_WORKERS
 
+    uvicorn.run(
+        **uvicorn_kwargs,
+    )

@@ -1,7 +1,7 @@
 # Agent Memory — Active Work State
 
 > **Keep this file under 2KB.** It is read by every agent at session start.
-> **Last updated:** 2026-04-10
+> **Last updated:** 2026-04-14
 
 ---
 
@@ -23,6 +23,8 @@
 
 | Date | What Was Done | Files Changed | Agent/Author |
 |------|--------------|---------------|--------------|
+| 2026-04-14 | Phase 1 voice UX: reduced ElevenLabs to two tools, rewrote prompts for one-turn context-before-search behavior, and removed deprecated widget tool handlers | `onboarding-service/elevenlabs_agent.py`, `www.teampop/frontend/src/components/AvatarWidget.jsx`, `docs/agents/{decisions,completions,roadmap}.md` | Codex |
+| 2026-04-14 | Phase 2 infrastructure: async search endpoint, thread-offloaded embedding/RPC, rate limiting, thread-safe singletons, and ElevenLabs limits doc | `search-service/`, `shared/{db,embeddings}.py`, `docs/elevenlabs-limits.md`, `docs/agents/{decisions,completions,roadmap}.md` | Codex |
 | 2026-04-10 | Conservative cleanup: removed legacy adapters, stale widget z-index helper, unused website starter assets, and low-risk dead comments/imports after verification | `onboarding-service/`, `www.teampop/frontend/`, `www.teampop/website/`, `docs/Engineering Standards.md` | Codex |
 | 2026-04-09 | Tools-first Gemini prompt + WebSocket disconnect diagnostic logging + complete agent conversation cycle docs | `elevenlabs_agent.py`, `AvatarWidget.jsx`, `completions.md`, `decisions.md` | Claude Code |
 | 2026-04-08 | ElevenLabs API migration + latency optimization + single-tunnel sharing + widget latency tracking | `elevenlabs_agent.py`, `main.py`, `AvatarWidget.jsx`, `image_server.py`, `admin.py`, `client.py` | Claude Code |

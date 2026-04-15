@@ -1,0 +1,132 @@
+/*
+ * ptt.css — Push-to-Talk visual states and mode toggle UI.
+ *
+ * These styles are scoped to PTT-specific classes and augment AvatarWidget.css.
+ * To remove PTT: delete this file and its import in AvatarWidget.jsx.
+ * To remove VAD: this file is unaffected.
+ *
+ * Visual state classes applied to .orb-wrapper:
+ *   PTT_READY           — disconnected in PTT mode, subtle idle glow
+ *   PTT_MUTED_CONNECTED — connected but mic muted (between presses)
+ *   PTT_HOLDING         — mic open, actively transmitting
+ *   CONNECTING          — session is being established (shared across modes)
+ */
+
+/* ── PTT_READY: disconnected, waiting for first press ─────────────────────── */
+.orb-wrapper.PTT_READY .orb-core {
+  opacity: 0.75;
+  box-shadow: 0 8px 20px rgba(0, 80, 200, 0.15);
+  animation: pttReadyBreath 3s ease-in-out infinite;
+}
+
+@keyframes pttReadyBreath {
+  0%, 100% { opacity: 0.7; box-shadow: 0 8px 20px rgba(0, 80, 200, 0.15); }
+  50%       { opacity: 0.9; box-shadow: 0 8px 28px rgba(0, 100, 255, 0.3);  }
+}
+
+/* ── PTT_MUTED_CONNECTED: live session, mic off between presses ───────────── */
+.orb-wrapper.PTT_MUTED_CONNECTED .orb-core {
+  animation: pttMutedPulse 3.5s ease-in-out infinite;
+  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.25);
+}
+
+@keyframes pttMutedPulse {
+  0%, 100% { box-shadow: 0 8px 20px rgba(99, 102, 241, 0.2); }
+  50%       { box-shadow: 0 8px 30px rgba(99, 102, 241, 0.45); }
+}
+
+/* ── PTT_HOLDING: mic open, strong active glow ────────────────────────────── */
+.orb-wrapper.PTT_HOLDING .orb-core {
+  animation: pttHoldingPulse 0.75s ease-in-out infinite alternate;
+}
+
+@keyframes pttHoldingPulse {
+  from {
+    transform: scale(1);
+    box-shadow:
+      0 0 30px rgba(94, 255, 177, 0.6),
+      0 0 60px rgba(94, 255, 177, 0.25);
+  }
+  to {
+    transform: scale(1.06);
+    box-shadow:
+      0 0 50px rgba(94, 255, 177, 1),
+      0 0 100px rgba(94, 255, 177, 0.5),
+      0 0 140px rgba(94, 255, 177, 0.2);
+  }
+}
+
+/* ── CONNECTING: shared across both modes ─────────────────────────────────── */
+.orb-wrapper.CONNECTING .orb-core {
+  animation: connectingFade 0.9s ease-in-out infinite;
+}
+
+@keyframes connectingFade {
+  0%, 100% { opacity: 0.45; }
+  50%       { opacity: 0.85; }
+}
+
+/* ── Mode toggle segmented control ───────────────────────────────────────── */
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 3px;
+  flex: 1;
+  max-width: 90px;
+}
+
+.mode-toggle-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 4px 6px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+  line-height: 1;
+  font-family: inherit;
+}
+
+.mode-toggle-btn.active {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.mode-toggle-btn:hover:not(.active) {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* ── End-session pill (shown only in PTT when connected) ──────────────────── */
+.end-session-btn {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  color: rgba(239, 68, 68, 0.75);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 10px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+  font-family: inherit;
+  display: block;
+}
+
+.end-session-btn:hover {
+  background: rgba(239, 68, 68, 0.22);
+  color: rgb(239, 68, 68);
+  border-color: rgba(239, 68, 68, 0.5);
+}

@@ -6,6 +6,55 @@
 
 ---
 
+## 2026-04-14 — Phase 3: Push-to-Talk (PTT) orb mode
+
+**What was done:**
+Added push-to-talk as a plug-and-play interaction mode alongside the existing VAD mode.
+
+**File structure:**
+- `src/hooks/useVoiceMode.js` — NEW: VAD/PTT mode state + localStorage persistence key `team-pop-voice-mode`
+- `src/hooks/usePttInteraction.js` — NEW: all PTT logic isolated; exposes `beginPress`, `endPress`, `onConnected`, `onDisconnected`, `syncStatus`
+- `src/styles/ptt.css` — NEW: CSS for `PTT_READY`, `PTT_MUTED_CONNECTED`, `PTT_HOLDING`, `CONNECTING` states + mode toggle + End button
+- `src/components/AvatarWidget.jsx` — MODIFIED: integrated above hooks; extracted `OrbDock` sub-component shared by NONE and PRODUCTS views; `getVisualState()` and `getStatusLabel()` pure helpers
+
+**SDK surface used:**
+`conversation.setMuted` from `@elevenlabs/react` `useConversation` (v1.x). Session stays open between PTT presses; only mic gate is toggled.
+
+**Key tradeoffs:**
+- PTT hook takes `setMuted` as its only SDK dependency — can swap SDK mic API without touching widget logic
+- `syncStatus` + `onConnected`/`onDisconnected` pattern avoids stale closures while keeping hook portable
+- Pointer capture (`setPointerCapture`) ensures release fires even when pointer leaves the orb element
+
+**Verification:** `npm run build` passes, 1,178 kB bundle, 0 errors.
+
+---
+
+## 2026-04-14 — N/A — Phase 1: Tool Reduction + Prompt/Flow Overhaul
+
+- **Status:** Completed
+- **Owner:** Codex
+- **Summary:** Completed Phase 1 of the multi-user/tool-reduction UX plan by reducing ElevenLabs to two tools (`search_products`, `update_products`), rewriting all model prompts for natural conversation and one-turn context gathering before search, and simplifying the widget to client-side carousel context handling only.
+- **Why:** The previous 4-tool setup and scripted filler behavior added complexity and made interactions feel robotic, especially during first-turn search latency.
+- **Files:** `onboarding-service/elevenlabs_agent.py`, `www.teampop/frontend/src/components/AvatarWidget.jsx`, `docs/agents/{decisions,completions,roadmap}.md`
+- **Tradeoffs:** Agent-side explicit carousel-navigation tooling was removed; references like "the second one" now rely on model reasoning over latest shown results context. This keeps UX simpler but increases prompt dependence for ordinal reference handling.
+- **Verification:** `python3 -m py_compile onboarding-service/elevenlabs_agent.py` passed. Confirmed removed tool names are absent from agent config and widget tool registrations via grep checks. Frontend `npm run build` and `npm run lint` could not run because local toolchain binaries (`vite`, `eslint`) are not installed in this workspace.
+- **Related Decisions:** 2026-04-14: Phase 1 Voice UX — Two-Tool Contract + One-Turn Context-First Search
+- **Notes:** `first_message` now uses store name context, and `soft_timeout_config.message` changed to "Let me see...".
+
+---
+
+## 2026-04-14 — N/A — Phase 2 Infrastructure: Search-Service Concurrency + Rate Limiting
+
+- **Status:** Completed
+- **Owner:** Codex
+- **Summary:** Hardened the search service for simultaneous usage by converting `POST /search` to an async endpoint, offloading embedding generation and Supabase RPC execution to worker threads, adding `slowapi` request limiting, and documenting current ElevenLabs concurrency and pricing constraints in a new operational note.
+- **Why:** The widget already supports multiple independent browser sessions, so the next scaling bottleneck was the backend search path and the external ElevenLabs workspace limits. The previous synchronous search endpoint could block under concurrent traffic, and the repo did not have one durable source summarizing ElevenLabs concurrency/cost constraints for planning.
+- **Files:** `search-service/main.py`, `search-service/{requirements.txt,.env.example,README.md}`, `shared/{db,embeddings}.py`, `docs/elevenlabs-limits.md`, `docs/agents/{decisions,memory,roadmap}.md`
+- **Tradeoffs:** Kept the synchronous Supabase client instead of migrating to an async stack. This reduces risk and scope, but it means concurrency still depends on thread offload plus Uvicorn workers rather than a fully async DB/client path. The default rate limit (`30/minute`) is intentionally conservative and may need adjustment for trusted internal traffic or deployments behind a proxy.
+- **Verification:** `python3 -m py_compile search-service/main.py shared/db.py shared/embeddings.py` succeeded. Manual diff review confirmed the search endpoint is now async, `slowapi` is wired into the app and `/search`, singleton initialization is lock-protected, the default `python main.py` port now aligns with port `8006`, and `docs/elevenlabs-limits.md` includes official source links plus explicit notes where conclusions are inference rather than published hard limits.
+- **Related Decisions:** 2026-04-14: Search Service Scaling via Async Endpoint + Thread Offload + Worker Processes; 2026-04-08: Remove Pitch LLM from Search Service
+- **Notes:** I did not find an official published hard cap for maximum conversation duration or a separate browser-WebSocket session limit in ElevenLabs docs. The new limits doc calls those gaps out explicitly instead of implying certainty.
+
 ## 2026-04-10 — N/A — Human-Facing Knowledge Base Handbook
 
 - **Status:** Completed

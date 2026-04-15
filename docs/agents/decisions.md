@@ -6,6 +6,37 @@
 
 ---
 
+## 2026-04-14: Search Service Scaling via Async Endpoint + Thread Offload + Worker Processes
+
+- **Decision:** Keep the existing synchronous Supabase Python client and sentence-transformer model, but make `POST /search` an async FastAPI endpoint that offloads embedding generation and the Supabase RPC call to `asyncio.to_thread()`. Add request rate limiting with `slowapi`, use thread-safe singleton initialization for shared clients/models, and run search-service with multiple Uvicorn workers outside reload mode.
+- **Context:** Phase 2 infrastructure work needed better multi-user behavior. The widget already supports separate browser sessions, but the search service was still a synchronous single-process bottleneck: model inference and Supabase RPC calls both blocked the event loop, and the lazy shared singletons were not safe once requests started moving through worker threads.
+- **Rationale:** This is the smallest reliable change that improves concurrency without forcing a risky async-Supabase migration in an early-alpha repo. `asyncio.to_thread()` keeps the FastAPI event loop responsive, worker processes add process-level concurrency, and thread-safe singleton creation prevents duplicate cold-start initialization under concurrent load.
+- **Alternatives considered:** (1) Migrate to an async Supabase/client stack immediately. Rejected for now because it expands scope and would need wider validation across services. (2) Only add more Uvicorn workers. Rejected because each worker would still block internally on embedding/RPC work. (3) Add rate limiting only. Rejected because it protects the service but does not remove the core blocking path.
+- **Consequences:**
+  - `search-service/main.py` now requires `Request` in the search endpoint for `slowapi`.
+  - Default local protection is `SEARCH_RATE_LIMIT=30/minute`; trusted/proxied deployments may need a different value or forwarded-IP handling.
+  - `shared/db.py` and `shared/embeddings.py` now protect singleton initialization with locks.
+  - Production-style runs should use `uvicorn main:app --workers 4` or `RELOAD=false` with `UVICORN_WORKERS=4`.
+- **Status:** Active
+- **Agent/Author:** Codex
+
+---
+
+## 2026-04-14: Phase 1 Voice UX — Two-Tool Contract + One-Turn Context-First Search
+
+- **Decision:** Reduce ElevenLabs tool contract to exactly two tools (`search_products`, `update_products`) and shift prompting to a context-first flow: one natural clarifying turn before search by default, with immediate-search exceptions for specific or impatient requests.
+- **Context:** The prior 4-tool setup (`update_carousel_main_view`, `product_desc_of_main_view`) created extra coordination complexity and scripted behavior. First-turn search also surfaced a 4-6s latency gap that felt robotic.
+- **Rationale:** UI carousel navigation and product card display can be handled fully client-side from `latestProducts` and `activeIndex`, so dedicated agent tools are unnecessary. A single clarifying exchange makes openings feel human and improves query quality while masking search latency. Immediate search is still preserved when user intent is already specific or explicitly impatient.
+- **Consequences:**
+  - `onboarding-service/elevenlabs_agent.py` now publishes two tools only.
+  - All model prompt templates now enforce `search_products -> update_products -> describe`.
+  - Agents resolve "the second one" style references from latest shown results context instead of calling a carousel-nav tool.
+  - Widget removed `update_carousel_main_view` and `product_desc_of_main_view` handlers and now auto-updates subtitle from active product state.
+- **Status:** Active
+- **Agent/Author:** Codex
+
+---
+
 ## 2026-04-09: Tools-First Gemini Prompt + Latency/Interruption Settings Overhaul
 
 - **Decision:** Rewrote `PROMPT_GEMINI` to remove "say a brief phrase first" step. Agent now calls tools immediately (search_products → update_products → speak). Updated conversation settings: `turn_eagerness: "high"`, expanded `client_events` to include `interruption`, `agent_response`, `agent_response_correction`. Bumped TTS speed to 1.08. Shortened first_message.

@@ -1,11 +1,13 @@
 """Supabase client singleton shared across services."""
 
+from threading import Lock
 from typing import Optional
 from supabase import Client, create_client
 
 from shared.config import SUPABASE_URL, SUPABASE_KEY
 
 _supabase: Optional[Client] = None
+_supabase_lock = Lock()
 
 
 def get_supabase() -> Client:
@@ -13,5 +15,7 @@ def get_supabase() -> Client:
     global _supabase
     if _supabase is not None:
         return _supabase
-    _supabase = create_client(SUPABASE_URL().rstrip("/"), SUPABASE_KEY())
+    with _supabase_lock:
+        if _supabase is None:
+            _supabase = create_client(SUPABASE_URL().rstrip("/"), SUPABASE_KEY())
     return _supabase

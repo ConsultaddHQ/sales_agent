@@ -1,7 +1,7 @@
 # Roadmap — Tasks, Improvements & Pending Work
 
 > **Purpose:** Single source of truth for what needs to be done, by whom, and priority.
-> **Updated:** 2026-04-10
+> **Updated:** 2026-04-14
 > **Rule:** Agents update this after completing work or discovering new tasks. Remove done items, add new ones.
 
 ---
@@ -73,6 +73,7 @@ These cannot be done by an agent — they require account access, credentials, o
 | Universal adapter not integration-tested | Medium | JSON-LD, platform selectors, sitemap discovery need live-site testing |
 | `glm-45-air-fp8` tool-calling unverified | Medium | New ElevenLabs-hosted LLM — may struggle with complex prompts, fallback to `gpt-4o-mini` via env var |
 | `sys.path.insert` for shared/ imports | Low | Upgrade to `pip install -e .` when team grows |
+| Search-service rate limiting assumes client IP visibility | Medium | If deployed behind a proxy/load balancer, configure forwarded IP handling or tune `SEARCH_RATE_LIMIT` to avoid mis-grouping traffic |
 
 ---
 
@@ -82,9 +83,10 @@ Move items here when done (keep last 5 for reference, then delete oldest).
 
 | Date | Task | Who |
 |------|------|-----|
+| 2026-04-14 | Phase 1 voice UX: reduced ElevenLabs tools to `search_products` + `update_products`, rewrote prompts for one-turn clarify-before-search behavior, and removed deprecated widget tool handlers | Codex |
+| 2026-04-14 | Phase 2 infrastructure: async search endpoint, thread-offloaded embedding/RPC, `slowapi` rate limiting, and ElevenLabs limits doc | Codex |
 | 2026-04-10 | Human-facing `docs/knowledge-base/` handbook, root pointers, and personal-note canonical links | Codex |
 | 2026-04-08 | ElevenLabs API migration + latency optimization + single-tunnel sharing + widget latency tracking | Agent |
 | 2026-04-07 | Monorepo refactoring: shared/, adapter registry, unified pipeline, universal scraping chain | Agent |
 | 2026-04-07 | Marketing website redesign (monochrome + GSAP orb) | Agent |
 | 2026-04-07 | Client acquisition backend (6 endpoints + notifications) | Agent |
-| 2026-04-06 | Repo cleanup (removed dashboard, dead code, stale scripts) | Agent |

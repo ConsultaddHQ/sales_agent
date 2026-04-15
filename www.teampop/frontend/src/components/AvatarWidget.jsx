@@ -4,6 +4,9 @@ import {
   useConversationClientTool,
 } from "@elevenlabs/react";
 import "../styles/AvatarWidget.css";
+import "../styles/ptt.css";
+import { useVoiceMode } from "../hooks/useVoiceMode";
+import { usePttInteraction } from "../hooks/usePttInteraction";
 
 const DUMMY_IMAGE = "/image.png";
 const WIDGET_LAYER_STYLE = {
@@ -16,6 +19,8 @@ const WIDGET_LAYER_STYLE = {
   pointerEvents: "none",
   isolation: "isolate",
 };
+
+// ─── ShoppingCard ─────────────────────────────────────────────────────────────
 
 const ShoppingCard = ({ product, isActive, highlightPrice }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -64,6 +69,8 @@ const ShoppingCard = ({ product, isActive, highlightPrice }) => {
   );
 };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 const formatMessage = (text) => {
   if (!text) return "";
   let formatted = text
@@ -73,6 +80,160 @@ const formatMessage = (text) => {
   formatted = formatted.replace(/(\d+\.)\s/g, "<br/>$1 ");
   return formatted;
 };
+
+/**
+ * Derive a single visual-state token from conversation + PTT state.
+ * This is the source of truth for orb CSS class and status pill copy.
+ *
+ * VAD states  : IDLE | CONNECTING | ACTIVE | ERROR
+ * PTT states  : PTT_READY | CONNECTING | PTT_MUTED_CONNECTED | PTT_HOLDING | ERROR
+ */
+function getVisualState({ status, interactionMode, isPressActive }) {
+  if (status === "connecting") return "CONNECTING";
+  if (status === "error") return "ERROR";
+
+  if (status === "connected") {
+    if (interactionMode === "ptt") {
+      return isPressActive ? "PTT_HOLDING" : "PTT_MUTED_CONNECTED";
+    }
+    return "ACTIVE";
+  }
+
+  // disconnected
+  return interactionMode === "ptt" ? "PTT_READY" : "IDLE";
+}
+
+/**
+ * Map visual state to shopper-facing status pill text.
+ */
+function getStatusLabel(visualState) {
+  switch (visualState) {
+    case "IDLE":                return "Tap to speak";
+    case "CONNECTING":          return "Connecting";
+    case "ACTIVE":              return "Live";
+    case "PTT_READY":           return "Hold to speak";
+    case "PTT_MUTED_CONNECTED": return "Hold to talk";
+    case "PTT_HOLDING":         return "Listening";
+    case "ERROR":               return "Retry";
+    default:                    return "";
+  }
+}
+
+// ─── OrbDock ─────────────────────────────────────────────────────────────────
+
+/**
+ * Shared orb dock capsule used in both the closed-dock view (NONE)
+ * and the products-overlay dock (PRODUCTS).
+ *
+ * Props:
+ *   visualState      — from getVisualState()
+ *   interactionMode  — "vad" | "ptt"
+ *   setMode          — toggles interactionMode
+ *   isConnected      — conversation.status === "connected"
+ *   onOrbClick       — VAD tap handler
+ *   onPointerDown    — PTT press begin
+ *   onPointerUp      — PTT press end
+ *   onPointerCancel  — PTT press cancel
+ *   onKeyDown        — keyboard hold start
+ *   onKeyUp          — keyboard hold end
+ *   onEndSession     — explicit end-session (PTT mode)
+ *   onRightAction    — right-side dock button (e.g. Chat)
+ *   scale            — optional CSS scale string for orb-wrapper (e.g. "scale-75")
+ *   style            — optional inline styles for the dock container
+ */
+function OrbDock({
+  visualState,
+  interactionMode,
+  setMode,
+  isConnected,
+  onOrbClick,
+  onPointerDown,
+  onPointerUp,
+  onPointerCancel,
+  onKeyDown,
+  onKeyUp,
+  onEndSession,
+  onRightAction,
+  scale = "",
+  style = {},
+}) {
+  const statusLabel = getStatusLabel(visualState);
+  const isPtt = interactionMode === "ptt";
+  const isLive = visualState !== "IDLE" && visualState !== "PTT_READY" && visualState !== "ERROR";
+
+  return (
+    <div className="orb-dock" style={style}>
+      {/* Left — mode toggle */}
+      <div className="flex-1 flex justify-start items-center">
+        <div className="mode-toggle" role="group" aria-label="Voice mode">
+          <button
+            className={`mode-toggle-btn ${interactionMode === "vad" ? "active" : ""}`}
+            onClick={() => setMode("vad")}
+            aria-pressed={interactionMode === "vad"}
+          >
+            Auto
+          </button>
+          <button
+            className={`mode-toggle-btn ${interactionMode === "ptt" ? "active" : ""}`}
+            onClick={() => setMode("ptt")}
+            aria-pressed={interactionMode === "ptt"}
+          >
+            Hold
+          </button>
+        </div>
+      </div>
+
+      {/* Center — orb */}
+      <div className="relative flex-shrink-0 flex flex-col items-center justify-center">
+        <span
+          className={`absolute -top-7 text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap transition-all duration-300 ${
+            isLive
+              ? "bg-green-500/20 text-green-400 border border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.2)]"
+              : "bg-zinc-800/80 text-gray-400 border border-white/5"
+          }`}
+        >
+          {statusLabel}
+        </span>
+
+        <button
+          className={`orb-wrapper ${visualState} ${scale} cursor-pointer`}
+          style={{ background: "none", border: "none", padding: 0, marginTop: scale ? "4px" : undefined }}
+          /* VAD: regular click */
+          onClick={!isPtt ? onOrbClick : undefined}
+          /* PTT: pointer hold events */
+          onPointerDown={isPtt ? onPointerDown : undefined}
+          onPointerUp={isPtt ? onPointerUp : undefined}
+          onPointerCancel={isPtt ? onPointerCancel : undefined}
+          /* Keyboard: hold for PTT, activate for VAD */
+          onKeyDown={onKeyDown}
+          onKeyUp={isPtt ? onKeyUp : undefined}
+          aria-label={isPtt ? "Hold to talk" : statusLabel}
+          /* Prevent text selection during hold */
+          onDragStart={(e) => e.preventDefault()}
+        >
+          <div className="orb-core" />
+        </button>
+      </div>
+
+      {/* Right — Chat or End */}
+      <div className="flex-1 flex justify-end items-center gap-2">
+        {isPtt && isConnected && (
+          <button className="end-session-btn" onClick={onEndSession}>
+            End
+          </button>
+        )}
+        <button
+          className="dock-action text-[11px] font-bold text-gray-300 hover:text-white uppercase tracking-wider"
+          onClick={onRightAction}
+        >
+          Chat
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── AvatarInner ─────────────────────────────────────────────────────────────
 
 function AvatarInner({
   agentId,
@@ -94,35 +255,13 @@ function AvatarInner({
   const chatContainerRef = useRef(null);
   const isSessionTransitioningRef = useRef(false);
   const latestProductsRef = useRef([]);
-  // Tracks whether the current activeIndex change came from the agent tool
-  const isAgentTriggeredRef = useRef(false);
   const isSyntheticMessageRef = useRef(false);
   const syncDebounceRef = useRef(null);
 
-  useEffect(() => {
-    return () => {
-      clearTimeout(priceTimerRef.current);
-      clearTimeout(subtitleTimerRef.current);
-      clearTimeout(syncDebounceRef.current);
-    };
-  }, []);
+  // ── Mode (VAD / PTT) ──────────────────────────────────────────────────────
+  const [interactionMode, setInteractionMode] = useVoiceMode();
 
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop =
-        chatContainerRef.current.scrollHeight;
-    }
-  }, [chatHistory]);
-
-  useEffect(() => {
-    latestProductsRef.current = latestProducts;
-  }, [latestProducts]);
-
-  const safeIndex = Math.min(
-    activeIndex,
-    Math.max(0, latestProducts.length - 1),
-  );
-
+  // ── Latency instrumentation ───────────────────────────────────────────────
   const latencyRef = useRef({ userSpeechAt: null, firstAiAt: null, productsAt: null, cycle: 0 });
 
   function _startLatencyTimer(userText) {
@@ -157,6 +296,7 @@ function AvatarInner({
     }
   }
 
+  // ── ElevenLabs conversation ───────────────────────────────────────────────
   const conversation = useConversation({
     onMessage: (message) => {
       const source = message?.source;
@@ -174,7 +314,6 @@ function AvatarInner({
         return;
       }
 
-      // Start latency timer when user speaks
       if (source === "user" && text) {
         _startLatencyTimer(text);
       }
@@ -191,8 +330,7 @@ function AvatarInner({
             }
             return [...prev, { id: msgId, source, text }];
           }
-          if (prev.length > 0 && prev[prev.length - 1].text === text)
-            return prev;
+          if (prev.length > 0 && prev[prev.length - 1].text === text) return prev;
           return [...prev, { id: Date.now(), source, text }];
         });
       }
@@ -212,10 +350,7 @@ function AvatarInner({
         ) {
           if (priceTimerRef.current) clearTimeout(priceTimerRef.current);
           setHighlightPrice(true);
-          priceTimerRef.current = setTimeout(
-            () => setHighlightPrice(false),
-            2500,
-          );
+          priceTimerRef.current = setTimeout(() => setHighlightPrice(false), 2500);
         }
       }
     },
@@ -232,11 +367,53 @@ function AvatarInner({
     },
   });
 
+  // Destructure mute control. setMuted(true) = mic off, setMuted(false) = mic on.
+  const setMuted = conversation.setMuted ?? (() => {});
+
+  // ── PTT interaction hook ──────────────────────────────────────────────────
+  const ptt = usePttInteraction({ setMuted });
+
+  // Keep PTT status mirror in sync
+  useEffect(() => {
+    ptt.syncStatus(conversation.status);
+  }, [conversation.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Notify PTT hook of lifecycle transitions
+  const prevStatusRef = useRef(conversation.status);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    const curr = conversation.status;
+    prevStatusRef.current = curr;
+
+    if (curr === "connected" && prev !== "connected" && interactionMode === "ptt") {
+      ptt.onConnected();
+    }
+    if ((curr === "disconnected" || curr === "error") && interactionMode === "ptt") {
+      ptt.onDisconnected();
+    }
+  }); // intentionally runs on every render to catch all status transitions
+
+  // When switching INTO PTT mode while connected, mute mic immediately
+  useEffect(() => {
+    if (interactionMode === "ptt" && conversation.status === "connected") {
+      setMuted(true);
+    }
+    if (interactionMode === "vad" && conversation.status === "connected") {
+      setMuted(false); // hand mic control back to VAD
+    }
+  }, [interactionMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Derived visual state ──────────────────────────────────────────────────
+  const visualState = getVisualState({
+    status: conversation.status,
+    interactionMode,
+    isPressActive: ptt.isPressActiveRef.current,
+  });
+
+  // ── Tool: update_products ─────────────────────────────────────────────────
   useConversationClientTool("update_products", (parameters) => {
     console.log("Update tool called : ", parameters);
-    const products = Array.isArray(parameters?.products)
-      ? parameters.products
-      : [];
+    const products = Array.isArray(parameters?.products) ? parameters.products : [];
 
     _markProductsArrived(products.length);
 
@@ -250,56 +427,50 @@ function AvatarInner({
     return "UI updated successfully";
   });
 
-  useConversationClientTool("update_carousel_main_view", (parameters) => {
-    console.log("update_carousel_main_view called with:", parameters);
-
-    const products = latestProductsRef.current;
-    let targetIndex = -1;
-    if (typeof parameters?.index === "number") {
-      targetIndex = parameters.index;
-    } else if (parameters?.product_id) {
-      targetIndex = products.findIndex(
-        (p) => p.id === parameters.product_id,
-      );
-    }
-
-    if (targetIndex < 0 || targetIndex >= products.length) {
-      return `Invalid index ${targetIndex}. Products available: 0-${products.length - 1}.`;
-    }
-    isAgentTriggeredRef.current = true;
-    setActiveIndex(targetIndex);
-    console.log(
-      `[Agent] Carousel -> index ${targetIndex} (${products[targetIndex]?.name})`,
-    );
-    return `Carousel moved to index ${targetIndex}: ${products[targetIndex]?.name}`;
-  });
-
-  useConversationClientTool("product_desc_of_main_view", (parameters) => {
-    console.log("product_desc_of_main_view called with:", parameters);
-    const desc = parameters?.product_desc;
-    if (!desc?.product_id) return "Missing product_desc";
-    const label = `${desc.name || ""} - $${Number(desc.price || 0).toLocaleString("en-US")}`;
-    setAgentSubtitle(label);
-    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
-    subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 5000);
-    setHighlightPrice(true);
-    if (priceTimerRef.current) clearTimeout(priceTimerRef.current);
-    priceTimerRef.current = setTimeout(
-      () => setHighlightPrice(false),
-      2500,
-    );
-    console.log(`[product_desc] UI updated for: ${desc.name}`);
-    return `Main view enriched for ${desc.product_id}`;
-  });
-
   const { sendContextualUpdate, sendUserMessage } = conversation;
 
-  const visualState =
-    conversation.status === "connected"
-      ? "ACTIVE"
-      : conversation.status === "error"
-        ? "ERROR"
-        : "IDLE";
+  // ── VAD session helpers ───────────────────────────────────────────────────
+  const startVoiceSession = useCallback(() => {
+    conversation.startSession({ agentId, connectionType: "websocket" });
+  }, [conversation, agentId]);
+
+  const endVoiceSession = useCallback(() => {
+    conversation.endSession();
+  }, [conversation]);
+
+  /** VAD-mode tap: toggle session on/off */
+  const handleOrbActivate = useCallback(() => {
+    if (isSessionTransitioningRef.current) return;
+    if (conversation.status === "connecting") return;
+    isSessionTransitioningRef.current = true;
+    if (conversation.status === "connected") {
+      endVoiceSession();
+    } else if (conversation.status === "disconnected" || conversation.status === "error") {
+      startVoiceSession();
+    }
+    setTimeout(() => { isSessionTransitioningRef.current = false; }, 500);
+  }, [conversation.status, startVoiceSession, endVoiceSession]);
+
+  /** PTT pointer/keyboard handlers — forwarded to the orb */
+  const handlePttPointerDown = useCallback(
+    (e) => ptt.beginPress(e, { agentId, startSession: conversation.startSession }),
+    [ptt, agentId, conversation.startSession]
+  );
+
+  const handleOrbKeyDown = useCallback(
+    (e) => {
+      if (interactionMode === "ptt") {
+        ptt.handleKeyDown(e, { agentId, startSession: conversation.startSession });
+      } else if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        handleOrbActivate();
+      }
+    },
+    [interactionMode, ptt, agentId, conversation.startSession, handleOrbActivate]
+  );
+
+  // ── Carousel sync ─────────────────────────────────────────────────────────
+  const safeIndex = Math.min(activeIndex, Math.max(0, latestProducts.length - 1));
 
   const syncMainProduct = useCallback(
     (product) => {
@@ -316,14 +487,12 @@ function AvatarInner({
       if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
       syncDebounceRef.current = setTimeout(() => {
         console.log("[sync] Sending product context to agent:", product.name);
-
         sendContextualUpdate(
           `[CAROUSEL UPDATE] The user just manually selected a new product on screen. ` +
           `Product name: "${product.name}". ` +
           `Price: ₹${Number(product.price).toLocaleString("en-IN")}. ` +
           `Please talk about this product naturally in your next response.`,
         );
-
         isSyntheticMessageRef.current = true;
         sendUserMessage("Tell me about this one");
       }, 600);
@@ -334,40 +503,60 @@ function AvatarInner({
   useEffect(() => {
     const carouselEl = carouselRef.current;
     if (!carouselEl || !latestProducts[safeIndex]) return;
-    console.log(
-      `[Index Changed] safeIndex = ${safeIndex}, agentTriggered = ${isAgentTriggeredRef.current}`,
-    );
+    console.log(`[Index Changed] safeIndex = ${safeIndex}`);
     const thumbnailEl = carouselEl.children[safeIndex];
     if (thumbnailEl) {
-      thumbnailEl.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-        inline: "center",
-      });
-      console.log(`[Scroll OK] Thumbnail ${safeIndex} scrolled into view`);
+      thumbnailEl.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
     }
-    isAgentTriggeredRef.current = false;
   }, [latestProducts, safeIndex]);
 
-  const handleInteraction = () => {
-    if (isSessionTransitioningRef.current) return;
-    if (conversation.status === "connecting") return;
-    isSessionTransitioningRef.current = true;
-    if (conversation.status === "connected") {
-      conversation.endSession();
-    } else if (
-      conversation.status === "disconnected" ||
-      conversation.status === "error"
-    ) {
-      conversation.startSession({ agentId, connectionType: "websocket" });
+  useEffect(() => {
+    const activeProduct = latestProducts[safeIndex];
+    if (!activeProduct || activeView !== "PRODUCTS") return;
+    const label = `${activeProduct.name} — ₹${Number(activeProduct.price || 0).toLocaleString("en-IN")}`;
+    setAgentSubtitle(label);
+    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+    subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 4000);
+  }, [activeView, latestProducts, safeIndex]);
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(priceTimerRef.current);
+      clearTimeout(subtitleTimerRef.current);
+      clearTimeout(syncDebounceRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
-    setTimeout(() => {
-      isSessionTransitioningRef.current = false;
-    }, 500);
+  }, [chatHistory]);
+
+  useEffect(() => {
+    latestProductsRef.current = latestProducts;
+  }, [latestProducts]);
+
+  // ── Shared dock props ─────────────────────────────────────────────────────
+  const sharedDockProps = {
+    visualState,
+    interactionMode,
+    setMode: setInteractionMode,
+    isConnected: conversation.status === "connected",
+    onOrbClick: handleOrbActivate,
+    onPointerDown: handlePttPointerDown,
+    onPointerUp: ptt.endPress,
+    onPointerCancel: ptt.endPress,
+    onKeyDown: handleOrbKeyDown,
+    onKeyUp: ptt.handleKeyUp,
+    onEndSession: endVoiceSession,
+    onRightAction: () => setActiveView("CHAT"),
   };
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
+      {/* ── Products overlay view ──────────────────────────────────────────── */}
       {activeView === "PRODUCTS" && (
         <div className="shopping-mode-overlay flex flex-col h-[100dvh] w-screen bg-black overflow-hidden relative z-40">
           <div className="flex-none p-4 flex justify-end items-start absolute top-0 w-full z-50 pointer-events-none">
@@ -389,11 +578,11 @@ function AvatarInner({
                       alt={latestProducts[safeIndex].name}
                       className="w-full h-full object-cover"
                       onError={(e) => {
-                        const currentProduct = latestProducts[safeIndex];
-                        if (currentProduct && e.target.src !== currentProduct.image_url && currentProduct.image_url) {
-                          e.target.src = currentProduct.image_url;
+                        const p = latestProducts[safeIndex];
+                        if (p && e.target.src !== p.image_url && p.image_url) {
+                          e.target.src = p.image_url;
                         } else {
-                          e.target.src = 'https://placehold.co/400x400?text=No+Image';
+                          e.target.src = "https://placehold.co/400x400?text=No+Image";
                         }
                       }}
                     />
@@ -413,9 +602,7 @@ function AvatarInner({
                   )}
                 </div>
 
-                <div
-                  className="w-full max-h-20 overflow-y-auto mb-3 no-scrollbar"
-                >
+                <div className="w-full max-h-20 overflow-y-auto mb-3 no-scrollbar">
                   {agentSubtitle && (
                     <div className="text-white/90 bg-black/40 p-2 rounded-lg text-sm backdrop-blur-sm border border-white/10 shadow-sm leading-snug">
                       {agentSubtitle}
@@ -431,13 +618,14 @@ function AvatarInner({
                   {latestProducts.map((p, idx) => (
                     <div
                       key={p.id || idx}
-                      className={`flex-shrink-0 transition-all duration-300 cursor-pointer rounded-xl overflow-hidden border-2 ${idx === safeIndex ? "border-blue-500 scale-100 opacity-100" : "border-transparent scale-90 opacity-60 hover:opacity-100"}`}
+                      className={`flex-shrink-0 transition-all duration-300 cursor-pointer rounded-xl overflow-hidden border-2 ${
+                        idx === safeIndex
+                          ? "border-blue-500 scale-100 opacity-100"
+                          : "border-transparent scale-90 opacity-60 hover:opacity-100"
+                      }`}
                       style={{ width: "60px", height: "60px" }}
                       onClick={() => {
-                        console.log(
-                          `[Thumbnail] Click → index ${idx} (${latestProducts[idx]?.name || "unknown"})`,
-                        );
-                        isAgentTriggeredRef.current = false;
+                        console.log(`[Thumbnail] Click → index ${idx} (${latestProducts[idx]?.name || "unknown"})`);
                         setActiveIndex(idx);
                         syncMainProduct(latestProducts[idx]);
                       }}
@@ -450,7 +638,7 @@ function AvatarInner({
                           if (p && e.target.src !== p.image_url && p.image_url) {
                             e.target.src = p.image_url;
                           } else {
-                            e.target.src = 'https://placehold.co/400x400?text=No+Image';
+                            e.target.src = "https://placehold.co/400x400?text=No+Image";
                           }
                         }}
                       />
@@ -462,33 +650,23 @@ function AvatarInner({
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-900 pointer-events-auto pt-16">
               <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mb-6 border border-zinc-700 shadow-xl">
-                <svg
-                  className="w-10 h-10 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
-                  ></path>
+                <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-white mb-3 tracking-wide">
-                No Products Yet
-              </h2>
+              <h2 className="text-2xl font-bold text-white mb-3 tracking-wide">No Products Yet</h2>
               <p className="text-gray-400 text-sm max-w-[250px] mx-auto leading-relaxed">
                 Tap the orb below and ask me to find something for you!
               </p>
             </div>
           )}
 
+          {/* Products overlay dock */}
           <div className="flex-none w-full bg-black pb-6 px-4 z-10 pointer-events-auto">
             <div className="w-full flex items-center justify-center mt-2">
-              <div
-                className="orb-dock px-2 min-w-[280px]"
+              <OrbDock
+                {...sharedDockProps}
+                scale="scale-75"
                 style={{
                   position: "relative",
                   width: "100%",
@@ -499,94 +677,38 @@ function AvatarInner({
                   border: "none",
                   padding: "0",
                 }}
-              >
-                <div className="flex-1 flex justify-start items-center">
-                  <button className="dock-action text-[11px] font-bold text-gray-500 uppercase tracking-wider cursor-default">
-                    Products
-                  </button>
-                </div>
-
-                <div className="relative flex-shrink-0 flex flex-col items-center justify-center">
-                  <span
-                    className={`absolute -top-7 text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap transition-colors ${visualState !== "IDLE" ? "bg-green-500/20 text-green-400 border border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.2)]" : "bg-zinc-800/80 text-gray-400 border border-white/5"}`}
-                  >
-                    {visualState === "IDLE" ? "Ready" : visualState}
-                  </span>
-
-                  <div
-                    className={`orb-wrapper flex-shrink-0 ${visualState} scale-75 cursor-pointer mt-1`}
-                    onClick={handleInteraction}
-                  >
-                    <div className="orb-core"></div>
-                  </div>
-                </div>
-
-                <div className="flex-1 flex justify-end items-center">
-                  <button
-                    className="dock-action text-[11px] font-bold text-gray-300 hover:text-white uppercase tracking-wider"
-                    onClick={() => setActiveView("CHAT")}
-                  >
-                    Chat
-                  </button>
-                </div>
-              </div>
+              />
             </div>
           </div>
         </div>
       )}
 
+      {/* ── Closed dock view (default) ────────────────────────────────────── */}
       {activeView === "NONE" && (
         <div className="avatar-widget mode-closed">
           <div className="avatar-controls-column">
-            <div className="orb-dock px-4 min-w-[280px] shadow-2xl border border-white/10 mt-6">
-              <div className="flex-1 flex justify-start items-center">
-                <button
-                  className="dock-action font-bold uppercase tracking-wider text-[11px] text-gray-300 hover:text-white transition-colors"
-                  onClick={() => setActiveView("PRODUCTS")}
-                >
-                  Products
-                </button>
-              </div>
-
-              <div className="relative flex-shrink-0 flex flex-col items-center justify-center">
-                <span
-                  className={`absolute -top-8 text-[9px] uppercase font-bold tracking-widest px-2.5 py-1 rounded-full whitespace-nowrap transition-all duration-300 ${visualState !== "IDLE" ? "bg-green-500/20 text-green-400 border border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.3)]" : "bg-zinc-800/80 text-gray-400 border border-white/5"}`}
-                >
-                  {visualState === "IDLE" ? "Tap to speak" : visualState}
-                </span>
-
-                <div
-                  className={`orb-wrapper ${visualState} cursor-pointer`}
-                  onClick={handleInteraction}
-                >
-                  <div className="orb-core"></div>
-                </div>
-              </div>
-
-              <div className="flex-1 flex justify-end items-center">
-                <button
-                  className="dock-action font-bold uppercase tracking-wider text-[11px] text-gray-300 hover:text-white transition-colors"
-                  onClick={() => setActiveView("CHAT")}
-                >
-                  Chat
-                </button>
-              </div>
-            </div>
+            <OrbDock
+              {...sharedDockProps}
+              style={{ paddingLeft: "16px", paddingRight: "16px", minWidth: "280px" }}
+              // override default style from orb-dock class
+            />
           </div>
         </div>
       )}
 
+      {/* ── Chat view ─────────────────────────────────────────────────────── */}
       {activeView === "CHAT" && (
         <div className="avatar-widget mode-open">
           <div className="bubble flex flex-col h-[70vh] max-h-[600px] overflow-hidden shadow-2xl border border-white/10 relative pointer-events-auto">
             <div className="bubble-header flex-shrink-0 bg-zinc-900 border-b border-white/10 px-4 py-3 flex justify-between items-center z-50">
               <span className="font-semibold text-white tracking-wide text-sm flex items-center gap-2">
                 <div
-                  className={`w-2 h-2 rounded-full ${visualState !== "IDLE" ? "bg-green-500 animate-pulse" : "bg-gray-500"}`}
+                  className={`w-2 h-2 rounded-full ${
+                    conversation.status === "connected" ? "bg-green-500 animate-pulse" : "bg-gray-500"
+                  }`}
                 />
                 Live Session
               </span>
-
               <button
                 className="text-gray-400 hover:text-white transition-colors cursor-pointer p-1 -mr-1 rounded-md hover:bg-white/10 z-50 pointer-events-auto"
                 onClick={(e) => {
@@ -596,18 +718,8 @@ function AvatarInner({
                 }}
                 aria-label="Close Chat"
               >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M6 18L18 6M6 6l12 12"
-                  ></path>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
@@ -624,16 +736,13 @@ function AvatarInner({
                 chatHistory.map((msg) => (
                   <div
                     key={msg.id}
-                    className={`message-bubble p-3 text-sm max-w-[85%] shadow-md ${msg.source === "user"
-                      ? "user-message self-end bg-blue-600 text-white rounded-2xl rounded-tr-sm border border-blue-500"
-                      : "assistant-message self-start bg-zinc-800 text-gray-100 rounded-2xl rounded-tl-sm border border-white/5"
-                      }`}
+                    className={`message-bubble p-3 text-sm max-w-[85%] shadow-md ${
+                      msg.source === "user"
+                        ? "user-message self-end bg-blue-600 text-white rounded-2xl rounded-tr-sm border border-blue-500"
+                        : "assistant-message self-start bg-zinc-800 text-gray-100 rounded-2xl rounded-tl-sm border border-white/5"
+                    }`}
                   >
-                    <span
-                      dangerouslySetInnerHTML={{
-                        __html: formatMessage(msg.text),
-                      }}
-                    />
+                    <span dangerouslySetInnerHTML={{ __html: formatMessage(msg.text) }} />
                   </div>
                 ))
               )}
@@ -645,9 +754,10 @@ function AvatarInner({
   );
 }
 
+// ─── AvatarWidget ─────────────────────────────────────────────────────────────
+
 function AvatarWidget({ agentId, preview = false }) {
-  const resolvedAgentId =
-    agentId || window.__TEAM_POP_AGENT_ID__ || "YOUR_ELEVENLABS_AGENT_ID";
+  const resolvedAgentId = agentId || window.__TEAM_POP_AGENT_ID__ || "YOUR_ELEVENLABS_AGENT_ID";
   const [activeView, setActiveView] = useState(preview ? "CHAT" : "NONE");
   const [latestProducts, setLatestProducts] = useState([]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -663,27 +773,21 @@ function AvatarWidget({ agentId, preview = false }) {
       const container = carouselRef.current;
       const children = Array.from(container.children);
       if (!children.length) return;
-      const containerCenter =
-        container.getBoundingClientRect().left + container.clientWidth / 2;
+      const containerCenter = container.getBoundingClientRect().left + container.clientWidth / 2;
       let closest = 0;
       let minDist = Infinity;
       children.forEach((child, i) => {
         const rect = child.getBoundingClientRect();
         const childCenter = rect.left + rect.width / 2;
         const dist = Math.abs(childCenter - containerCenter);
-        if (dist < minDist) {
-          minDist = dist;
-          closest = i;
-        }
+        if (dist < minDist) { minDist = dist; closest = i; }
       });
       if (closest !== activeIndex) setActiveIndex(closest);
     }, 150);
   }, [activeIndex]);
 
   if (!resolvedAgentId || resolvedAgentId === "YOUR_ELEVENLABS_AGENT_ID") {
-    return (
-      <div className="avatar-widget-error">Missing ElevenLabs Agent ID</div>
-    );
+    return <div className="avatar-widget-error">Missing ElevenLabs Agent ID</div>;
   }
 
   return (
@@ -700,6 +804,8 @@ function AvatarWidget({ agentId, preview = false }) {
     />
   );
 }
+
+// ─── Public export ────────────────────────────────────────────────────────────
 
 export default function LayeredAvatarWidget(props) {
   return (
