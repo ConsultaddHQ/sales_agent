@@ -67,10 +67,12 @@ logger.info(f"Images served from: {IMAGES_DIR}")
 from routes.onboard import router as onboard_router
 from routes.admin import router as admin_router
 from routes.client import router as client_router
+from routes.sales import router as sales_router
 
 app.include_router(onboard_router)
 app.include_router(admin_router)
 app.include_router(client_router)
+app.include_router(sales_router)  # /sales/brain, /sales/proof (ElevenLabs webhooks)
 
 # Force adapter registration on startup
 import adapters  # noqa: F401

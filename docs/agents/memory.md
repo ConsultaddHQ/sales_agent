@@ -10,7 +10,7 @@
 | Task | Files | Owner | Status | Notes |
 |------|-------|-------|--------|-------|
 | Conservative cleanup pass 2: remaining lint-safe cleanup and stale current-guidance references | `docs/agents/memory.md`, `www.teampop/frontend/`, `www.teampop/website/` | Codex | In progress | Fix only low-risk lint items and preserve historical docs |
-| Pop Sales Agent program (AI AE on marketing site) — Phase 0 done, Phase 1 (sales_brain) next | `onboarding-service/`, `www.teampop/website/`, `migrations/` | Claude (madrid) | In progress | Plan: `.claude/plans/…quirky-cupcake.md`; 5 phases; decisions.md 2026-05-16 |
+| Pop Sales Agent program (AI AE on marketing site) — Phase 0+1 done (19 tests GREEN), Phase 2 (awareness bridge) next | `onboarding-service/`, `www.teampop/`, `migrations/` | Claude (madrid) | In progress | Plan: `.claude/plans/…quirky-cupcake.md`; 5 phases; decisions.md 2026-05-16. Live verify pending: apply migration, set OPENROUTER/ELEVENLABS keys, provision sales agent |
 
 ---
 
@@ -25,6 +25,7 @@
 
 | Date | What Was Done | Files Changed | Agent/Author |
 |------|--------------|---------------|--------------|
+| 2026-05-16 | Pop Sales Agent Phase 0+1: sales agent config/payload, playbook, migrations, marketing-site embed + host bridge, stateful sales brain + LLM client + /sales routes; 19 pytest GREEN | `onboarding-service/`, `shared/llm.py`, `www.teampop/website/`, `migrations/` | Claude (madrid) |
 | 2026-04-10 | Conservative cleanup: removed legacy adapters, stale widget z-index helper, unused website starter assets, and low-risk dead comments/imports after verification | `onboarding-service/`, `www.teampop/frontend/`, `www.teampop/website/`, `docs/Engineering Standards.md` | Codex |
 | 2026-04-09 | Tools-first Gemini prompt + WebSocket disconnect diagnostic logging + complete agent conversation cycle docs | `elevenlabs_agent.py`, `AvatarWidget.jsx`, `completions.md`, `decisions.md` | Claude Code |
 | 2026-04-08 | ElevenLabs API migration + latency optimization + single-tunnel sharing + widget latency tracking | `elevenlabs_agent.py`, `main.py`, `AvatarWidget.jsx`, `image_server.py`, `admin.py`, `client.py` | Claude Code |
