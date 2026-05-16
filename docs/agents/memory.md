@@ -10,12 +10,14 @@
 | Task | Files | Owner | Status | Notes |
 |------|-------|-------|--------|-------|
 | Conservative cleanup pass 2: remaining lint-safe cleanup and stale current-guidance references | `docs/agents/memory.md`, `www.teampop/frontend/`, `www.teampop/website/` | Codex | In progress | Fix only low-risk lint items and preserve historical docs |
+| Pop Sales Agent program (AI AE on marketing site) — Phase 0 done, Phase 1 (sales_brain) next | `onboarding-service/`, `www.teampop/website/`, `migrations/` | Claude (madrid) | In progress | Plan: `.claude/plans/…quirky-cupcake.md`; 5 phases; decisions.md 2026-05-16 |
 
 ---
 
 ## Files Currently Being Modified
 
 - `docs/agents/memory.md` — Codex
+- `onboarding-service/elevenlabs_agent.py`, `www.teampop/website/` — Claude (madrid), Pop Sales Agent
 
 ---
 

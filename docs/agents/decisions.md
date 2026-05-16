@@ -382,3 +382,19 @@
   - Onboarding service mounts `www.teampop/frontend/dist/` — build must be run before demo pages work
 - **Status:** Active
 - **Agent/Author:** Engineering team
+
+---
+
+## 2026-05-16: Pop Sales Agent — Server-Side Stateful Brain + In-Page Action Tools
+
+- **Decision:** Evolve the `<team-pop-agent>` widget into an AI account executive on Team Pop's *own* marketing site. The ElevenLabs voice agent is a disciplined mouthpiece; all sales methodology is server-side in `onboarding-service/services/sales_brain.py` (stage machine + Problem Identification Chart + next-best-move), reasoning over a committed `services/sales_playbook.md`. Actions are in-page ElevenLabs **client tools** acting on our own instrumented site via `window.__TEAM_POP_HOST__`, **not** screenshot/Playwright computer-use. v1 conversion = qualified lead + booked meeting via an *assisted close* (agent pre-fills the demo form + opens the calendar; visitor confirms).
+- **Context:** User wants the agent to watch visitor behavior, act on the page, surface trust/proof, and convert visitors. ElevenLabs has no native "computer use" — its agents act through tools. The existing widget already watches one action (carousel scroll → `sendContextualUpdate`) and acts via client tools; reusing that pattern beats the clunky generic computer-use demos.
+- **Rationale:** Stateful server-side reasoning behaves like a trained AE rather than a 2k-token prompt; instrumented in-page tools are fast/reliable/smooth on our own site; reuse maximizes leverage of proven patterns (`_get_tool_config`, `useConversationClientTool`, the `/search` single-tunnel proxy, `submit_request`).
+- **Consequences:**
+  - `sales_brain`/`surface_proof` webhook tools point at new onboarding-service `/sales/*` routes; tool names are a hard invariant across config + prompt + `AvatarWidget.jsx`.
+  - `conversation_id` is sent as a **constant** webhook param using the ElevenLabs system dynamic variable `{{system__conversation_id}}` (never LLM-generated — same truncation class as the `store_id` invariant). **Must be verified against the live ElevenLabs API on first provision**, like the 2026-04-08 `agent_config` nesting discovery.
+  - New repo convention: `migrations/` holds numbered, idempotent SQL applied **by a human** in the Supabase SQL editor (no programmatic DDL path). `0001_sales_agent.sql` adds `sales_sessions`, `sales_proof`, and `agent_requests` sales columns.
+  - No LLM client existed (the `get_openrouter_client()` referenced in `search-service` is dead commented code; no `openai`/`anthropic`/`openrouter` in requirements). The sales brain will use a minimal `httpx`-based OpenRouter REST client (httpx already a dependency) — no new dependency, mirroring how `elevenlabs_agent.py` calls ElevenLabs via raw `requests`. Supersedes the plan's "reuse existing OpenRouter client" assumption.
+  - Delivered in 5 independently-demoable phases. Phase 0 (this entry): foundations, sales agent config + payload builders (`elevenlabs_agent.py`), playbook commit, migrations, marketing-site embed + host bridge scaffold.
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent program — plan: `.claude/plans/…quirky-cupcake.md`)
