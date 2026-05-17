@@ -65,6 +65,55 @@ const ShoppingCard = ({ product, isActive, highlightPrice }) => {
   );
 };
 
+// Phase 3 — Trust Panel. The agent calls show_proof with items returned by
+// the surface_proof webhook; this renders them so the visitor SEES the proof.
+const PROOF_LABELS = {
+  case_study: "Case study",
+  roi: "ROI",
+  testimonial: "What customers say",
+  objection_rebuttal: "Worth knowing",
+};
+
+const ProofPanel = ({ items, onClose }) => (
+  <div className="proof-panel pointer-events-auto fixed inset-x-0 bottom-0 z-[60] mx-auto w-full max-w-md bg-zinc-900/95 backdrop-blur-md border-t border-white/10 rounded-t-2xl shadow-2xl max-h-[70vh] flex flex-col">
+    <div className="flex-none flex items-center justify-between px-4 py-3 border-b border-white/10">
+      <span className="text-white font-semibold text-sm tracking-wide">
+        Proof &amp; results
+      </span>
+      <button
+        onClick={onClose}
+        aria-label="Close proof"
+        className="text-gray-400 hover:text-white transition-colors rounded-md p-1 hover:bg-white/10"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+    <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+      {items.map((p, i) => (
+        <div
+          key={i}
+          className="rounded-xl border border-white/10 bg-zinc-800/60 p-3 flex flex-col gap-1.5"
+        >
+          <span className="text-[10px] uppercase tracking-widest text-blue-300 font-bold">
+            {PROOF_LABELS[p?.type] || "Proof"}
+          </span>
+          {p?.title && (
+            <div className="text-white text-sm font-semibold">{p.title}</div>
+          )}
+          {p?.body && (
+            <div className="text-gray-300 text-sm leading-snug">{p.body}</div>
+          )}
+          {p?.metric && (
+            <div className="text-green-300 text-sm font-bold mt-1">{p.metric}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
 const formatMessage = (text) => {
   if (!text) return "";
   let formatted = text
@@ -89,6 +138,7 @@ function AvatarInner({
   const [agentSubtitle, setAgentSubtitle] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
   const [highlightPrice, setHighlightPrice] = useState(false);
+  const [proofItems, setProofItems] = useState([]);
 
   const priceTimerRef = useRef(null);
   const subtitleTimerRef = useRef(null);
@@ -291,6 +341,23 @@ function AvatarInner({
     );
     console.log(`[product_desc] UI updated for: ${desc.name}`);
     return `Main view enriched for ${desc.product_id}`;
+  });
+
+  // Phase 3 — render proof the agent retrieved via surface_proof.
+  useConversationClientTool("show_proof", (parameters) => {
+    const items = Array.isArray(parameters?.proof) ? parameters.proof : [];
+    console.log("show_proof called:", items.length, "items");
+    setProofItems(items);
+    if (items.length) {
+      setAgentSubtitle(
+        `Showing ${items.length} proof point${items.length > 1 ? "s" : ""}`,
+      );
+      if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+      subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 4000);
+    }
+    return items.length
+      ? `Displayed ${items.length} proof item(s)`
+      : "No proof to display";
   });
 
   const { sendContextualUpdate, sendUserMessage } = conversation;
@@ -667,6 +734,10 @@ function AvatarInner({
             </div>
           </div>
         </div>
+      )}
+
+      {proofItems.length > 0 && (
+        <ProofPanel items={proofItems} onClose={() => setProofItems([])} />
       )}
     </>
   );
