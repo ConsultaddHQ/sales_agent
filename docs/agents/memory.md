@@ -10,7 +10,7 @@
 | Task | Files | Owner | Status | Notes |
 |------|-------|-------|--------|-------|
 | Conservative cleanup pass 2: remaining lint-safe cleanup and stale current-guidance references | `docs/agents/memory.md`, `www.teampop/frontend/`, `www.teampop/website/` | Codex | In progress | Fix only low-risk lint items and preserve historical docs |
-| Pop Sales Agent program (AI AE on marketing site) — **all 5 phases done & in review** as stacked Draft PRs #8(P0+1)/#9(P2)/#10(P3)/#11(P4); 31 py + 8 JS tests GREEN | `onboarding-service/`, `www.teampop/`, `shared/`, `migrations/` | Claude (madrid) | In review | Vision/review: `docs/pop-sales-agent/DESIGN.md`; decisions.md 2026-05-16. Workflow: one Draft PR per phase (stacked), merge-blocked until `Closes HPF-XXX` (constraint #13). Live gate: apply migrations 0001+0002, set OPENROUTER/ELEVENLABS keys, `create_sales_agent()`, confirm `{{system__conversation_id}}`, replace illustrative proof |
+| Pop Sales Agent program (AI AE on marketing site) — **Phases 0–5 done & in review** as stacked Draft PRs #8(P0+1)/#9(P2)/#10(P3)/#11(P4)/#12(P5 bring-up); 40 py + 8 JS tests GREEN | `onboarding-service/`, `www.teampop/`, `shared/`, `migrations/` | Claude (madrid) | In review | Vision/review: `docs/pop-sales-agent/DESIGN.md`; **live steps: `docs/pop-sales-agent/RUNBOOK.md`** (preflight_sales.py → provision_sales_agent.py). Team Pop site first; Consultadd/external embed deferred. Per-phase stacked Draft PRs, merge-blocked until `Closes HPF-XXX` (constraint #13) |
 
 ---
 

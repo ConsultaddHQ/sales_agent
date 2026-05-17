@@ -83,8 +83,9 @@ Supabase
 | 2 | Awareness bridge — host-page activity → contextual updates | own PR (stacked on Foundation) | ✅ done, in review |
 | 3 | Proof surfacing — content + trust panel UI + admin CRUD + curated drafts | own PR (stacked on Phase 2) | ✅ done, in review |
 | 4 | Assisted close — action tools wired + lead/transcript capture | own PR (stacked on Phase 3) | ✅ done, in review |
+| 5 | Live bring-up tooling — preflight + provision CLI + runbook | own PR (stacked on Phase 4) | ✅ done, in review |
 
-**All 5 phases implemented & in review (Draft PRs #8–#11). Remaining = team review + the live runtime gate in §9 / §8 Q2.**
+**Phases 0–5 implemented & in review (Draft PRs #8–#12). To go live on the Team Pop site, follow [`RUNBOOK.md`](RUNBOOK.md). Remaining = team review + the runtime gate + §8 Q2.**
 
 (Phase 0+1 are combined because Phase 1's routes import Phase 0's config and depend on its migration/tables — they don't review independently.)
 
@@ -119,6 +120,11 @@ cd www.teampop/frontend && npm run build                     # widget IIFE (Trus
 
 # Proof content: apply migrations/0002_sales_proof_seed.sql after 0001.
 # Admin can then edit/replace it at /admin → Proof Library.
+
+# Going live on the Team Pop site — exact ordered steps:
+#   docs/pop-sales-agent/RUNBOOK.md
+#   cd onboarding-service && python preflight_sales.py    # go/no-go
+#   cd onboarding-service && python provision_sales_agent.py
 
 # Marketing site builds with the embed + observer
 cd www.teampop/website && npm install && npm run build && npx eslint src/

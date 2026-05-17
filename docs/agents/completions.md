@@ -424,3 +424,12 @@ Configured in `elevenlabs_agent.py:728-731` via `client_events`:
 - **Why:** Assisted close was the locked conversion model; reuse of submit_request/notifications/Calendly + conversation_id linkage keeps it simple and trustworthy (visitor always confirms).
 - **Verification:** pytest 31/31 GREEN (4 new lead tests, RED→GREEN). Widget + website build + eslint clean (effects use the codebase setState-deferral pattern). Live e2e still gated on the runtime steps + `{{system__conversation_id}}` confirmation (DESIGN §8 Q2); seed proof must be replaced before live.
 - **Notes:** Program delivered in 22 small commits across 4 stacked Draft PRs, one per phase, each merge-blocked until `Closes HPF-XXX` (constraint #13). Vision/architecture/decisions: `docs/pop-sales-agent/DESIGN.md` + `decisions.md` 2026-05-16.
+
+---
+
+## 2026-05-16 — N/A — Pop Sales Agent: Phase 5 (live bring-up tooling)
+
+- **Summary:** Turnkey bring-up for the Team Pop live test. `services/preflight.py` (pure: `resolve_brain_url`/`env_checks`/`overall_ok`, 9 tests). `preflight_sales.py` — go/no-go (env, brain URL, Supabase tables/0001 cols/0002 seed, widget dist; exit 1 blocks). `provision_sales_agent.py` — resolves+validates the public brain URL, calls `create_sales_agent`, prints the `VITE_SALES_AGENT_ID` line (ngrok-bake ordering encoded). `docs/pop-sales-agent/RUNBOOK.md` — exact ordered steps + the `{{system__conversation_id}}` verification + troubleshooting. `.env.example` gains `SALES_BRAIN_URL`.
+- **Why:** Program was code-complete but operationally error-prone; user wants to test live on the Team Pop site first (no retarget) before generalising to external sites (Consultadd).
+- **Verification:** pytest 40/40 GREEN (9 new, RED→GREEN). Scripts smoke-verified headless: `provision --help` OK; `preflight_sales.py` with no env → correct NOT READY + exit 1 (gate blocks). I cannot run the actual live loop (needs user keys/Supabase/ngrok/browser) — deliverable is the tooling + runbook; user executes.
+- **Notes:** Phase 5 stacked Draft PR on Phase 4. External-site embed + Consultadd retarget deliberately deferred until the Team Pop loop is proven live. Still merge-blocked until `Closes HPF-XXX`.

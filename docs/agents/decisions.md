@@ -431,3 +431,14 @@
 - **Consequences:** Lead capture depends on the same `{{system__conversation_id}}` substitution as the brain (DESIGN §8 Q2) — without it the lead is still saved, just without transcript linkage. Completes the 5-phase program. Stacked Draft PR on the Phase 3 branch.
 - **Status:** Active
 - **Agent/Author:** Claude Code (Pop Sales Agent — Phase 4)
+
+---
+
+## 2026-05-16: Pop Sales Agent Phase 5 — Live bring-up tooling
+
+- **Decision:** Add turnkey bring-up rather than a REPL-driven manual process: pure `services/preflight.py` (tested), `preflight_sales.py` (env + brain URL + Supabase 0001/0002 + widget-dist checks, exit 1 = blocked), `provision_sales_agent.py` (resolves/validates the public brain URL, creates the agent, prints the `VITE_SALES_AGENT_ID` line), and `docs/pop-sales-agent/RUNBOOK.md`. First live target = the Team Pop website itself (no retarget); external-site embed (Consultadd/others) is a deliberate follow-on.
+- **Context:** User wants to test live; the program was code-complete but operationally fiddly (REPL provisioning, ngrok-bake-at-creation ordering, no preflight, the unverified `{{system__conversation_id}}`).
+- **Rationale:** A go/no-go preflight turns mid-call failures into an upfront PASS/WARN/FAIL; the provision CLI removes the REPL + encodes the ngrok-URL ordering gotcha; the runbook makes the steps that need the user's secrets unambiguous. Pure core is unit-tested; scripts are thin I/O wrappers (smoke-verified).
+- **Consequences:** Team Pop site first de-risks (proves the loop before generalising). External multi-site embed is explicitly deferred. The `{{system__conversation_id}}` check is now an explicit runbook step (§8 / RUNBOOK §8). Stacked Draft PR on Phase 4.
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent — Phase 5)
