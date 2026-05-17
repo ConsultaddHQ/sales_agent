@@ -10,7 +10,7 @@
 | Task | Files | Owner | Status | Notes |
 |------|-------|-------|--------|-------|
 | Conservative cleanup pass 2: remaining lint-safe cleanup and stale current-guidance references | `docs/agents/memory.md`, `www.teampop/frontend/`, `www.teampop/website/` | Codex | In progress | Fix only low-risk lint items and preserve historical docs |
-| Pop Sales Agent program (AI AE on marketing site) — Phase 0+1 done (19 tests GREEN), Phase 2 (awareness bridge) next | `onboarding-service/`, `www.teampop/`, `migrations/` | Claude (madrid) | In progress | Plan: `.claude/plans/…quirky-cupcake.md`; 5 phases; decisions.md 2026-05-16. Live verify pending: apply migration, set OPENROUTER/ELEVENLABS keys, provision sales agent |
+| Pop Sales Agent program (AI AE on marketing site) — Phase 0+1 done (19 tests GREEN), in review as **Draft PR #8**; Phase 2 (awareness bridge) next | `onboarding-service/`, `www.teampop/`, `migrations/` | Claude (madrid) | In review | Vision/review doc: `docs/pop-sales-agent/DESIGN.md`. Workflow: **one Draft PR per phase**, merge-blocked until `Closes HPF-XXX` (constraint #13). Live verify pending: apply migration, set OPENROUTER/ELEVENLABS keys, provision agent, confirm `{{system__conversation_id}}` |
 
 ---
 
