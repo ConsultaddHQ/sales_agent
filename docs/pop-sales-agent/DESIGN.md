@@ -82,7 +82,9 @@ Supabase
 | 1 | Stateful sales brain + `shared/llm.py` + `/sales/*` routes | **Foundation PR** (this) | ✅ done, in review |
 | 2 | Awareness bridge — host-page activity → contextual updates | own PR (stacked on Foundation) | ✅ done, in review |
 | 3 | Proof surfacing — content + trust panel UI + admin CRUD + curated drafts | own PR (stacked on Phase 2) | ✅ done, in review |
-| 4 | Assisted close — action tools wired + lead/transcript capture | own PR | ⬜ planned |
+| 4 | Assisted close — action tools wired + lead/transcript capture | own PR (stacked on Phase 3) | ✅ done, in review |
+
+**All 5 phases implemented & in review (Draft PRs #8–#11). Remaining = team review + the live runtime gate in §9 / §8 Q2.**
 
 (Phase 0+1 are combined because Phase 1's routes import Phase 0's config and depend on its migration/tables — they don't review independently.)
 
@@ -108,8 +110,8 @@ Supabase
 # Backend unit tests (no infra needed — this is the core verification)
 cd onboarding-service && python3 -m pytest tests/ -v        # expect 19 passed
 
-# Backend unit tests incl. proof ranking (Phase 3)
-cd onboarding-service && python3 -m pytest tests/ -v          # expect 27 passed
+# Backend unit tests (Phases 1/3/4)
+cd onboarding-service && python3 -m pytest tests/ -v          # expect 31 passed
 
 # Widget awareness logic (Phase 2) — zero-dep node:test
 cd www.teampop/frontend && npm test                          # expect 8 pass

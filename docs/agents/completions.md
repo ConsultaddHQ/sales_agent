@@ -415,3 +415,12 @@ Configured in `elevenlabs_agent.py:728-731` via `client_events`:
 - **Why:** Curated-drafts-now/admin-editable-later was the chosen approach; pure ranking keeps it testable; generic attribution keeps it honest.
 - **Verification:** pytest 27/27 GREEN (8 new proof tests, RED→GREEN). Widget + website `npm run build` + eslint clean (pre-existing `carouselRef` warning untouched; ProofLibrary effect uses the codebase's `setTimeout(fn,0)` deferral pattern). Live voice surfacing still gated on the same runtime steps; seed content must be replaced before live traffic.
 - **Notes:** 6 small commits, stacked Draft PR on Phase 2. Merge-blocked until `Closes HPF-XXX` (constraint #13).
+
+---
+
+## 2026-05-16 — N/A — Pop Sales Agent: Phase 4 (assisted close) — program complete
+
+- **Summary:** Final phase. Widget captures `conversation_id` (`onConnect`) and registers `navigate_site`/`prefill_demo_form`/`open_booking` client tools → `window.__TEAM_POP_HOST__`. `RequestPage` one-shot reads the stashed prefill, banners it, submits with `{conversation_id, source}`; Calendly prefilled. `services/lead.py` (pure `build_lead_enrichment`, 4 tests) + `routes/client.py` attach transcript/discovery/PIC to the `agent_requests` lead from `sales_sessions`. All 5 phases (0–4) now implemented and in review as stacked Draft PRs #8–#11.
+- **Why:** Assisted close was the locked conversion model; reuse of submit_request/notifications/Calendly + conversation_id linkage keeps it simple and trustworthy (visitor always confirms).
+- **Verification:** pytest 31/31 GREEN (4 new lead tests, RED→GREEN). Widget + website build + eslint clean (effects use the codebase setState-deferral pattern). Live e2e still gated on the runtime steps + `{{system__conversation_id}}` confirmation (DESIGN §8 Q2); seed proof must be replaced before live.
+- **Notes:** Program delivered in 22 small commits across 4 stacked Draft PRs, one per phase, each merge-blocked until `Closes HPF-XXX` (constraint #13). Vision/architecture/decisions: `docs/pop-sales-agent/DESIGN.md` + `decisions.md` 2026-05-16.

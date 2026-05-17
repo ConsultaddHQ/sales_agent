@@ -10,7 +10,7 @@
 | Task | Files | Owner | Status | Notes |
 |------|-------|-------|--------|-------|
 | Conservative cleanup pass 2: remaining lint-safe cleanup and stale current-guidance references | `docs/agents/memory.md`, `www.teampop/frontend/`, `www.teampop/website/` | Codex | In progress | Fix only low-risk lint items and preserve historical docs |
-| Pop Sales Agent program (AI AE on marketing site) — Phase 0+1 (Draft PR #8), Phase 2 (PR #9), Phase 3 done (27 py + 8 JS tests, stacked Draft PR); Phase 4 (assisted close) next | `onboarding-service/`, `www.teampop/`, `migrations/` | Claude (madrid) | In review | Vision/review doc: `docs/pop-sales-agent/DESIGN.md`. Workflow: **one Draft PR per phase** (each stacked on the prior), merge-blocked until `Closes HPF-XXX` (constraint #13). Live verify pending: apply migrations 0001+0002, OPENROUTER/ELEVENLABS keys, provision agent, confirm `{{system__conversation_id}}`. Seed proof = illustrative, replace before live |
+| Pop Sales Agent program (AI AE on marketing site) — **all 5 phases done & in review** as stacked Draft PRs #8(P0+1)/#9(P2)/#10(P3)/#11(P4); 31 py + 8 JS tests GREEN | `onboarding-service/`, `www.teampop/`, `shared/`, `migrations/` | Claude (madrid) | In review | Vision/review: `docs/pop-sales-agent/DESIGN.md`; decisions.md 2026-05-16. Workflow: one Draft PR per phase (stacked), merge-blocked until `Closes HPF-XXX` (constraint #13). Live gate: apply migrations 0001+0002, set OPENROUTER/ELEVENLABS keys, `create_sales_agent()`, confirm `{{system__conversation_id}}`, replace illustrative proof |
 
 ---
 

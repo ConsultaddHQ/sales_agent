@@ -420,3 +420,14 @@
 - **Consequences:** Seed content is explicitly **not verified** — must be replaced before live prospect traffic (DESIGN §8 Q5; flagged in the migration header + admin UI copy). `is_valid_proof_type`/`PROOF_TYPES` is the shared type whitelist. Delivered as a stacked Draft PR on the Phase 2 branch.
 - **Status:** Active
 - **Agent/Author:** Claude Code (Pop Sales Agent — Phase 3)
+
+---
+
+## 2026-05-16: Pop Sales Agent Phase 4 — Assisted close
+
+- **Decision:** The brain directs `prefill_demo_form`/`navigate_site`/`open_booking` client tools; the widget calls `window.__TEAM_POP_HOST__` (Phase 0 bridge), stashing the captured fields + the ElevenLabs `conversation_id` (captured via `onConnect`). RequestForm one-shot reads the stash, prefills, shows a "your assistant filled this in" banner, and submits with `{conversation_id, source}`. `routes/client.py` looks up `sales_sessions` and merges `services/lead.build_lead_enrichment` (source/transcript/discovery/pic) onto the `agent_requests` row. Calendly is prefilled via URL params. The visitor always confirms — nothing is auto-submitted.
+- **Context:** Locked decision was "assisted close": agent prepares, visitor confirms with one click; lead + transcript saved.
+- **Rationale:** Reuses the existing `submit_request` + notifications + Calendly path; `conversation_id` links the lead to the server-side transcript/PIC without trusting the LLM to carry data; lead enrichment is pure + unit-tested; resilient (a failed session lookup never blocks the lead).
+- **Consequences:** Lead capture depends on the same `{{system__conversation_id}}` substitution as the brain (DESIGN §8 Q2) — without it the lead is still saved, just without transcript linkage. Completes the 5-phase program. Stacked Draft PR on the Phase 3 branch.
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent — Phase 4)
