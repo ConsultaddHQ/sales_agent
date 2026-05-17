@@ -16,11 +16,12 @@ function adminHeaders(password) {
   return { 'X-Admin-Password': password }
 }
 
-// Public
-export function submitRequest(name, email, url) {
+// Public. `extra` carries assisted-close context (conversation_id, source)
+// so the backend can attach the sales transcript/PIC to the lead.
+export function submitRequest(name, email, url, extra = {}) {
   return request('/api/submit-request', {
     method: 'POST',
-    body: JSON.stringify({ name, email, url }),
+    body: JSON.stringify({ name, email, url, ...extra }),
   })
 }
 
