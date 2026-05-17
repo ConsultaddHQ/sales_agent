@@ -4,6 +4,7 @@ import {
   useConversationClientTool,
 } from "@elevenlabs/react";
 import "../styles/AvatarWidget.css";
+import { reduceActivity, initialActivityState } from "../lib/visitorActivity";
 
 const DUMMY_IMAGE = "/image.png";
 const WIDGET_LAYER_STYLE = {
@@ -332,6 +333,30 @@ function AvatarInner({
     },
     [conversation.status, sendContextualUpdate, sendUserMessage],
   );
+
+  // Phase 2 — visitor-activity awareness. The host site dispatches
+  // `teampop:activity` events (section views, idle, CTA hover, route,
+  // scroll). We forward only salient ones to the agent as AMBIENT context
+  // (sendContextualUpdate) — never a forced turn. The sales brain decides
+  // what to do with it, so this can't regress into duplicate narration.
+  const activityStateRef = useRef(initialActivityState());
+  useEffect(() => {
+    function onActivity(e) {
+      if (conversation.status !== "connected") return;
+      const { state, notify, message } = reduceActivity(
+        activityStateRef.current,
+        e?.detail,
+        Date.now(),
+      );
+      activityStateRef.current = state;
+      if (notify && message) {
+        console.log("[awareness]", message);
+        sendContextualUpdate(message);
+      }
+    }
+    window.addEventListener("teampop:activity", onActivity);
+    return () => window.removeEventListener("teampop:activity", onActivity);
+  }, [conversation.status, sendContextualUpdate]);
 
   useEffect(() => {
     const carouselEl = carouselRef.current;
