@@ -398,3 +398,14 @@
   - Delivered in 5 independently-demoable phases. Phase 0 (this entry): foundations, sales agent config + payload builders (`elevenlabs_agent.py`), playbook commit, migrations, marketing-site embed + host bridge scaffold.
 - **Status:** Active
 - **Agent/Author:** Claude Code (Pop Sales Agent program — plan: `.claude/plans/…quirky-cupcake.md`)
+
+---
+
+## 2026-05-16: Pop Sales Agent Phase 2 — Host↔Widget Awareness Event Seam
+
+- **Decision:** The marketing site (`SalesAgent.jsx`) detects visitor activity (section-in-view via IntersectionObserver, route, idle escalation, CTA hover/click via event delegation, whole-page-read) and emits a `window` `teampop:activity` CustomEvent. The widget (`AvatarWidget.jsx`) subscribes and runs a pure, framework-free reducer (`www.teampop/frontend/src/lib/visitorActivity.js`: summarize + dedupe + throttle, priority signals bypass throttle) that forwards salient activity to the agent via `sendContextualUpdate` only.
+- **Context:** The widget and website are separate Vite apps sharing the same `window` (Shadow DOM doesn't isolate `window`). We needed host behaviour awareness without coupling the two apps or regressing into the carousel's duplicate-narration problem.
+- **Rationale:** A CustomEvent seam decouples detection (host) from conversation (widget); the decision logic is pure and unit-tested (8 `node:test` cases, zero-dep — no JS runner existed, so `node --test src/lib` + an `npm test` script were added); using only `sendContextualUpdate` (never `sendUserMessage`) means the agent is *informed*, not forced to speak — the sales brain still decides the next move.
+- **Consequences:** Event name `teampop:activity` and the event `detail` shape are now a contract between the two apps. Throttle defaults: dedupe 20s, min interval 15s, CTA-click/`/request` bypass. Delivered as a stacked Draft PR on the Foundation branch (per-phase PR workflow).
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent — Phase 2)

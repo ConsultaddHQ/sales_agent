@@ -397,3 +397,12 @@ Configured in `elevenlabs_agent.py:728-731` via `client_events`:
 - **Why:** ElevenLabs has no native computer-use; a server-side stateful brain + instrumented in-page tools is higher quality than screenshot-driven demos and reuses proven patterns (client tools, contextual updates, `/search` proxy, `submit_request`).
 - **Verification:** 19 pytest tests GREEN (RED→GREEN TDD): 6 sales-agent config (`tests/test_sales_agent.py`), 13 brain logic (`tests/test_sales_brain.py`). Marketing website `npm run build` + eslint clean. All Python modules byte-compile. **Not yet verified live** (needs human/runtime steps): apply `migrations/0001_sales_agent.sql` in Supabase; set `OPENROUTER_API_KEY`/`ELEVENLABS_API_KEY`; run `create_sales_agent()` and put the id in `VITE_SALES_AGENT_ID`; confirm ElevenLabs substitutes `{{system__conversation_id}}` (the unverified webhook-identity assumption flagged in decisions.md).
 - **Notes:** Tool names are a hard invariant across `elevenlabs_agent.py` + the sales prompt + (Phases 2-4) `AvatarWidget.jsx`. No HPF Linear ticket yet — required before PR/merge to main (constraint #13).
+
+---
+
+## 2026-05-16 — N/A — Pop Sales Agent: Phase 2 (awareness bridge)
+
+- **Summary:** The sales agent now "watches what the visitor does." `www.teampop/frontend/src/lib/visitorActivity.js` is a pure reducer (summarize/format + dedupe + throttle; CTA-click and `/request` bypass the throttle). `AvatarWidget.jsx` subscribes to `window` `teampop:activity` and forwards salient activity via `sendContextualUpdate` only (no forced turn). `SalesAgent.jsx` (host) detects section-in-view (IntersectionObserver), route, idle (25s/60s), CTA hover/click (event delegation), and whole-page-read, emitting the events. See `decisions.md` 2026-05-16 (Phase 2 seam) and `docs/pop-sales-agent/DESIGN.md` §5 D8.
+- **Why:** Decouples the two Vite apps; keeps the decision logic testable; avoids the carousel duplicate-narration class of bug by never force-narrating.
+- **Verification:** 8 `node:test` cases GREEN (RED→GREEN TDD); added `npm test` (`node --test src/lib`). Widget + website `npm run build` clean; eslint clean (the pre-existing `carouselRef` exhaustive-deps warning is out of scope, untouched). Live voice reaction still pending the same runtime steps as Foundation.
+- **Notes:** `teampop:activity` event name + `detail` shape is now a host↔widget contract. Stacked Draft PR on the Foundation branch; merge-blocked until `Closes HPF-XXX` (constraint #13).

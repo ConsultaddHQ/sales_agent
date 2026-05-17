@@ -72,6 +72,7 @@ Supabase
 | D5 | **New `shared/llm.py`** (httpx → OpenRouter) — *deviation from the plan* | No LLM client existed (`get_openrouter_client()` was dead commented code; no SDK in requirements). httpx already a dep → **no new dependency** | Adding the `openai`/`anthropic` SDK: new dependency for one call |
 | D6 | New **`migrations/`** convention (numbered, idempotent, human-applied) | No migration tooling existed; matches how `products` was created | Ad-hoc SQL in markdown (current state) — not reviewable |
 | D7 | Tool names are a **hard invariant** across `elevenlabs_agent.py` + prompt + widget | Mismatch silently breaks the conversation (existing project invariant) | — |
+| D8 | Host↔widget awareness via a `window` `teampop:activity` **CustomEvent seam** (host detects & emits; widget owns dedupe/throttle & whether to tell the agent) | Decouples the two Vite apps cleanly; pure logic is unit-testable; widget never force-narrates (only `sendContextualUpdate`) so it can't regress into the carousel duplicate-narration bug | Host calling widget internals directly: tight coupling, untestable |
 
 ## 6. Phase plan
 
@@ -79,7 +80,7 @@ Supabase
 |-------|-------|----|--------|
 | 0 | Foundations: sales agent config/payload, playbook, migrations, site embed + host bridge | **Foundation PR** (this) | ✅ done, in review |
 | 1 | Stateful sales brain + `shared/llm.py` + `/sales/*` routes | **Foundation PR** (this) | ✅ done, in review |
-| 2 | Awareness bridge — host-page activity → contextual updates | own PR | ⬜ planned |
+| 2 | Awareness bridge — host-page activity → contextual updates | own PR (stacked on Foundation) | ✅ done, in review |
 | 3 | Proof surfacing — content + trust panel UI + admin CRUD + curated drafts | own PR | ⬜ planned |
 | 4 | Assisted close — action tools wired + lead/transcript capture | own PR | ⬜ planned |
 
@@ -107,7 +108,11 @@ Supabase
 # Backend unit tests (no infra needed — this is the core verification)
 cd onboarding-service && python3 -m pytest tests/ -v        # expect 19 passed
 
-# Marketing site builds with the embed
+# Widget awareness logic (Phase 2) — zero-dep node:test
+cd www.teampop/frontend && npm test                          # expect 8 pass
+cd www.teampop/frontend && npm run build                     # widget IIFE
+
+# Marketing site builds with the embed + observer
 cd www.teampop/website && npm install && npm run build && npx eslint src/
 
 # Full live loop (needs credentials/runtime — NOT done by CI/me):
