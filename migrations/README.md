@@ -12,5 +12,6 @@ exists`) so re-running is safe.
 | File | Purpose | Applied |
 |------|---------|---------|
 | `0001_sales_agent.sql` | `sales_sessions`, `sales_proof`, `agent_requests` sales columns (Pop Sales Agent) | ⬜ pending — apply in Supabase SQL editor |
+| `0002_sales_proof_seed.sql` | Curated **illustrative** proof drafts (replace before live traffic — DESIGN §8 Q5) | ⬜ pending — apply after 0001 |
 
 After applying, tick the box above and note it in `docs/agents/roadmap.md`.
