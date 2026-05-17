@@ -25,6 +25,7 @@ if _REPO_ROOT not in sys.path:
 from shared.db import get_supabase
 from shared.llm import make_llm
 from services.sales_brain import SalesBrain, DEFAULT_PLAYBOOK_PATH
+from services.proof import rank_proof
 
 logger = logging.getLogger("onboarding-service")
 
@@ -164,13 +165,4 @@ def sales_proof(body: ProofBody) -> dict:
         logger.warning(f"sales_proof query failed: {e}")
         return {"proof": []}
 
-    terms = {t for t in (body.query or "").lower().split() if len(t) > 2}
-
-    def score(r: dict) -> int:
-        hay = " ".join(
-            [str(r.get("title", "")), str(r.get("body", "")), " ".join(r.get("tags", []) or [])]
-        ).lower()
-        return sum(1 for t in terms if t in hay)
-
-    ranked = sorted(rows, key=score, reverse=True)
-    return {"proof": ranked[:3]}
+    return {"proof": rank_proof(rows, body.query, body.proof_type, limit=3)}
