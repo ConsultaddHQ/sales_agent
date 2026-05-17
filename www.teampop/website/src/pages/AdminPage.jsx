@@ -2,8 +2,12 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Loader2, LogOut, ExternalLink, Send, RefreshCw,
   Play, Eye, X, ChevronDown, ChevronUp, Zap, Check,
+  Plus, Pencil, Trash2,
 } from 'lucide-react'
-import { adminLogin, getRequests, processRequest, sendAgent, switchModel } from '../lib/api'
+import {
+  adminLogin, getRequests, processRequest, sendAgent, switchModel,
+  listProof, createProof, updateProof, deleteProof,
+} from '../lib/api'
 
 const LLM_MODELS = [
   { id: 'qwen3-30b-a3b',         label: 'Qwen3 30B',             latency: '~187ms', cost: '$0.0020/min' },
@@ -315,6 +319,227 @@ function ModelSwitchDialog({ row, password, onClose, onSwitched }) {
   )
 }
 
+// ── Proof Library (Phase 3) ──────────────────────────────────────────────────
+
+const PROOF_TYPES = [
+  { id: 'case_study', label: 'Case study' },
+  { id: 'roi', label: 'ROI' },
+  { id: 'testimonial', label: 'Testimonial' },
+  { id: 'objection_rebuttal', label: 'Objection rebuttal' },
+]
+
+function ProofDialog({ password, row, onClose, onSaved }) {
+  const isNew = !row?.id
+  const [type, setType] = useState(row?.type || 'case_study')
+  const [title, setTitle] = useState(row?.title || '')
+  const [body, setBody] = useState(row?.body || '')
+  const [metric, setMetric] = useState(row?.metric || '')
+  const [tags, setTags] = useState((row?.tags || []).join(', '))
+  const [active, setActive] = useState(row?.active ?? true)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSave() {
+    if (!title.trim() || !body.trim()) {
+      setError('Title and body are required')
+      return
+    }
+    setLoading(true)
+    setError('')
+    const data = {
+      type,
+      title: title.trim(),
+      body: body.trim(),
+      metric: metric.trim() || null,
+      tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+      active,
+    }
+    try {
+      if (isNew) await createProof(password, data)
+      else await updateProof(password, row.id, data)
+      onSaved()
+      onClose()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-6" onClick={onClose}>
+      <div className="card w-full max-w-lg p-6 flex flex-col gap-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg font-semibold">{isNew ? 'Add proof' : 'Edit proof'}</h2>
+          <button onClick={onClose} className="text-[#666666] hover:text-white transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-[#888888] mb-1.5">Type</label>
+          <select className="input-field" value={type} onChange={(e) => setType(e.target.value)}>
+            {PROOF_TYPES.map((t) => (
+              <option key={t.id} value={t.id}>{t.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-[#888888] mb-1.5">Title</label>
+          <input className="input-field" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Short, specific" />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-[#888888] mb-1.5">Body</label>
+          <textarea className="input-field min-h-[100px]" value={body} onChange={(e) => setBody(e.target.value)} placeholder="The proof, in the agent's words" />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-[#888888] mb-1.5">Metric (optional)</label>
+          <input className="input-field" value={metric} onChange={(e) => setMetric(e.target.value)} placeholder="e.g. 1.9x add-to-cart" />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-[#888888] mb-1.5">Tags (comma-separated)</label>
+          <input className="input-field" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="roi, pricing, expensive" />
+        </div>
+
+        <label className="flex items-center gap-2 text-sm text-[#aaaaaa] cursor-pointer">
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+          Active (agent may surface this)
+        </label>
+
+        {error && <p className="text-sm text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{error}</p>}
+
+        <div className="flex gap-3 justify-end mt-1">
+          <button onClick={onClose} className="btn-ghost text-sm">Cancel</button>
+          <button onClick={handleSave} className="btn-primary text-sm" disabled={loading}>
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProofLibrary({ password }) {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [dialogRow, setDialogRow] = useState(null) // row | {} (new) | null
+  const [confirmId, setConfirmId] = useState(null)
+
+  const refresh = useCallback(async () => {
+    try {
+      setItems(await listProof(password))
+    } catch {
+      // silently ignore — surfaced on action
+    } finally {
+      setLoading(false)
+    }
+  }, [password])
+
+  useEffect(() => {
+    const t = setTimeout(refresh, 0) // defer — matches Dashboard's fetch pattern
+    return () => clearTimeout(t)
+  }, [refresh])
+
+  async function handleDelete(id) {
+    try {
+      await deleteProof(password, id)
+      setConfirmId(null)
+      refresh()
+    } catch {
+      setConfirmId(null)
+    }
+  }
+
+  return (
+    <div className="max-w-6xl mx-auto mt-10">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h2 className="text-lg font-semibold">Proof Library</h2>
+          <p className="text-xs text-[#666666] mt-0.5">
+            What the sales agent can surface. Replace the seeded drafts with real, signed-off proof.
+          </p>
+        </div>
+        <button onClick={() => setDialogRow({})} className="btn-primary !py-1.5 !px-3 text-xs">
+          <Plus size={12} /> Add proof
+        </button>
+      </div>
+
+      <div className="card overflow-hidden">
+        {loading ? (
+          <div className="p-12 text-center text-sm text-[#555555]">
+            <Loader2 size={16} className="animate-spin inline" />
+          </div>
+        ) : items.length === 0 ? (
+          <div className="p-12 text-center text-sm text-[#555555]">
+            No proof yet. Apply migration 0002 or add proof above.
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[#222222] text-[#666666] text-xs uppercase tracking-wider">
+                <th className="text-left p-4 font-medium">Type</th>
+                <th className="text-left p-4 font-medium">Title</th>
+                <th className="text-left p-4 font-medium">Active</th>
+                <th className="text-right p-4 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((p) => (
+                <tr key={p.id} className="border-b border-[#1a1a1a] hover:bg-white/[0.02] transition-colors">
+                  <td className="p-4 text-[#888888]">
+                    {(PROOF_TYPES.find((t) => t.id === p.type) || {}).label || p.type}
+                  </td>
+                  <td className="p-4 font-medium">{p.title}</td>
+                  <td className="p-4">
+                    <span className={`text-xs ${p.active ? 'text-green-400' : 'text-[#555555]'}`}>
+                      {p.active ? 'active' : 'hidden'}
+                    </span>
+                  </td>
+                  <td className="p-4 text-right">
+                    <div className="flex items-center gap-2 justify-end">
+                      <button onClick={() => setDialogRow(p)} className="btn-ghost !py-1.5 !px-3 text-xs">
+                        <Pencil size={12} /> Edit
+                      </button>
+                      {confirmId === p.id ? (
+                        <>
+                          <button onClick={() => handleDelete(p.id)} className="text-xs text-red-400 hover:text-red-300">
+                            Confirm
+                          </button>
+                          <button onClick={() => setConfirmId(null)} className="text-xs text-[#666666]">
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button onClick={() => setConfirmId(p.id)} className="btn-ghost !py-1.5 !px-3 text-xs text-red-400">
+                          <Trash2 size={12} /> Delete
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {dialogRow && (
+        <ProofDialog
+          password={password}
+          row={dialogRow.id ? dialogRow : null}
+          onClose={() => setDialogRow(null)}
+          onSaved={refresh}
+        />
+      )}
+    </div>
+  )
+}
+
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 function Dashboard({ password, onLogout }) {
@@ -524,6 +749,8 @@ function Dashboard({ password, onLogout }) {
           </div>
         )}
       </div>
+
+      <ProofLibrary password={password} />
 
       {/* Dialogs */}
       {processRow && (

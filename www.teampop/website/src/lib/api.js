@@ -67,3 +67,31 @@ export function switchModel(password, agentId, storeId, llmModel) {
     body: JSON.stringify({ agent_id: agentId, store_id: storeId, llm_model: llmModel }),
   })
 }
+
+// Sales Proof Library (Phase 3)
+export function listProof(password) {
+  return request('/api/proof', { headers: adminHeaders(password) })
+}
+
+export function createProof(password, data) {
+  return request('/api/proof', {
+    method: 'POST',
+    headers: adminHeaders(password),
+    body: JSON.stringify(data),
+  })
+}
+
+export function updateProof(password, id, data) {
+  return request(`/api/proof/${id}`, {
+    method: 'POST',
+    headers: adminHeaders(password),
+    body: JSON.stringify(data),
+  })
+}
+
+export function deleteProof(password, id) {
+  return request(`/api/proof/${id}/delete`, {
+    method: 'POST',
+    headers: adminHeaders(password),
+  })
+}
