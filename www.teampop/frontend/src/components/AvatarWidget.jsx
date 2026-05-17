@@ -149,6 +149,9 @@ function AvatarInner({
   const isAgentTriggeredRef = useRef(false);
   const isSyntheticMessageRef = useRef(false);
   const syncDebounceRef = useRef(null);
+  // ElevenLabs conversation id — links an assisted-close lead back to its
+  // sales_session (transcript/PIC). Captured on connect.
+  const conversationIdRef = useRef("");
 
   useEffect(() => {
     return () => {
@@ -270,6 +273,11 @@ function AvatarInner({
         }
       }
     },
+    onConnect: (info) => {
+      conversationIdRef.current =
+        info?.conversationId || info?.conversation_id || "";
+      console.log("[ElevenLabs] connected:", conversationIdRef.current);
+    },
     onError: (error) => console.error("ElevenLabs error:", error),
     onDisconnect: (details) => {
       console.error(
@@ -358,6 +366,46 @@ function AvatarInner({
     return items.length
       ? `Displayed ${items.length} proof item(s)`
       : "No proof to display";
+  });
+
+  // Phase 4 — assisted-close action tools. They act on the host marketing
+  // site via window.__TEAM_POP_HOST__ (Phase 0 bridge). No-op gracefully if
+  // the bridge is absent (e.g. the shopping/demo embed).
+  const host = () =>
+    typeof window !== "undefined" ? window.__TEAM_POP_HOST__ : undefined;
+
+  useConversationClientTool("navigate_site", (parameters) => {
+    const h = host();
+    if (!h) return "Navigation unavailable here";
+    const target = parameters?.target || "";
+    const r = h.navigate(target, { highlight: !!parameters?.highlight });
+    return r?.ok ? `Navigated to ${target}` : `Could not navigate to ${target}`;
+  });
+
+  useConversationClientTool("prefill_demo_form", (parameters) => {
+    const h = host();
+    if (!h) return "Form unavailable here";
+    h.prefillDemoForm({
+      name: parameters?.name || "",
+      email: parameters?.email || "",
+      company: parameters?.company || "",
+      use_case: parameters?.use_case || "",
+      conversation_id: conversationIdRef.current,
+    });
+    // Show the visitor the filled form so they can confirm + submit.
+    h.navigate("request-demo");
+    return "Demo form pre-filled — visitor can review and confirm";
+  });
+
+  useConversationClientTool("open_booking", (parameters) => {
+    const h = host();
+    if (!h) return "Booking unavailable here";
+    h.openBooking({
+      name: parameters?.name || "",
+      email: parameters?.email || "",
+      conversation_id: conversationIdRef.current,
+    });
+    return "Opened the booking calendar";
   });
 
   const { sendContextualUpdate, sendUserMessage } = conversation;
