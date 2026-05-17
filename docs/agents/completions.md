@@ -406,3 +406,12 @@ Configured in `elevenlabs_agent.py:728-731` via `client_events`:
 - **Why:** Decouples the two Vite apps; keeps the decision logic testable; avoids the carousel duplicate-narration class of bug by never force-narrating.
 - **Verification:** 8 `node:test` cases GREEN (RED→GREEN TDD); added `npm test` (`node --test src/lib`). Widget + website `npm run build` clean; eslint clean (the pre-existing `carouselRef` exhaustive-deps warning is out of scope, untouched). Live voice reaction still pending the same runtime steps as Foundation.
 - **Notes:** `teampop:activity` event name + `detail` shape is now a host↔widget contract. Stacked Draft PR on the Foundation branch; merge-blocked until `Closes HPF-XXX` (constraint #13).
+
+---
+
+## 2026-05-16 — N/A — Pop Sales Agent: Phase 3 (proof surfacing)
+
+- **Summary:** The agent can now surface trust. `services/proof.py` (pure `rank_proof`/`normalize_proof` + `PROOF_TYPES`/`is_valid_proof_type`) replaces the inline scoring in `routes/sales.py`. `migrations/0002_sales_proof_seed.sql` seeds illustrative drafts (2 case studies, 1 ROI, 3 testimonials, 3 rebuttals; generic attribution). `AvatarWidget.jsx` renders a dismissible Trust Panel via the `show_proof` client tool. Admin Proof Library: `/api/proof` CRUD (`routes/admin.py`) + `AdminPage.jsx` table/dialog + `lib/api.js`.
+- **Why:** Curated-drafts-now/admin-editable-later was the chosen approach; pure ranking keeps it testable; generic attribution keeps it honest.
+- **Verification:** pytest 27/27 GREEN (8 new proof tests, RED→GREEN). Widget + website `npm run build` + eslint clean (pre-existing `carouselRef` warning untouched; ProofLibrary effect uses the codebase's `setTimeout(fn,0)` deferral pattern). Live voice surfacing still gated on the same runtime steps; seed content must be replaced before live traffic.
+- **Notes:** 6 small commits, stacked Draft PR on Phase 2. Merge-blocked until `Closes HPF-XXX` (constraint #13).

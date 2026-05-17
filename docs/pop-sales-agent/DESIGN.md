@@ -81,7 +81,7 @@ Supabase
 | 0 | Foundations: sales agent config/payload, playbook, migrations, site embed + host bridge | **Foundation PR** (this) | ✅ done, in review |
 | 1 | Stateful sales brain + `shared/llm.py` + `/sales/*` routes | **Foundation PR** (this) | ✅ done, in review |
 | 2 | Awareness bridge — host-page activity → contextual updates | own PR (stacked on Foundation) | ✅ done, in review |
-| 3 | Proof surfacing — content + trust panel UI + admin CRUD + curated drafts | own PR | ⬜ planned |
+| 3 | Proof surfacing — content + trust panel UI + admin CRUD + curated drafts | own PR (stacked on Phase 2) | ✅ done, in review |
 | 4 | Assisted close — action tools wired + lead/transcript capture | own PR | ⬜ planned |
 
 (Phase 0+1 are combined because Phase 1's routes import Phase 0's config and depend on its migration/tables — they don't review independently.)
@@ -108,9 +108,15 @@ Supabase
 # Backend unit tests (no infra needed — this is the core verification)
 cd onboarding-service && python3 -m pytest tests/ -v        # expect 19 passed
 
+# Backend unit tests incl. proof ranking (Phase 3)
+cd onboarding-service && python3 -m pytest tests/ -v          # expect 27 passed
+
 # Widget awareness logic (Phase 2) — zero-dep node:test
 cd www.teampop/frontend && npm test                          # expect 8 pass
-cd www.teampop/frontend && npm run build                     # widget IIFE
+cd www.teampop/frontend && npm run build                     # widget IIFE (Trust Panel)
+
+# Proof content: apply migrations/0002_sales_proof_seed.sql after 0001.
+# Admin can then edit/replace it at /admin → Proof Library.
 
 # Marketing site builds with the embed + observer
 cd www.teampop/website && npm install && npm run build && npx eslint src/

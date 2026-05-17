@@ -409,3 +409,14 @@
 - **Consequences:** Event name `teampop:activity` and the event `detail` shape are now a contract between the two apps. Throttle defaults: dedupe 20s, min interval 15s, CTA-click/`/request` bypass. Delivered as a stacked Draft PR on the Foundation branch (per-phase PR workflow).
 - **Status:** Active
 - **Agent/Author:** Claude Code (Pop Sales Agent — Phase 2)
+
+---
+
+## 2026-05-16: Pop Sales Agent Phase 3 — Proof surfacing
+
+- **Decision:** `surface_proof` (webhook, Phase 0) → `/sales/proof` ranks `sales_proof` rows via the pure `services/proof.py` (`rank_proof`/`normalize_proof`, keyword+tag overlap, no embeddings) and the agent renders them through the `show_proof` client tool into a widget Trust Panel. Content is curated **illustrative drafts** (`migrations/0002_sales_proof_seed.sql`, generic attribution, no fabricated named customers) editable via an admin Proof Library (`/api/proof` CRUD + AdminPage UI).
+- **Context:** The agent needs trust artifacts; none existed. Plan choice was "curated drafts now, admin-editable later."
+- **Rationale:** Pure ranking is unit-tested (8 proof tests) and embeddings are YAGNI for a tiny set; generic attribution avoids fabricating attributable third-party claims; admin CRUD lets real proof replace drafts without a deploy.
+- **Consequences:** Seed content is explicitly **not verified** — must be replaced before live prospect traffic (DESIGN §8 Q5; flagged in the migration header + admin UI copy). `is_valid_proof_type`/`PROOF_TYPES` is the shared type whitelist. Delivered as a stacked Draft PR on the Phase 2 branch.
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent — Phase 3)
