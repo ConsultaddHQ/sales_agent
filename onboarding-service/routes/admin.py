@@ -18,6 +18,7 @@ from shared.config import ADMIN_PASSWORD
 from shared.db import get_supabase
 from pipeline import pipeline
 from elevenlabs_agent import update_agent_model, MODEL_PROMPT_MAP
+from services.proof import PROOF_TYPES, is_valid_proof_type
 
 logger = logging.getLogger("onboarding-service")
 
@@ -151,3 +152,116 @@ def switch_agent_model(body: SwitchModelBody, x_admin_password: str = Header(...
     except Exception as e:
         logger.error(f"Failed to switch model: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Sales Proof Library (Phase 3) — admin CRUD for the trust content ──
+# Replaces the illustrative seed drafts with real, signed-off proof.
+
+class ProofCreateBody(BaseModel):
+    site: str = "teampop"
+    type: str
+    title: str
+    body: str
+    metric: Optional[str] = None
+    tags: list[str] = []
+    active: bool = True
+
+
+class ProofUpdateBody(BaseModel):
+    type: Optional[str] = None
+    title: Optional[str] = None
+    body: Optional[str] = None
+    metric: Optional[str] = None
+    tags: Optional[list[str]] = None
+    active: Optional[bool] = None
+
+
+@router.get("/proof")
+def list_proof(x_admin_password: str = Header(...)):
+    """Admin: list all proof artifacts (including inactive)."""
+    _verify_admin(x_admin_password)
+    try:
+        sb = get_supabase()
+        return (
+            sb.table("sales_proof")
+            .select("*")
+            .order("created_at", desc=True)
+            .execute()
+            .data
+        )
+    except Exception as e:
+        logger.error(f"Failed to list proof: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@router.post("/proof")
+def create_proof(body: ProofCreateBody, x_admin_password: str = Header(...)):
+    """Admin: add a proof artifact."""
+    _verify_admin(x_admin_password)
+    if not is_valid_proof_type(body.type):
+        raise HTTPException(
+            status_code=400,
+            detail=f"type must be one of {list(PROOF_TYPES)}",
+        )
+    if not body.title.strip() or not body.body.strip():
+        raise HTTPException(status_code=400, detail="title and body are required")
+    try:
+        sb = get_supabase()
+        row = sb.table("sales_proof").insert({
+            "site": body.site.strip() or "teampop",
+            "type": body.type,
+            "title": body.title.strip(),
+            "body": body.body.strip(),
+            "metric": (body.metric or "").strip() or None,
+            "tags": body.tags or [],
+            "active": body.active,
+        }).execute()
+        return {"success": True, "proof": row.data[0] if row.data else None}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create proof: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@router.post("/proof/{proof_id}")
+def update_proof(proof_id: str, body: ProofUpdateBody, x_admin_password: str = Header(...)):
+    """Admin: update a proof artifact (partial)."""
+    _verify_admin(x_admin_password)
+    updates = {"updated_at": datetime.now().isoformat()}
+    if body.type is not None:
+        if not is_valid_proof_type(body.type):
+            raise HTTPException(
+                status_code=400, detail=f"type must be one of {list(PROOF_TYPES)}"
+            )
+        updates["type"] = body.type
+    for field in ("title", "body"):
+        val = getattr(body, field)
+        if val is not None:
+            updates[field] = val.strip()
+    if body.metric is not None:
+        updates["metric"] = body.metric.strip() or None
+    if body.tags is not None:
+        updates["tags"] = body.tags
+    if body.active is not None:
+        updates["active"] = body.active
+    try:
+        sb = get_supabase()
+        sb.table("sales_proof").update(updates).eq("id", proof_id).execute()
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Failed to update proof {proof_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@router.post("/proof/{proof_id}/delete")
+def delete_proof(proof_id: str, x_admin_password: str = Header(...)):
+    """Admin: delete a proof artifact."""
+    _verify_admin(x_admin_password)
+    try:
+        sb = get_supabase()
+        sb.table("sales_proof").delete().eq("id", proof_id).execute()
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Failed to delete proof {proof_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")

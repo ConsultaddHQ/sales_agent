@@ -4,7 +4,14 @@ routes/sales.py does the Supabase query; THIS decides relevance + the
 clean shape the agent receives. Pure → unit-tested.
 """
 
-from services.proof import rank_proof, normalize_proof
+from services.proof import rank_proof, normalize_proof, PROOF_TYPES, is_valid_proof_type
+
+
+def test_proof_types_and_validator():
+    assert set(PROOF_TYPES) == {"case_study", "roi", "testimonial", "objection_rebuttal"}
+    assert is_valid_proof_type("roi") is True
+    assert is_valid_proof_type("rm -rf") is False
+    assert is_valid_proof_type(None) is False
 
 ROWS = [
     {"type": "roi", "title": "ROI vs hiring an SDR",

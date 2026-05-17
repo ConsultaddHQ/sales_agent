@@ -8,6 +8,13 @@ overlap is enough.
 
 from typing import Dict, List, Optional
 
+# The only proof categories the agent + admin understand.
+PROOF_TYPES = ("case_study", "roi", "testimonial", "objection_rebuttal")
+
+
+def is_valid_proof_type(t) -> bool:
+    return t in PROOF_TYPES
+
 
 def normalize_proof(row: Dict) -> Dict:
     """Coerce a DB row into the exact shape the agent expects."""
