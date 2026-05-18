@@ -442,3 +442,14 @@
 - **Consequences:** Team Pop site first de-risks (proves the loop before generalising). External multi-site embed is explicitly deferred. The `{{system__conversation_id}}` check is now an explicit runbook step (§8 / RUNBOOK §8). Stacked Draft PR on Phase 4.
 - **Status:** Active
 - **Agent/Author:** Claude Code (Pop Sales Agent — Phase 5)
+
+---
+
+## 2026-05-16: Pop Sales Agent Phase 6 — One-command automated bring-up
+
+- **Decision:** Add `bringup.sh` (+ pure `services/bringup.py`, `apply_migrations.py`) that automates the entire live bring-up into one command, reusing the unit-tested helpers (parse_ngrok_url / ordered_migrations / env_upsert / missing_secrets) rather than reimplementing logic in bash. It hard-stops with an exact message at the only irreducible human inputs: the user's secret keys in `onboarding-service/.env`, optionally the Supabase SQL paste (skipped if `SUPABASE_DB_URL` set), and the actual voice test.
+- **Context:** User asked for it to be automated / "not something I have to run". Full zero-touch is impossible — it deploys to the user's paid ElevenLabs/OpenRouter/Supabase accounts and serves on their machine via their tunnel, and "test" is a human speaking. Honest ceiling = one command + a one-time secrets paste.
+- **Rationale:** Collapses ~8 error-prone manual steps into one; encodes the ngrok-bake-at-creation ordering and idempotent env wiring; preflight remains the go/no-go gate. Discovered in the process that `start_services.sh` (referenced by AGENTS.md) does not exist — `bringup.sh` starts onboarding-service itself and the Phase 5 RUNBOOK was corrected.
+- **Consequences:** A persistent hands-off deploy (no ngrok, runs on a host) is the only thing more automated than this and is a separate, larger scope (hosting creds + CORS hardening) — offered as a follow-up, not built. `.env`/`.env.*` are gitignored (no secret risk). Stacked Draft PR on Phase 5.
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent — Phase 6)

@@ -433,3 +433,12 @@ Configured in `elevenlabs_agent.py:728-731` via `client_events`:
 - **Why:** Program was code-complete but operationally error-prone; user wants to test live on the Team Pop site first (no retarget) before generalising to external sites (Consultadd).
 - **Verification:** pytest 40/40 GREEN (9 new, RED→GREEN). Scripts smoke-verified headless: `provision --help` OK; `preflight_sales.py` with no env → correct NOT READY + exit 1 (gate blocks). I cannot run the actual live loop (needs user keys/Supabase/ngrok/browser) — deliverable is the tooling + runbook; user executes.
 - **Notes:** Phase 5 stacked Draft PR on Phase 4. External-site embed + Consultadd retarget deliberately deferred until the Team Pop loop is proven live. Still merge-blocked until `Closes HPF-XXX`.
+
+---
+
+## 2026-05-16 — N/A — Pop Sales Agent: Phase 6 (one-command automated bring-up)
+
+- **Summary:** `bringup.sh` automates the whole live bring-up (prereqs → secrets gate → venv/deps → widget build → ngrok+auto-URL → idempotent env wiring → start onboarding-service → auto-migrations → preflight → provision → inject agent id → build+serve site; `--stop` tears down). Pure `services/bringup.py` (parse_ngrok_url/ordered_migrations/env_upsert/missing_secrets, 10 tests). `apply_migrations.py` (psql via SUPABASE_DB_URL, idempotent, graceful exit 3 fallback). RUNBOOK rewritten automated-first; fixed its bogus `start_services.sh` reference (that script never existed — found while automating).
+- **Why:** User asked for it automated. Honest ceiling = one command + one-time secrets paste + the human voice test (it uses the user's paid accounts + their machine/tunnel).
+- **Verification:** pytest 50/50 GREEN (10 new, RED→GREEN). Headless smoke: `bash -n` OK; `bringup.sh` runs → clean graceful stop at the secrets gate with exact instructions + exit 1 (no crash); `apply_migrations.py --dry-run` lists 0001/0002 in order; no-DB → fallback + exit 3. Full live chain needs the user's keys/ngrok — cannot be tested headless; deliverable is the automation + corrected RUNBOOK.
+- **Notes:** Persistent hands-off deploy (no ngrok) deliberately NOT built — bigger scope (hosting + CORS hardening), offered as the next option. Phase 6 = stacked Draft PR on Phase 5; still merge-blocked until `Closes HPF-XXX`.

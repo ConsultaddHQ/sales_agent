@@ -84,8 +84,9 @@ Supabase
 | 3 | Proof surfacing — content + trust panel UI + admin CRUD + curated drafts | own PR (stacked on Phase 2) | ✅ done, in review |
 | 4 | Assisted close — action tools wired + lead/transcript capture | own PR (stacked on Phase 3) | ✅ done, in review |
 | 5 | Live bring-up tooling — preflight + provision CLI + runbook | own PR (stacked on Phase 4) | ✅ done, in review |
+| 6 | One-command automated bring-up (`./bringup.sh`) | own PR (stacked on Phase 5) | ✅ done, in review |
 
-**Phases 0–5 implemented & in review (Draft PRs #8–#12). To go live on the Team Pop site, follow [`RUNBOOK.md`](RUNBOOK.md). Remaining = team review + the runtime gate + §8 Q2.**
+**Phases 0–6 implemented & in review (Draft PRs #8–#13). To go live on the Team Pop site: paste keys into `onboarding-service/.env`, run `./bringup.sh`, talk to it (see [`RUNBOOK.md`](RUNBOOK.md)). Remaining = team review + the irreducible user steps + §8 Q2.**
 
 (Phase 0+1 are combined because Phase 1's routes import Phase 0's config and depend on its migration/tables — they don't review independently.)
 

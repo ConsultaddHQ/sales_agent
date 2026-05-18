@@ -3,8 +3,36 @@
 Goal: talk to the sales agent on the Team Pop website end-to-end. No
 retarget needed — the program already targets Team Pop.
 
-> You run every step here (it needs your keys/Supabase/ngrok/browser). The
-> tooling makes it turnkey; ping me with any failing step's output.
+## Automated (recommended) — one command
+
+```bash
+./bringup.sh            # brings everything up
+./bringup.sh --stop     # tears it all down
+```
+
+`bringup.sh` does prereq checks → secrets gate → venv+deps → widget
+build → ngrok + auto-resolve URL → env wiring → start service →
+auto-migrations → preflight → provision → inject agent id → build+serve
+the site. It stops with an exact message the moment it needs something
+only you can provide.
+
+**The 3 irreducible things only you can do** (it can't be fully zero-touch
+— it uses *your* paid accounts and serves on *your* machine):
+1. Paste your keys into `onboarding-service/.env` once — `SUPABASE_URL`,
+   `SUPABASE_KEY`, `ELEVENLABS_API_KEY`, `OPENROUTER_API_KEY`. Optional but
+   removes more steps: `SUPABASE_DB_URL` (auto-applies migrations),
+   `NGROK_AUTHTOKEN` (no separate ngrok setup).
+2. If you didn't set `SUPABASE_DB_URL`: paste the two `migrations/*.sql`
+   into the Supabase SQL editor (the script prints exactly which).
+3. Open the printed `http://localhost:4173`, click the orb, allow the
+   mic, and **sell-test it** — talking is the actual test.
+
+Then verify the one load-bearing assumption (step 8 below).
+
+The sections below are what `bringup.sh` automates, kept for debugging /
+running by hand. Ping me with any failing step's output.
+
+---
 
 ## 0. Prereqs (one-time)
 
@@ -38,11 +66,19 @@ cd www.teampop/frontend && npm install && npm run build   # → dist/widget.js
 (onboarding-service serves it at `/widget/widget.js`. Never the Vite dev
 build — project invariant.)
 
-## 4. Start services
+## 4. Start the service
+
+There is **no `start_services.sh`** (AGENTS.md references one that was
+never committed — `bringup.sh` starts the service itself). The sales
+agent only needs onboarding-service (its `/sales/*` webhooks; the widget,
+images and proof are all served there):
 
 ```bash
-./start_services.sh        # onboarding-service :8005, search-service, images
+cd onboarding-service && python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python main.py             # :8005  (serves /sales/*, /widget, /images)
 ```
+(search-service :8006 is only for the *shopping* agent — not needed here.)
 
 ## 5. Tunnel + point the brain URL at it
 

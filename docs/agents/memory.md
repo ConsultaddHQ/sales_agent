@@ -10,7 +10,7 @@
 | Task | Files | Owner | Status | Notes |
 |------|-------|-------|--------|-------|
 | Conservative cleanup pass 2: remaining lint-safe cleanup and stale current-guidance references | `docs/agents/memory.md`, `www.teampop/frontend/`, `www.teampop/website/` | Codex | In progress | Fix only low-risk lint items and preserve historical docs |
-| Pop Sales Agent program (AI AE on marketing site) — **Phases 0–5 done & in review** as stacked Draft PRs #8(P0+1)/#9(P2)/#10(P3)/#11(P4)/#12(P5 bring-up); 40 py + 8 JS tests GREEN | `onboarding-service/`, `www.teampop/`, `shared/`, `migrations/` | Claude (madrid) | In review | Vision/review: `docs/pop-sales-agent/DESIGN.md`; **live steps: `docs/pop-sales-agent/RUNBOOK.md`** (preflight_sales.py → provision_sales_agent.py). Team Pop site first; Consultadd/external embed deferred. Per-phase stacked Draft PRs, merge-blocked until `Closes HPF-XXX` (constraint #13) |
+| Pop Sales Agent program (AI AE on marketing site) — **Phases 0–6 done & in review** as stacked Draft PRs #8(P0+1)/#9(P2)/#10(P3)/#11(P4)/#12(P5)/#13(P6 automation); 50 py + 8 JS tests GREEN | `onboarding-service/`, `www.teampop/`, `shared/`, `migrations/`, `bringup.sh` | Claude (madrid) | In review | Go live: paste keys in `onboarding-service/.env` → `./bringup.sh` → talk (RUNBOOK.md automated-first). NOTE: `start_services.sh` does NOT exist (AGENTS.md stale); bringup starts onboarding-service itself. Team Pop site first; Consultadd/external embed + persistent deploy deferred. Per-phase stacked Draft PRs, merge-blocked until `Closes HPF-XXX` |
 
 ---
 
