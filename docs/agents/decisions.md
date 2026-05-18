@@ -453,3 +453,14 @@
 - **Consequences:** A persistent hands-off deploy (no ngrok, runs on a host) is the only thing more automated than this and is a separate, larger scope (hosting creds + CORS hardening) — offered as a follow-up, not built. `.env`/`.env.*` are gitignored (no secret risk). Stacked Draft PR on Phase 5.
 - **Status:** Active
 - **Agent/Author:** Claude Code (Pop Sales Agent — Phase 6)
+
+---
+
+## 2026-05-17: Pop Sales Agent Phase 7 — Review remediation (4-reviewer pass)
+
+- **Decision:** After code-complete, ran 4 parallel expert reviewers (backend/frontend/ops/tests) and remediated all Critical + Important + valuable Minor findings. No Critical correctness/security defects existed in the product logic; the one **Critical** was an ops bug: `bringup.sh` captured the wrong PID via `( cmd & echo $! )` subshell so `--stop` leaked the service/ports — fixed with `( exec cmd )` + escalating kill + port-sweep teardown + re-run idempotency. Backend: transcript cap (unbounded O(n²) per-turn growth), stage normalization on load (closed a latent forward-bias-guard bypass), explicit parsed/fallback, `shared/llm.py` hardening. Tests: fixed a false-confidence proof-ranking test, pinned the `{{system__conversation_id}}` constant, added route-layer tests for the §8 path. Docs: corrected stale test counts and the nonexistent-`start_services.sh` reference in AGENTS.md.
+- **Pushback (reviewer recommendation not taken, with reasoning):** Frontend Important #2 said remove the forced navigate in `prefill_demo_form`. **Kept it** — `prefill_demo_form` IS the assisted close (the brain emits it only at the close per PROMPT_SALES); doing prefill+navigate in one directive is robust, vs. depending on the LLM to reliably chain a second `navigate_site`. It never auto-submits (visitor confirms). Made the behavior explicit instead of implicit: documented in the widget code, the ElevenLabs tool description, PROMPT_SALES, and here.
+- **Rationale:** Review early/often before merge; the reviewers' grounded findings (file:line, mutation-tested) were high-signal. Fixing pre-integration prevents the defects cascading.
+- **Consequences:** 58 py + 8 JS tests GREEN (was 50+8). The §8 `{{system__conversation_id}}` risk is unchanged in nature (still needs a live one-turn persistence assertion) but now has executable coverage of the safe-degradation contract and louder observability (`onConnect` warn). Delivered as Phase 7 remediation commits on the program branch; about to be integrated.
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent — Phase 7 review remediation)

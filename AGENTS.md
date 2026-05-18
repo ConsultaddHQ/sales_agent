@@ -33,7 +33,7 @@ This is the **canonical shared instruction file** for all coding agents working 
 - `onboarding-service/routes/`: API endpoints split by domain (onboard, admin, client)
 - `onboarding-service/services/`: business logic (products, test_page, agent_creator)
 - `search-service/`: FastAPI hybrid search API (imports from shared/)
-- `image_server.py`: primary image server used by `start_services.sh`
+- `image_server.py`: standalone image server (legacy; onboarding-service also serves `/images`)
 - `www.teampop/frontend/`: embeddable React widget in Shadow DOM
 - `www.teampop/website/`: marketing website + client acquisition flow (React + GSAP + Tailwind)
 - `universal-scraper/`: legacy scraping scripts (referenced by adapters)
@@ -45,11 +45,11 @@ This is the **canonical shared instruction file** for all coding agents working 
 ## Common Commands
 
 ```bash
-# Start all services
-./start_services.sh
-
-# Stop all services
-./stop_services.sh
+# NOTE: there is no ./start_services.sh / ./stop_services.sh in this repo
+# (legacy reference). Start services individually as below, OR for the
+# Pop Sales Agent use the one-command bring-up:
+./bringup.sh            # Pop Sales Agent: full live bring-up
+./bringup.sh --stop     # tear it down
 
 # Onboarding service
 cd onboarding-service && source .venv/bin/activate && python main.py

@@ -10,7 +10,7 @@
 | Task | Files | Owner | Status | Notes |
 |------|-------|-------|--------|-------|
 | Conservative cleanup pass 2: remaining lint-safe cleanup and stale current-guidance references | `docs/agents/memory.md`, `www.teampop/frontend/`, `www.teampop/website/` | Codex | In progress | Fix only low-risk lint items and preserve historical docs |
-| Pop Sales Agent program (AI AE on marketing site) — **Phases 0–6 done & in review** as stacked Draft PRs #8(P0+1)/#9(P2)/#10(P3)/#11(P4)/#12(P5)/#13(P6 automation); 50 py + 8 JS tests GREEN | `onboarding-service/`, `www.teampop/`, `shared/`, `migrations/`, `bringup.sh` | Claude (madrid) | In review | Go live: paste keys in `onboarding-service/.env` → `./bringup.sh` → talk (RUNBOOK.md automated-first). NOTE: `start_services.sh` does NOT exist (AGENTS.md stale); bringup starts onboarding-service itself. Team Pop site first; Consultadd/external embed + persistent deploy deferred. Per-phase stacked Draft PRs, merge-blocked until `Closes HPF-XXX` |
+| Pop Sales Agent program (AI AE on marketing site) — **Phases 0–6 + Phase 7 (4-reviewer remediation) done**; 58 py + 8 JS tests GREEN; integrating | `onboarding-service/`, `www.teampop/`, `shared/`, `migrations/`, `bringup.sh` | Claude (madrid) | In review | Go live: paste keys in `onboarding-service/.env` → `./bringup.sh` → talk (RUNBOOK.md). AGENTS.md start_services ghost fixed. Phase 7 fixed Critical bringup PID/teardown bug + backend/test/doc hardening (decisions.md 2026-05-17). Per-phase stacked Draft PRs #8–#13 + remediation; consolidated integration PR next; merge-blocked until `Closes HPF-XXX` |
 
 ---
 

@@ -442,3 +442,12 @@ Configured in `elevenlabs_agent.py:728-731` via `client_events`:
 - **Why:** User asked for it automated. Honest ceiling = one command + one-time secrets paste + the human voice test (it uses the user's paid accounts + their machine/tunnel).
 - **Verification:** pytest 50/50 GREEN (10 new, RED→GREEN). Headless smoke: `bash -n` OK; `bringup.sh` runs → clean graceful stop at the secrets gate with exact instructions + exit 1 (no crash); `apply_migrations.py --dry-run` lists 0001/0002 in order; no-DB → fallback + exit 3. Full live chain needs the user's keys/ngrok — cannot be tested headless; deliverable is the automation + corrected RUNBOOK.
 - **Notes:** Persistent hands-off deploy (no ngrok) deliberately NOT built — bigger scope (hosting + CORS hardening), offered as the next option. Phase 6 = stacked Draft PR on Phase 5; still merge-blocked until `Closes HPF-XXX`.
+
+---
+
+## 2026-05-17 — N/A — Pop Sales Agent: Phase 7 (4-reviewer remediation + integration)
+
+- **Summary:** Fanned out 4 parallel `superpowers:code-reviewer` agents over the whole program (backend/frontend/ops/tests, origin/main..phase6). Remediated every Critical+Important+valuable-Minor finding: bringup.sh PID/teardown/idempotency (Critical C1 + I1 + I2), apply_migrations psql -w/timeout (I3), migrations self-containment (M2/M3), sales_brain transcript cap (I1) + stage normalization (I2) + explicit fallback (I4), shared/llm hardening, proof-test false-confidence fix, NEW route-layer tests for the §8 unresolved-conversation_id path, package.json `npm test` script (Critical — was broken on Node 24), onConnect observability, JSDoc seam typedef, and doc fidelity (DESIGN counts, AGENTS.md start_services ghost). Kept prefill_demo_form's navigate (pushed back on reviewer with reasoning) but made it explicit everywhere.
+- **Why:** "Execute everything, ready to be tested" — a rigorous review + fix + integration is the honest maximal deliverable; the live voice test still needs the user's keys/infra (cannot be automated away).
+- **Verification:** pytest **58/58** GREEN (+6 route, +2 brain vs prior 50); JS **8/8** via the fixed `npm test`; widget+website build + eslint clean; `bash -n` + teardown/secrets-gate smokes pass. Reviews + remediation logged in decisions.md 2026-05-17.
+- **Notes:** No Critical correctness/security defects in product logic; the lone Critical was the ops PID bug, now fixed. The §8 live assumption remains the one thing only a human run can confirm.

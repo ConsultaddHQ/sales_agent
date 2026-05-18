@@ -92,9 +92,10 @@ Supabase
 
 ## 7. What's done & how it was verified (evidence, not claims)
 
-- **19/19 pytest GREEN**, written RED→GREEN (TDD): `tests/test_sales_agent.py` (6 — tool/prompt/payload contract), `tests/test_sales_brain.py` (13 — stage machine refuses backward resets, PIC accumulates, directives whitelisted, junk-LLM fallback, session threading).
-- Marketing website `npm run build` + `eslint`: clean.
-- All Python modules byte-compile; `shared/llm.py` imports.
+- **58/58 pytest GREEN** + **8/8 JS GREEN**, RED→GREEN (TDD): `test_sales_agent` (7), `test_sales_brain` (15 incl. transcript cap + stage normalization), `test_proof` (9), `test_lead` (4), `test_preflight` (9), `test_bringup` (10), `test_sales_routes` (6 — the §8 unresolved-conversation_id path), and `visitorActivity.test.mjs` (8).
+- Widget + marketing website `npm run build` + `eslint`: clean (only a pre-existing out-of-scope `carouselRef` warning).
+- All Python modules byte-compile; `bringup.sh` `bash -n` clean + secrets-gate/teardown smoke-verified.
+- Hardened via 4-reviewer pass (Phase 7): see `docs/agents/decisions.md` 2026-05-17.
 
 **NOT yet verified — gated on human/runtime steps (see §9):** the live ElevenLabs voice loop, real LLM responses, and DB persistence. The brain *logic* is fully tested with a fake LLM; the route is thin glue over it.
 
@@ -110,12 +111,9 @@ Supabase
 
 ```bash
 # Backend unit tests (no infra needed — this is the core verification)
-cd onboarding-service && python3 -m pytest tests/ -v        # expect 19 passed
+cd onboarding-service && python3 -m pytest tests/ -v        # expect 58 passed
 
-# Backend unit tests (Phases 1/3/4)
-cd onboarding-service && python3 -m pytest tests/ -v          # expect 31 passed
-
-# Widget awareness logic (Phase 2) — zero-dep node:test
+# Widget logic (zero-dep node:test) + builds
 cd www.teampop/frontend && npm test                          # expect 8 pass
 cd www.teampop/frontend && npm run build                     # widget IIFE (Trust Panel)
 
