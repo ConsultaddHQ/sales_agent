@@ -2,8 +2,9 @@
 """Provision the Team Pop sales agent on ElevenLabs (one command).
 
 Resolves the public brain URL (the ngrok tunnel fronting onboarding-service
-/sales/*), validates it can actually be reached by ElevenLabs, creates the
-agent, and prints the exact env line to paste.
+/sales/*), validates it *looks* publicly reachable (https, non-local — it
+does not probe liveness; bringup.sh health-checks the service separately),
+creates the agent, and prints the exact env line to paste.
 
 Run AFTER ngrok is up and SEARCH_API_URL (or SALES_BRAIN_URL) points at it
 — the URL is baked into the agent at creation time (same gotcha as store

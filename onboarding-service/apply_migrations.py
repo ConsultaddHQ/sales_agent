@@ -66,13 +66,26 @@ def main() -> int:
     for f in files:
         path = MIGRATIONS_DIR / f
         print(f"\n▶ applying {f} …")
-        proc = subprocess.run(
-            [psql, db_url, "-v", "ON_ERROR_STOP=1", "-f", str(path)],
-            capture_output=True,
-            text=True,
-        )
+        try:
+            proc = subprocess.run(
+                # -w: never prompt for a password. Without it, a missing/wrong
+                # password in SUPABASE_DB_URL makes psql block on an invisible
+                # prompt (stdout captured) and hang the whole one-command flow.
+                [psql, db_url, "-w", "-v", "ON_ERROR_STOP=1", "-f", str(path)],
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            print(f"❌ {f} timed out (120s). Check SUPABASE_DB_URL host/credentials.")
+            return 1
         if proc.returncode != 0:
-            print(f"❌ {f} failed:\n{proc.stderr.strip()}")
+            print(
+                f"❌ {f} failed:\n{proc.stderr.strip()}\n"
+                "(If this is a password error, embed the password in "
+                "SUPABASE_DB_URL — psql will not prompt with -w.)"
+            )
             return 1
         print(f"✅ {f} applied")
     print("\nAll migrations applied.")

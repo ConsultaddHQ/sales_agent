@@ -3,6 +3,11 @@
 -- Apply in Supabase SQL editor. Idempotent — safe to re-run.
 -- ===========================================================================
 
+-- uuid_generate_v4() needs uuid-ossp. Supabase enables it by default and the
+-- existing products table already relies on it, but make this self-contained
+-- for a fresh project (no hidden prerequisite).
+create extension if not exists "uuid-ossp";
+
 -- 1. Per-conversation sales state (the stateful "sales brain" memory).
 --    Keyed by the ElevenLabs conversation id so every webhook turn can
 --    resume the same session.

@@ -6,6 +6,10 @@
 -- generic descriptors (no fabricated named customers) so the agent never
 -- attributes false claims. Replace with real, signed-off proof via the admin
 -- Proof Library before any live prospect traffic. See DESIGN.md §8 Q5.
+--
+-- Dedup key is (site, title): re-running won't duplicate the seeds, but if an
+-- admin RENAMES a seeded row, a re-run will re-insert the original. Intended
+-- given the "replace before live" workflow; don't re-run 0002 post-curation.
 -- ===========================================================================
 
 insert into public.sales_proof (site, type, title, body, metric, tags, active)
