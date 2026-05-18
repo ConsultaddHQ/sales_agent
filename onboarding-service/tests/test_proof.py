@@ -13,15 +13,19 @@ def test_proof_types_and_validator():
     assert is_valid_proof_type("rm -rf") is False
     assert is_valid_proof_type(None) is False
 
+# NOTE: the term-overlap winner ("ROI vs hiring an SDR") is deliberately
+# LAST in input order. rank_proof uses a stable sort, so if scoring were
+# broken the testimonial (index 0) would stay #0 — the ordering test only
+# passes when ranking actually works (avoids a false-confidence test).
 ROWS = [
-    {"type": "roi", "title": "ROI vs hiring an SDR",
-     "body": "one agent is a fraction of one hire", "metric": "pays for itself",
-     "tags": ["roi", "expensive", "budget"]},
+    {"type": "testimonial", "title": "Founder, DTC brand",
+     "body": "feels like a great salesperson on every page", "tags": ["social proof"]},
     {"type": "case_study", "title": "Shopify apparel brand",
      "body": "voice agent on every product page lifted add to cart",
      "metric": "1.9x", "tags": ["ecommerce", "shopify", "conversion"]},
-    {"type": "testimonial", "title": "Founder, DTC brand",
-     "body": "feels like a great salesperson on every page", "tags": ["social proof"]},
+    {"type": "roi", "title": "ROI vs hiring an SDR",
+     "body": "one agent is a fraction of one hire", "metric": "pays for itself",
+     "tags": ["roi", "expensive", "budget"]},
 ]
 
 
@@ -37,6 +41,7 @@ def test_normalize_fills_defaults_and_coerces_types():
 def test_rank_orders_by_term_overlap():
     out = rank_proof(ROWS, "expensive budget for an SDR", proof_type=None, limit=3)
     assert out[0]["title"] == "ROI vs hiring an SDR"  # most term hits
+    assert out[0]["title"] != ROWS[0]["title"]  # ranking lifted it past input order
 
 
 def test_rank_respects_limit():

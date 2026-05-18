@@ -52,6 +52,9 @@ def test_brain_session_identity_is_constant_not_llm_generated():
     props = brain["api_schema"]["request_body_schema"]["properties"]
     assert "constant_value" in props["conversation_id"]
     assert "description" not in props["conversation_id"]  # not LLM-generated
+    # Pin the exact ElevenLabs system variable — the §8 load-bearing
+    # assumption; it must not silently change.
+    assert props["conversation_id"]["constant_value"] == "{{system__conversation_id}}"
     assert props["site"]["constant_value"] == SITE
     # the visitor's words MUST be an LLM-generated param
     assert "description" in props["message"]

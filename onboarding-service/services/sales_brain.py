@@ -46,6 +46,12 @@ ALLOWED_DIRECTIVES = {
 
 _PIC_KEYS = ("technical_problem", "business_impact", "root_cause")
 
+# Cap the persisted/round-tripped transcript. A 15-min voice call is 100+
+# turns; without this the full array is loaded + upserted every turn inside
+# the latency-critical webhook (O(n^2) writes, ever-growing JSONB). The LLM
+# context is already sliced to [-8:]; the lead still gets a rich transcript.
+_MAX_TRANSCRIPT = 200
+
 DEFAULT_PLAYBOOK_PATH = Path(__file__).resolve().parent / "sales_playbook.md"
 
 
@@ -264,15 +270,34 @@ class SalesBrain:
             raw = self.llm(self.system_prompt(), self._build_user(session, message, activity))
         except Exception:
             raw = ""
-        parsed = parse_decision(raw) or fallback_decision(session)
+        # Empty == fallback is deliberate (terse model / parse failure both
+        # resolve to the safe decision); make the intent explicit.
+        parsed = parse_decision(raw)
+        if not isinstance(parsed, dict) or not parsed:
+            parsed = fallback_decision(session)
 
-        stage = advance_stage(session.get("stage", "rapport"), parsed.get("stage", session.get("stage", "rapport")))
+        # Normalise the loaded baseline: a persisted stage outside STAGES
+        # (manual DB edit, partial write) must NOT disengage the
+        # forward-bias guard (advance_stage would accept any proposed
+        # stage if `current` is unknown). Single defensive choke point.
+        current_stage = session.get("stage", "rapport")
+        if current_stage not in STAGES:
+            current_stage = "rapport"
+
+        stage = advance_stage(current_stage, parsed.get("stage", current_stage))
         pic = merge_pic(session.get("pic", []), parsed.get("pic_update", []))
         captured = merge_captured(session.get("captured", {}), parsed.get("captured_fields", {}))
         directives = sanitize_directives(parsed.get("directives", []))
         say = str(parsed.get("say_guidance") or fallback_decision(session)["say_guidance"]).strip()
         next_move = str(parsed.get("next_move") or "").strip()
 
+        transcript = (
+            list(session.get("transcript", []))
+            + [
+                {"role": "visitor", "text": message},
+                {"role": "agent", "text": say},
+            ]
+        )[-_MAX_TRANSCRIPT:]
         new_session = {
             **session,
             "stage": stage,
@@ -280,11 +305,7 @@ class SalesBrain:
             "captured": captured,
             "next_move": next_move,
             "booked": bool(session.get("booked")) or stage == "booked",
-            "transcript": list(session.get("transcript", []))
-            + [
-                {"role": "visitor", "text": message},
-                {"role": "agent", "text": say},
-            ],
+            "transcript": transcript,
         }
         decision = BrainDecision(
             stage=stage,

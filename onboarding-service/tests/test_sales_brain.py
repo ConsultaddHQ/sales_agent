@@ -17,6 +17,7 @@ from services.sales_brain import (
     merge_pic,
     merge_captured,
     sanitize_directives,
+    _MAX_TRANSCRIPT,
 )
 
 
@@ -157,3 +158,32 @@ def test_decide_refuses_llm_attempt_to_reset_the_sale():
 def test_stages_constant_matches_playbook_motion():
     assert STAGES[0] == "rapport" and STAGES[-1] == "booked"
     assert "discovery" in STAGES and "pricing" in STAGES and "close" in STAGES
+
+
+# ── review remediation: transcript cap (I1) + stage normalization (I2) ───────
+
+def test_transcript_is_capped_to_max():
+    """A long voice call must not grow an unbounded persisted transcript."""
+    s = new_session()
+    s["transcript"] = [{"role": "visitor", "text": f"m{i}"} for i in range(_MAX_TRANSCRIPT * 2)]
+    fake_llm.next = json.dumps({"stage": "discovery", "say_guidance": "go on"})
+    _, session = brain_decide(s, "newest message")
+    assert len(session["transcript"]) == _MAX_TRANSCRIPT
+    # newest turns are kept (the just-added agent line is last)
+    assert session["transcript"][-1] == {"role": "agent", "text": "go on"}
+    assert session["transcript"][-2] == {"role": "visitor", "text": "newest message"}
+
+
+def test_decide_normalizes_bogus_persisted_stage_so_guard_cannot_be_bypassed():
+    """A persisted stage outside STAGES must not make advance_stage accept
+    any LLM-proposed stage unconditionally."""
+    s = new_session()
+    s["stage"] = "garbage_not_a_stage"
+    fake_llm.next = json.dumps({"stage": "close", "say_guidance": "hi"})
+    decision, session = brain_decide(s, "hello")
+    assert decision.stage in STAGES
+    assert session["stage"] in STAGES
+
+
+def brain_decide(session, message):
+    return make_brain().decide(session, message)

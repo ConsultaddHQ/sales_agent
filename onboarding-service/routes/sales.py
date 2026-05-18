@@ -24,7 +24,7 @@ if _REPO_ROOT not in sys.path:
 
 from shared.db import get_supabase
 from shared.llm import make_llm
-from services.sales_brain import SalesBrain, DEFAULT_PLAYBOOK_PATH
+from services.sales_brain import SalesBrain, DEFAULT_PLAYBOOK_PATH, STAGES
 from services.proof import rank_proof
 
 logger = logging.getLogger("onboarding-service")
@@ -82,10 +82,15 @@ def _load_session(conversation_id: str, site: str) -> dict:
         )
         if rows:
             row = rows[0]
-            return {**base, **{k: row[k] for k in row if k in base or k in (
+            loaded = {**base, **{k: row[k] for k in row if k in base or k in (
                 "stage", "pic", "captured", "objections", "proof_shown",
                 "transcript", "booked", "next_move",
             )}}
+            # Don't trust a persisted stage outside the machine (manual edit
+            # / partial write) — it would disengage the forward-bias guard.
+            if loaded.get("stage") not in STAGES:
+                loaded["stage"] = "rapport"
+            return loaded
     except Exception as e:
         logger.warning(f"sales_sessions load failed ({conversation_id[:12]}…): {e}")
     return base

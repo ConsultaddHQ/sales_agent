@@ -20,7 +20,7 @@ def complete(
     model: str | None = None,
     temperature: float = 0.4,
     max_tokens: int = 500,
-    timeout: float = 12.0,
+    timeout: float = 10.0,
 ) -> str:
     """One chat completion. Returns the assistant message content."""
     api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -50,7 +50,13 @@ def complete(
     )
     resp.raise_for_status()
     data = resp.json()
-    return data["choices"][0]["message"]["content"]
+    # Some OpenAI-compatible providers return a 200 with an error-shaped body
+    # or empty choices (content filter / refusal). Fail loudly so the brain's
+    # fallback path is diagnosable rather than an opaque KeyError.
+    choices = data.get("choices")
+    if not choices:
+        raise RuntimeError(f"LLM returned no choices: {str(data)[:200]}")
+    return choices[0].get("message", {}).get("content") or ""
 
 
 def make_llm() -> Callable[[str, str], str]:
