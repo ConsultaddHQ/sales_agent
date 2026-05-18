@@ -12,6 +12,21 @@
  * narration the carousel path had to guard against.
  */
 
+/**
+ * Host↔widget contract. SalesAgent.jsx (host) emits these as
+ * `window` `teampop:activity` CustomEvent details; this module consumes
+ * them. Keep both sides in sync — a field rename here is a breaking
+ * change to the seam (unknown shapes fail safe via keyOf()→null).
+ *
+ * @typedef {(
+ *   | { type: 'section', id: string, label?: string }
+ *   | { type: 'idle', seconds: number }
+ *   | { type: 'cta', action: 'hover'|'click', label: string }
+ *   | { type: 'route', path: string }
+ *   | { type: 'scroll', depthPct: number, area: string }
+ * )} VisitorActivity
+ */
+
 // Same activity won't re-notify within this window.
 export const DEDUPE_MS = 20000
 // Floor between two ambient notifications (protects the conversation).

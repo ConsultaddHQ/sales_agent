@@ -276,7 +276,17 @@ function AvatarInner({
     onConnect: (info) => {
       conversationIdRef.current =
         info?.conversationId || info?.conversation_id || "";
-      console.log("[ElevenLabs] connected:", conversationIdRef.current);
+      if (conversationIdRef.current) {
+        console.log("[ElevenLabs] connected:", conversationIdRef.current);
+      } else {
+        // Visible signal: assisted-close lead won't link to its
+        // sales_session transcript/PIC (DESIGN §8). SDK shape changed?
+        console.warn(
+          "[ElevenLabs] connected but no conversation id in onConnect payload —",
+          "assisted-close lead↔transcript linkage will be skipped. info:",
+          info,
+        );
+      }
     },
     onError: (error) => console.error("ElevenLabs error:", error),
     onDisconnect: (details) => {
@@ -392,7 +402,12 @@ function AvatarInner({
       use_case: parameters?.use_case || "",
       conversation_id: conversationIdRef.current,
     });
-    // Show the visitor the filled form so they can confirm + submit.
+    // INTENTIONAL: prefill IS the assisted close — the brain only emits
+    // this at the close (PROMPT_SALES), so we bring the visitor to the
+    // pre-filled form in one directive. Doing it here (vs. relying on the
+    // LLM to also chain navigate_site) is the robust path. It never
+    // submits — the visitor reviews + confirms. Decided behavior; see
+    // decisions.md 2026-05-17 (review remediation).
     h.navigate("request-demo");
     return "Demo form pre-filled — visitor can review and confirm";
   });

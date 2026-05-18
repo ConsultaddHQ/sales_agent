@@ -948,7 +948,7 @@ Renders the retrieved proof visually for the visitor. Pass the proof returned by
 Take the visitor to a page or section (e.g. pricing, how-it-works) when the brain directs it. Narrate what you're showing.
 
 ## prefill_demo_form
-At the close, fill the demo request form from what you learned (name, email, company, use case). The visitor reviews and confirms — you never submit for them.
+The close action. Only at the close: it fills AND brings the visitor to the demo request form so they can review and confirm. You never submit for them. `company` should be their website/store URL (the form expects a URL).
 
 ## open_booking
 Open the booking calendar, prefilled, after the visitor confirms they want to book.
@@ -1107,7 +1107,7 @@ def get_sales_tool_config(brain_api_url: str, site: str) -> List[Dict]:
         {
             "type": "client",
             "name": "prefill_demo_form",
-            "description": "Pre-fill the demo request form from discovery. Visitor reviews + confirms; never auto-submitted.",
+            "description": "The assisted close. Pre-fills AND opens the demo request form so the visitor reviews + confirms (one click). Only at the close. Never auto-submitted.",
             "expects_response": False,
             "execution_mode": "immediate",
             "tool_error_handling_mode": "auto",
@@ -1116,7 +1116,7 @@ def get_sales_tool_config(brain_api_url: str, site: str) -> List[Dict]:
                 "properties": {
                     "name": {"type": "string", "description": "Visitor's name."},
                     "email": {"type": "string", "description": "Visitor's email."},
-                    "company": {"type": "string", "description": "Visitor's company or site URL."},
+                    "company": {"type": "string", "description": "Visitor's website/store URL (the form's field expects a URL, not a company name)."},
                     "use_case": {"type": "string", "description": "The use case / pain captured in discovery."},
                 },
                 "required": [],
