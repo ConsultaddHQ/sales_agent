@@ -86,7 +86,9 @@ Supabase
 | 5 | Live bring-up tooling — preflight + provision CLI + runbook | own PR (stacked on Phase 4) | ✅ done, in review |
 | 6 | One-command automated bring-up (`./bringup.sh`) | own PR (stacked on Phase 5) | ✅ done, in review |
 
-**Phases 0–6 implemented & in review (Draft PRs #8–#13). To go live on the Team Pop site: paste keys into `onboarding-service/.env`, run `./bringup.sh`, talk to it (see [`RUNBOOK.md`](RUNBOOK.md)). Remaining = team review + the irreducible user steps + §8 Q2.**
+| 7 | Independent 4-reviewer pass + full remediation | consolidated PR #14 | ✅ done |
+
+**Phases 0–7 done, reviewed, remediated, integrated. Consolidated testable artifact = Draft PR #14 (`bdevz/sales-agent-integration`, base `main`); per-phase Draft PRs #8–#13 remain for granular review. 58 py + 8 JS tests GREEN. To go live: paste keys into `onboarding-service/.env`, run `./bringup.sh`, talk to it (see [`RUNBOOK.md`](RUNBOOK.md)). Remaining = team review + `Closes HPF-XXX` + the irreducible user steps + §8 Q2 live check.**
 
 (Phase 0+1 are combined because Phase 1's routes import Phase 0's config and depend on its migration/tables — they don't review independently.)
 
