@@ -9,10 +9,10 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-[var(--background)]">
       <Navbar />
-      <Hero />
-      <HowItWorks />
-      <FAQ />
-      <CTA />
+      <div id="top"><Hero /></div>
+      <div id="how-it-works"><HowItWorks /></div>
+      <div id="faq"><FAQ /></div>
+      <div id="cta"><CTA /></div>
       <Footer />
     </div>
   )

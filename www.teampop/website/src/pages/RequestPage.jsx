@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Check, Loader2 } from 'lucide-react'
 import { submitRequest } from '../lib/api'
 import Navbar from '../components/Navbar'
+
+// Assisted close — the agent stashes what it learned here (Phase 0 bridge).
+const PREFILL_KEY = 'teampop_demo_prefill'
 
 function RequestForm({ onSuccess }) {
   const [name, setName] = useState('')
@@ -11,6 +14,43 @@ function RequestForm({ onSuccess }) {
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
   const [apiError, setApiError] = useState('')
+  // Sales-agent context (conversation_id, source) sent on submit so the
+  // backend can attach the transcript/PIC to the lead. Empty for manual visits.
+  const [closeCtx, setCloseCtx] = useState(null)
+  const [prefilled, setPrefilled] = useState(false)
+
+  useEffect(() => {
+    // Deferred (setTimeout 0) to keep setState out of the synchronous effect
+    // body — matches the Dashboard / ProofLibrary pattern in this codebase.
+    const t = setTimeout(() => {
+      let raw
+      try {
+        raw = sessionStorage.getItem(PREFILL_KEY)
+      } catch {
+        return
+      }
+      if (!raw) return
+      try {
+        const f = JSON.parse(raw)
+        if (f.name) setName(f.name)
+        if (f.email) setEmail(f.email)
+        if (f.company) setUrl(f.company)
+        if (f.conversation_id) {
+          setCloseCtx({ conversation_id: f.conversation_id, source: 'sales_agent' })
+        }
+        setPrefilled(true)
+      } catch {
+        /* ignore malformed prefill */
+      }
+      // One-shot: a later manual visit shouldn't reuse it.
+      try {
+        sessionStorage.removeItem(PREFILL_KEY)
+      } catch {
+        /* non-fatal */
+      }
+    }, 0)
+    return () => clearTimeout(t)
+  }, [])
 
   function validate() {
     const e = {}
@@ -32,7 +72,12 @@ function RequestForm({ onSuccess }) {
     setApiError('')
     try {
       const finalUrl = url.startsWith('http') ? url : `https://${url}`
-      await submitRequest(name.trim(), email.trim().toLowerCase(), finalUrl)
+      await submitRequest(
+        name.trim(),
+        email.trim().toLowerCase(),
+        finalUrl,
+        closeCtx || {},
+      )
       onSuccess({ name: name.trim(), email: email.trim().toLowerCase(), url: finalUrl })
     } catch (err) {
       setApiError(err.message || 'Something went wrong')
@@ -55,6 +100,11 @@ function RequestForm({ onSuccess }) {
         <p className="text-[#888888] text-sm leading-relaxed">
           Enter your details and we'll build a voice AI agent for your store.
         </p>
+        {prefilled && (
+          <p className="mt-3 text-xs text-green-400 bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2">
+            Your assistant filled this in from your conversation — review and confirm.
+          </p>
+        )}
       </header>
 
       <div className="space-y-2">
@@ -111,7 +161,14 @@ function RequestForm({ onSuccess }) {
 }
 
 function Confirmation({ data }) {
-  const calendlyUrl = import.meta.env.VITE_CALENDLY_URL
+  const baseCalendly = import.meta.env.VITE_CALENDLY_URL
+  // Prefill the calendar so booking is one click after the assisted close.
+  const calendlyUrl =
+    baseCalendly && baseCalendly !== 'https://calendly.com'
+      ? `${baseCalendly}${baseCalendly.includes('?') ? '&' : '?'}name=${encodeURIComponent(
+          data.name || '',
+        )}&email=${encodeURIComponent(data.email || '')}`
+      : baseCalendly
 
   return (
     <div className="flex flex-col items-center text-center gap-6">

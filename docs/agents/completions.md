@@ -388,3 +388,66 @@ Configured in `elevenlabs_agent.py:728-731` via `client_events`:
 - **Verification:** Added `.personal/` and `.claude/` to `.gitignore`, moved the learning files under `.personal/learning/`, and verified that tracked docs no longer reference the personal file names.
 - **Related Decisions:** None
 - **Notes:** Future personal notes should stay under `.personal/` or another gitignored local folder, not under tracked `docs/`.
+
+---
+
+## 2026-05-16 — N/A — Pop Sales Agent: Phase 0 (foundations) + Phase 1 (sales brain)
+
+- **Summary:** Started the Pop Sales Agent program — turning the `<team-pop-agent>` shopping widget into a stateful AI account executive on Team Pop's own marketing site (plan: `.claude/plans/…quirky-cupcake.md`; design rationale: `decisions.md` 2026-05-16). **Phase 0:** `elevenlabs_agent.py` gained `PROMPT_SALES`, `get_sales_tool_config` (6 tools: `sales_brain`/`surface_proof` webhooks + `navigate_site`/`show_proof`/`prefill_demo_form`/`open_booking` client tools), `build_sales_agent_payload`, `create_sales_agent`; playbook committed to `services/sales_playbook.md`; `migrations/0001_sales_agent.sql` (sales_sessions, sales_proof, agent_requests cols); marketing site embeds the built widget via `www.teampop/website/src/components/SalesAgent.jsx` exposing `window.__TEAM_POP_HOST__`. **Phase 1:** `services/sales_brain.py` — pure, import-light, LLM-injected stateful AE (stage machine + PIC accumulation + whitelisted directives + junk-LLM fallback); `shared/llm.py` (httpx OpenRouter client, no new dep); `routes/sales.py` (`POST /sales/brain` + `/sales/proof`, resilient `sales_sessions` persistence) registered in `main.py`.
+- **Why:** ElevenLabs has no native computer-use; a server-side stateful brain + instrumented in-page tools is higher quality than screenshot-driven demos and reuses proven patterns (client tools, contextual updates, `/search` proxy, `submit_request`).
+- **Verification:** 19 pytest tests GREEN (RED→GREEN TDD): 6 sales-agent config (`tests/test_sales_agent.py`), 13 brain logic (`tests/test_sales_brain.py`). Marketing website `npm run build` + eslint clean. All Python modules byte-compile. **Not yet verified live** (needs human/runtime steps): apply `migrations/0001_sales_agent.sql` in Supabase; set `OPENROUTER_API_KEY`/`ELEVENLABS_API_KEY`; run `create_sales_agent()` and put the id in `VITE_SALES_AGENT_ID`; confirm ElevenLabs substitutes `{{system__conversation_id}}` (the unverified webhook-identity assumption flagged in decisions.md).
+- **Notes:** Tool names are a hard invariant across `elevenlabs_agent.py` + the sales prompt + (Phases 2-4) `AvatarWidget.jsx`. No HPF Linear ticket yet — required before PR/merge to main (constraint #13).
+
+---
+
+## 2026-05-16 — N/A — Pop Sales Agent: Phase 2 (awareness bridge)
+
+- **Summary:** The sales agent now "watches what the visitor does." `www.teampop/frontend/src/lib/visitorActivity.js` is a pure reducer (summarize/format + dedupe + throttle; CTA-click and `/request` bypass the throttle). `AvatarWidget.jsx` subscribes to `window` `teampop:activity` and forwards salient activity via `sendContextualUpdate` only (no forced turn). `SalesAgent.jsx` (host) detects section-in-view (IntersectionObserver), route, idle (25s/60s), CTA hover/click (event delegation), and whole-page-read, emitting the events. See `decisions.md` 2026-05-16 (Phase 2 seam) and `docs/pop-sales-agent/DESIGN.md` §5 D8.
+- **Why:** Decouples the two Vite apps; keeps the decision logic testable; avoids the carousel duplicate-narration class of bug by never force-narrating.
+- **Verification:** 8 `node:test` cases GREEN (RED→GREEN TDD); added `npm test` (`node --test src/lib`). Widget + website `npm run build` clean; eslint clean (the pre-existing `carouselRef` exhaustive-deps warning is out of scope, untouched). Live voice reaction still pending the same runtime steps as Foundation.
+- **Notes:** `teampop:activity` event name + `detail` shape is now a host↔widget contract. Stacked Draft PR on the Foundation branch; merge-blocked until `Closes HPF-XXX` (constraint #13).
+
+---
+
+## 2026-05-16 — N/A — Pop Sales Agent: Phase 3 (proof surfacing)
+
+- **Summary:** The agent can now surface trust. `services/proof.py` (pure `rank_proof`/`normalize_proof` + `PROOF_TYPES`/`is_valid_proof_type`) replaces the inline scoring in `routes/sales.py`. `migrations/0002_sales_proof_seed.sql` seeds illustrative drafts (2 case studies, 1 ROI, 3 testimonials, 3 rebuttals; generic attribution). `AvatarWidget.jsx` renders a dismissible Trust Panel via the `show_proof` client tool. Admin Proof Library: `/api/proof` CRUD (`routes/admin.py`) + `AdminPage.jsx` table/dialog + `lib/api.js`.
+- **Why:** Curated-drafts-now/admin-editable-later was the chosen approach; pure ranking keeps it testable; generic attribution keeps it honest.
+- **Verification:** pytest 27/27 GREEN (8 new proof tests, RED→GREEN). Widget + website `npm run build` + eslint clean (pre-existing `carouselRef` warning untouched; ProofLibrary effect uses the codebase's `setTimeout(fn,0)` deferral pattern). Live voice surfacing still gated on the same runtime steps; seed content must be replaced before live traffic.
+- **Notes:** 6 small commits, stacked Draft PR on Phase 2. Merge-blocked until `Closes HPF-XXX` (constraint #13).
+
+---
+
+## 2026-05-16 — N/A — Pop Sales Agent: Phase 4 (assisted close) — program complete
+
+- **Summary:** Final phase. Widget captures `conversation_id` (`onConnect`) and registers `navigate_site`/`prefill_demo_form`/`open_booking` client tools → `window.__TEAM_POP_HOST__`. `RequestPage` one-shot reads the stashed prefill, banners it, submits with `{conversation_id, source}`; Calendly prefilled. `services/lead.py` (pure `build_lead_enrichment`, 4 tests) + `routes/client.py` attach transcript/discovery/PIC to the `agent_requests` lead from `sales_sessions`. All 5 phases (0–4) now implemented and in review as stacked Draft PRs #8–#11.
+- **Why:** Assisted close was the locked conversion model; reuse of submit_request/notifications/Calendly + conversation_id linkage keeps it simple and trustworthy (visitor always confirms).
+- **Verification:** pytest 31/31 GREEN (4 new lead tests, RED→GREEN). Widget + website build + eslint clean (effects use the codebase setState-deferral pattern). Live e2e still gated on the runtime steps + `{{system__conversation_id}}` confirmation (DESIGN §8 Q2); seed proof must be replaced before live.
+- **Notes:** Program delivered in 22 small commits across 4 stacked Draft PRs, one per phase, each merge-blocked until `Closes HPF-XXX` (constraint #13). Vision/architecture/decisions: `docs/pop-sales-agent/DESIGN.md` + `decisions.md` 2026-05-16.
+
+---
+
+## 2026-05-16 — N/A — Pop Sales Agent: Phase 5 (live bring-up tooling)
+
+- **Summary:** Turnkey bring-up for the Team Pop live test. `services/preflight.py` (pure: `resolve_brain_url`/`env_checks`/`overall_ok`, 9 tests). `preflight_sales.py` — go/no-go (env, brain URL, Supabase tables/0001 cols/0002 seed, widget dist; exit 1 blocks). `provision_sales_agent.py` — resolves+validates the public brain URL, calls `create_sales_agent`, prints the `VITE_SALES_AGENT_ID` line (ngrok-bake ordering encoded). `docs/pop-sales-agent/RUNBOOK.md` — exact ordered steps + the `{{system__conversation_id}}` verification + troubleshooting. `.env.example` gains `SALES_BRAIN_URL`.
+- **Why:** Program was code-complete but operationally error-prone; user wants to test live on the Team Pop site first (no retarget) before generalising to external sites (Consultadd).
+- **Verification:** pytest 40/40 GREEN (9 new, RED→GREEN). Scripts smoke-verified headless: `provision --help` OK; `preflight_sales.py` with no env → correct NOT READY + exit 1 (gate blocks). I cannot run the actual live loop (needs user keys/Supabase/ngrok/browser) — deliverable is the tooling + runbook; user executes.
+- **Notes:** Phase 5 stacked Draft PR on Phase 4. External-site embed + Consultadd retarget deliberately deferred until the Team Pop loop is proven live. Still merge-blocked until `Closes HPF-XXX`.
+
+---
+
+## 2026-05-16 — N/A — Pop Sales Agent: Phase 6 (one-command automated bring-up)
+
+- **Summary:** `bringup.sh` automates the whole live bring-up (prereqs → secrets gate → venv/deps → widget build → ngrok+auto-URL → idempotent env wiring → start onboarding-service → auto-migrations → preflight → provision → inject agent id → build+serve site; `--stop` tears down). Pure `services/bringup.py` (parse_ngrok_url/ordered_migrations/env_upsert/missing_secrets, 10 tests). `apply_migrations.py` (psql via SUPABASE_DB_URL, idempotent, graceful exit 3 fallback). RUNBOOK rewritten automated-first; fixed its bogus `start_services.sh` reference (that script never existed — found while automating).
+- **Why:** User asked for it automated. Honest ceiling = one command + one-time secrets paste + the human voice test (it uses the user's paid accounts + their machine/tunnel).
+- **Verification:** pytest 50/50 GREEN (10 new, RED→GREEN). Headless smoke: `bash -n` OK; `bringup.sh` runs → clean graceful stop at the secrets gate with exact instructions + exit 1 (no crash); `apply_migrations.py --dry-run` lists 0001/0002 in order; no-DB → fallback + exit 3. Full live chain needs the user's keys/ngrok — cannot be tested headless; deliverable is the automation + corrected RUNBOOK.
+- **Notes:** Persistent hands-off deploy (no ngrok) deliberately NOT built — bigger scope (hosting + CORS hardening), offered as the next option. Phase 6 = stacked Draft PR on Phase 5; still merge-blocked until `Closes HPF-XXX`.
+
+---
+
+## 2026-05-17 — N/A — Pop Sales Agent: Phase 7 (4-reviewer remediation + integration)
+
+- **Summary:** Fanned out 4 parallel `superpowers:code-reviewer` agents over the whole program (backend/frontend/ops/tests, origin/main..phase6). Remediated every Critical+Important+valuable-Minor finding: bringup.sh PID/teardown/idempotency (Critical C1 + I1 + I2), apply_migrations psql -w/timeout (I3), migrations self-containment (M2/M3), sales_brain transcript cap (I1) + stage normalization (I2) + explicit fallback (I4), shared/llm hardening, proof-test false-confidence fix, NEW route-layer tests for the §8 unresolved-conversation_id path, package.json `npm test` script (Critical — was broken on Node 24), onConnect observability, JSDoc seam typedef, and doc fidelity (DESIGN counts, AGENTS.md start_services ghost). Kept prefill_demo_form's navigate (pushed back on reviewer with reasoning) but made it explicit everywhere.
+- **Why:** "Execute everything, ready to be tested" — a rigorous review + fix + integration is the honest maximal deliverable; the live voice test still needs the user's keys/infra (cannot be automated away).
+- **Verification:** pytest **58/58** GREEN (+6 route, +2 brain vs prior 50); JS **8/8** via the fixed `npm test`; widget+website build + eslint clean; `bash -n` + teardown/secrets-gate smokes pass. Reviews + remediation logged in decisions.md 2026-05-17.
+- **Notes:** No Critical correctness/security defects in product logic; the lone Critical was the ops PID bug, now fixed. The §8 live assumption remains the one thing only a human run can confirm.

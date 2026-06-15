@@ -382,3 +382,85 @@
   - Onboarding service mounts `www.teampop/frontend/dist/` — build must be run before demo pages work
 - **Status:** Active
 - **Agent/Author:** Engineering team
+
+---
+
+## 2026-05-16: Pop Sales Agent — Server-Side Stateful Brain + In-Page Action Tools
+
+- **Decision:** Evolve the `<team-pop-agent>` widget into an AI account executive on Team Pop's *own* marketing site. The ElevenLabs voice agent is a disciplined mouthpiece; all sales methodology is server-side in `onboarding-service/services/sales_brain.py` (stage machine + Problem Identification Chart + next-best-move), reasoning over a committed `services/sales_playbook.md`. Actions are in-page ElevenLabs **client tools** acting on our own instrumented site via `window.__TEAM_POP_HOST__`, **not** screenshot/Playwright computer-use. v1 conversion = qualified lead + booked meeting via an *assisted close* (agent pre-fills the demo form + opens the calendar; visitor confirms).
+- **Context:** User wants the agent to watch visitor behavior, act on the page, surface trust/proof, and convert visitors. ElevenLabs has no native "computer use" — its agents act through tools. The existing widget already watches one action (carousel scroll → `sendContextualUpdate`) and acts via client tools; reusing that pattern beats the clunky generic computer-use demos.
+- **Rationale:** Stateful server-side reasoning behaves like a trained AE rather than a 2k-token prompt; instrumented in-page tools are fast/reliable/smooth on our own site; reuse maximizes leverage of proven patterns (`_get_tool_config`, `useConversationClientTool`, the `/search` single-tunnel proxy, `submit_request`).
+- **Consequences:**
+  - `sales_brain`/`surface_proof` webhook tools point at new onboarding-service `/sales/*` routes; tool names are a hard invariant across config + prompt + `AvatarWidget.jsx`.
+  - `conversation_id` is sent as a **constant** webhook param using the ElevenLabs system dynamic variable `{{system__conversation_id}}` (never LLM-generated — same truncation class as the `store_id` invariant). **Must be verified against the live ElevenLabs API on first provision**, like the 2026-04-08 `agent_config` nesting discovery.
+  - New repo convention: `migrations/` holds numbered, idempotent SQL applied **by a human** in the Supabase SQL editor (no programmatic DDL path). `0001_sales_agent.sql` adds `sales_sessions`, `sales_proof`, and `agent_requests` sales columns.
+  - No LLM client existed (the `get_openrouter_client()` referenced in `search-service` is dead commented code; no `openai`/`anthropic`/`openrouter` in requirements). The sales brain will use a minimal `httpx`-based OpenRouter REST client (httpx already a dependency) — no new dependency, mirroring how `elevenlabs_agent.py` calls ElevenLabs via raw `requests`. Supersedes the plan's "reuse existing OpenRouter client" assumption.
+  - Delivered in 5 independently-demoable phases. Phase 0 (this entry): foundations, sales agent config + payload builders (`elevenlabs_agent.py`), playbook commit, migrations, marketing-site embed + host bridge scaffold.
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent program — plan: `.claude/plans/…quirky-cupcake.md`)
+
+---
+
+## 2026-05-16: Pop Sales Agent Phase 2 — Host↔Widget Awareness Event Seam
+
+- **Decision:** The marketing site (`SalesAgent.jsx`) detects visitor activity (section-in-view via IntersectionObserver, route, idle escalation, CTA hover/click via event delegation, whole-page-read) and emits a `window` `teampop:activity` CustomEvent. The widget (`AvatarWidget.jsx`) subscribes and runs a pure, framework-free reducer (`www.teampop/frontend/src/lib/visitorActivity.js`: summarize + dedupe + throttle, priority signals bypass throttle) that forwards salient activity to the agent via `sendContextualUpdate` only.
+- **Context:** The widget and website are separate Vite apps sharing the same `window` (Shadow DOM doesn't isolate `window`). We needed host behaviour awareness without coupling the two apps or regressing into the carousel's duplicate-narration problem.
+- **Rationale:** A CustomEvent seam decouples detection (host) from conversation (widget); the decision logic is pure and unit-tested (8 `node:test` cases, zero-dep — no JS runner existed, so `node --test src/lib` + an `npm test` script were added); using only `sendContextualUpdate` (never `sendUserMessage`) means the agent is *informed*, not forced to speak — the sales brain still decides the next move.
+- **Consequences:** Event name `teampop:activity` and the event `detail` shape are now a contract between the two apps. Throttle defaults: dedupe 20s, min interval 15s, CTA-click/`/request` bypass. Delivered as a stacked Draft PR on the Foundation branch (per-phase PR workflow).
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent — Phase 2)
+
+---
+
+## 2026-05-16: Pop Sales Agent Phase 3 — Proof surfacing
+
+- **Decision:** `surface_proof` (webhook, Phase 0) → `/sales/proof` ranks `sales_proof` rows via the pure `services/proof.py` (`rank_proof`/`normalize_proof`, keyword+tag overlap, no embeddings) and the agent renders them through the `show_proof` client tool into a widget Trust Panel. Content is curated **illustrative drafts** (`migrations/0002_sales_proof_seed.sql`, generic attribution, no fabricated named customers) editable via an admin Proof Library (`/api/proof` CRUD + AdminPage UI).
+- **Context:** The agent needs trust artifacts; none existed. Plan choice was "curated drafts now, admin-editable later."
+- **Rationale:** Pure ranking is unit-tested (8 proof tests) and embeddings are YAGNI for a tiny set; generic attribution avoids fabricating attributable third-party claims; admin CRUD lets real proof replace drafts without a deploy.
+- **Consequences:** Seed content is explicitly **not verified** — must be replaced before live prospect traffic (DESIGN §8 Q5; flagged in the migration header + admin UI copy). `is_valid_proof_type`/`PROOF_TYPES` is the shared type whitelist. Delivered as a stacked Draft PR on the Phase 2 branch.
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent — Phase 3)
+
+---
+
+## 2026-05-16: Pop Sales Agent Phase 4 — Assisted close
+
+- **Decision:** The brain directs `prefill_demo_form`/`navigate_site`/`open_booking` client tools; the widget calls `window.__TEAM_POP_HOST__` (Phase 0 bridge), stashing the captured fields + the ElevenLabs `conversation_id` (captured via `onConnect`). RequestForm one-shot reads the stash, prefills, shows a "your assistant filled this in" banner, and submits with `{conversation_id, source}`. `routes/client.py` looks up `sales_sessions` and merges `services/lead.build_lead_enrichment` (source/transcript/discovery/pic) onto the `agent_requests` row. Calendly is prefilled via URL params. The visitor always confirms — nothing is auto-submitted.
+- **Context:** Locked decision was "assisted close": agent prepares, visitor confirms with one click; lead + transcript saved.
+- **Rationale:** Reuses the existing `submit_request` + notifications + Calendly path; `conversation_id` links the lead to the server-side transcript/PIC without trusting the LLM to carry data; lead enrichment is pure + unit-tested; resilient (a failed session lookup never blocks the lead).
+- **Consequences:** Lead capture depends on the same `{{system__conversation_id}}` substitution as the brain (DESIGN §8 Q2) — without it the lead is still saved, just without transcript linkage. Completes the 5-phase program. Stacked Draft PR on the Phase 3 branch.
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent — Phase 4)
+
+---
+
+## 2026-05-16: Pop Sales Agent Phase 5 — Live bring-up tooling
+
+- **Decision:** Add turnkey bring-up rather than a REPL-driven manual process: pure `services/preflight.py` (tested), `preflight_sales.py` (env + brain URL + Supabase 0001/0002 + widget-dist checks, exit 1 = blocked), `provision_sales_agent.py` (resolves/validates the public brain URL, creates the agent, prints the `VITE_SALES_AGENT_ID` line), and `docs/pop-sales-agent/RUNBOOK.md`. First live target = the Team Pop website itself (no retarget); external-site embed (Consultadd/others) is a deliberate follow-on.
+- **Context:** User wants to test live; the program was code-complete but operationally fiddly (REPL provisioning, ngrok-bake-at-creation ordering, no preflight, the unverified `{{system__conversation_id}}`).
+- **Rationale:** A go/no-go preflight turns mid-call failures into an upfront PASS/WARN/FAIL; the provision CLI removes the REPL + encodes the ngrok-URL ordering gotcha; the runbook makes the steps that need the user's secrets unambiguous. Pure core is unit-tested; scripts are thin I/O wrappers (smoke-verified).
+- **Consequences:** Team Pop site first de-risks (proves the loop before generalising). External multi-site embed is explicitly deferred. The `{{system__conversation_id}}` check is now an explicit runbook step (§8 / RUNBOOK §8). Stacked Draft PR on Phase 4.
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent — Phase 5)
+
+---
+
+## 2026-05-16: Pop Sales Agent Phase 6 — One-command automated bring-up
+
+- **Decision:** Add `bringup.sh` (+ pure `services/bringup.py`, `apply_migrations.py`) that automates the entire live bring-up into one command, reusing the unit-tested helpers (parse_ngrok_url / ordered_migrations / env_upsert / missing_secrets) rather than reimplementing logic in bash. It hard-stops with an exact message at the only irreducible human inputs: the user's secret keys in `onboarding-service/.env`, optionally the Supabase SQL paste (skipped if `SUPABASE_DB_URL` set), and the actual voice test.
+- **Context:** User asked for it to be automated / "not something I have to run". Full zero-touch is impossible — it deploys to the user's paid ElevenLabs/OpenRouter/Supabase accounts and serves on their machine via their tunnel, and "test" is a human speaking. Honest ceiling = one command + a one-time secrets paste.
+- **Rationale:** Collapses ~8 error-prone manual steps into one; encodes the ngrok-bake-at-creation ordering and idempotent env wiring; preflight remains the go/no-go gate. Discovered in the process that `start_services.sh` (referenced by AGENTS.md) does not exist — `bringup.sh` starts onboarding-service itself and the Phase 5 RUNBOOK was corrected.
+- **Consequences:** A persistent hands-off deploy (no ngrok, runs on a host) is the only thing more automated than this and is a separate, larger scope (hosting creds + CORS hardening) — offered as a follow-up, not built. `.env`/`.env.*` are gitignored (no secret risk). Stacked Draft PR on Phase 5.
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent — Phase 6)
+
+---
+
+## 2026-05-17: Pop Sales Agent Phase 7 — Review remediation (4-reviewer pass)
+
+- **Decision:** After code-complete, ran 4 parallel expert reviewers (backend/frontend/ops/tests) and remediated all Critical + Important + valuable Minor findings. No Critical correctness/security defects existed in the product logic; the one **Critical** was an ops bug: `bringup.sh` captured the wrong PID via `( cmd & echo $! )` subshell so `--stop` leaked the service/ports — fixed with `( exec cmd )` + escalating kill + port-sweep teardown + re-run idempotency. Backend: transcript cap (unbounded O(n²) per-turn growth), stage normalization on load (closed a latent forward-bias-guard bypass), explicit parsed/fallback, `shared/llm.py` hardening. Tests: fixed a false-confidence proof-ranking test, pinned the `{{system__conversation_id}}` constant, added route-layer tests for the §8 path. Docs: corrected stale test counts and the nonexistent-`start_services.sh` reference in AGENTS.md.
+- **Pushback (reviewer recommendation not taken, with reasoning):** Frontend Important #2 said remove the forced navigate in `prefill_demo_form`. **Kept it** — `prefill_demo_form` IS the assisted close (the brain emits it only at the close per PROMPT_SALES); doing prefill+navigate in one directive is robust, vs. depending on the LLM to reliably chain a second `navigate_site`. It never auto-submits (visitor confirms). Made the behavior explicit instead of implicit: documented in the widget code, the ElevenLabs tool description, PROMPT_SALES, and here.
+- **Rationale:** Review early/often before merge; the reviewers' grounded findings (file:line, mutation-tested) were high-signal. Fixing pre-integration prevents the defects cascading.
+- **Consequences:** 58 py + 8 JS tests GREEN (was 50+8). The §8 `{{system__conversation_id}}` risk is unchanged in nature (still needs a live one-turn persistence assertion) but now has executable coverage of the safe-degradation contract and louder observability (`onConnect` warn). Delivered as Phase 7 remediation commits on the program branch; about to be integrated.
+- **Status:** Active
+- **Agent/Author:** Claude Code (Pop Sales Agent — Phase 7 review remediation)

@@ -5,6 +5,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
@@ -15,6 +16,7 @@ if _REPO_ROOT not in sys.path:
 
 from shared.config import ADMIN_PASSWORD
 from shared.db import get_supabase
+from services.lead import build_lead_enrichment
 from notifications import (
     send_slack_notification,
     send_client_ack_email,
@@ -33,6 +35,9 @@ class SubmitRequestBody(BaseModel):
     name: str
     email: str
     url: str
+    # Assisted close: link the lead to its sales conversation.
+    conversation_id: Optional[str] = None
+    source: Optional[str] = None
 
 
 class SendAgentBody(BaseModel):
@@ -54,12 +59,33 @@ def submit_request(body: SubmitRequestBody):
         if not url.startswith("http"):
             url = f"https://{url}"
 
-        result = sb.table("agent_requests").insert({
+        row = {
             "name": body.name.strip(),
             "email": body.email.strip().lower(),
             "url": url,
             "status": "pending",
-        }).execute()
+        }
+
+        # Assisted close — attach the sales conversation's transcript/PIC.
+        # Never block the lead if the session lookup fails.
+        if body.conversation_id or body.source:
+            session = None
+            if body.conversation_id:
+                try:
+                    rows = (
+                        sb.table("sales_sessions")
+                        .select("transcript,captured,pic")
+                        .eq("conversation_id", body.conversation_id)
+                        .limit(1)
+                        .execute()
+                        .data
+                    )
+                    session = rows[0] if rows else None
+                except Exception as e:
+                    logger.warning(f"sales_session lookup failed for lead: {e}")
+            row.update(build_lead_enrichment(session, source=body.source or "sales_agent"))
+
+        result = sb.table("agent_requests").insert(row).execute()
 
         request_id = result.data[0]["id"]
         logger.info(f"Request created: {request_id}")

@@ -16,11 +16,12 @@ function adminHeaders(password) {
   return { 'X-Admin-Password': password }
 }
 
-// Public
-export function submitRequest(name, email, url) {
+// Public. `extra` carries assisted-close context (conversation_id, source)
+// so the backend can attach the sales transcript/PIC to the lead.
+export function submitRequest(name, email, url, extra = {}) {
   return request('/api/submit-request', {
     method: 'POST',
-    body: JSON.stringify({ name, email, url }),
+    body: JSON.stringify({ name, email, url, ...extra }),
   })
 }
 
@@ -65,5 +66,33 @@ export function switchModel(password, agentId, storeId, llmModel) {
     method: 'POST',
     headers: adminHeaders(password),
     body: JSON.stringify({ agent_id: agentId, store_id: storeId, llm_model: llmModel }),
+  })
+}
+
+// Sales Proof Library (Phase 3)
+export function listProof(password) {
+  return request('/api/proof', { headers: adminHeaders(password) })
+}
+
+export function createProof(password, data) {
+  return request('/api/proof', {
+    method: 'POST',
+    headers: adminHeaders(password),
+    body: JSON.stringify(data),
+  })
+}
+
+export function updateProof(password, id, data) {
+  return request(`/api/proof/${id}`, {
+    method: 'POST',
+    headers: adminHeaders(password),
+    body: JSON.stringify(data),
+  })
+}
+
+export function deleteProof(password, id) {
+  return request(`/api/proof/${id}/delete`, {
+    method: 'POST',
+    headers: adminHeaders(password),
   })
 }

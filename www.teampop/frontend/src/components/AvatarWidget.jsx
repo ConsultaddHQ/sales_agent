@@ -4,6 +4,7 @@ import {
   useConversationClientTool,
 } from "@elevenlabs/react";
 import "../styles/AvatarWidget.css";
+import { reduceActivity, initialActivityState } from "../lib/visitorActivity";
 
 const DUMMY_IMAGE = "/image.png";
 const WIDGET_LAYER_STYLE = {
@@ -64,6 +65,55 @@ const ShoppingCard = ({ product, isActive, highlightPrice }) => {
   );
 };
 
+// Phase 3 — Trust Panel. The agent calls show_proof with items returned by
+// the surface_proof webhook; this renders them so the visitor SEES the proof.
+const PROOF_LABELS = {
+  case_study: "Case study",
+  roi: "ROI",
+  testimonial: "What customers say",
+  objection_rebuttal: "Worth knowing",
+};
+
+const ProofPanel = ({ items, onClose }) => (
+  <div className="proof-panel pointer-events-auto fixed inset-x-0 bottom-0 z-[60] mx-auto w-full max-w-md bg-zinc-900/95 backdrop-blur-md border-t border-white/10 rounded-t-2xl shadow-2xl max-h-[70vh] flex flex-col">
+    <div className="flex-none flex items-center justify-between px-4 py-3 border-b border-white/10">
+      <span className="text-white font-semibold text-sm tracking-wide">
+        Proof &amp; results
+      </span>
+      <button
+        onClick={onClose}
+        aria-label="Close proof"
+        className="text-gray-400 hover:text-white transition-colors rounded-md p-1 hover:bg-white/10"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+    <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+      {items.map((p, i) => (
+        <div
+          key={i}
+          className="rounded-xl border border-white/10 bg-zinc-800/60 p-3 flex flex-col gap-1.5"
+        >
+          <span className="text-[10px] uppercase tracking-widest text-blue-300 font-bold">
+            {PROOF_LABELS[p?.type] || "Proof"}
+          </span>
+          {p?.title && (
+            <div className="text-white text-sm font-semibold">{p.title}</div>
+          )}
+          {p?.body && (
+            <div className="text-gray-300 text-sm leading-snug">{p.body}</div>
+          )}
+          {p?.metric && (
+            <div className="text-green-300 text-sm font-bold mt-1">{p.metric}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
 const formatMessage = (text) => {
   if (!text) return "";
   let formatted = text
@@ -88,6 +138,7 @@ function AvatarInner({
   const [agentSubtitle, setAgentSubtitle] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
   const [highlightPrice, setHighlightPrice] = useState(false);
+  const [proofItems, setProofItems] = useState([]);
 
   const priceTimerRef = useRef(null);
   const subtitleTimerRef = useRef(null);
@@ -98,6 +149,9 @@ function AvatarInner({
   const isAgentTriggeredRef = useRef(false);
   const isSyntheticMessageRef = useRef(false);
   const syncDebounceRef = useRef(null);
+  // ElevenLabs conversation id — links an assisted-close lead back to its
+  // sales_session (transcript/PIC). Captured on connect.
+  const conversationIdRef = useRef("");
 
   useEffect(() => {
     return () => {
@@ -219,6 +273,21 @@ function AvatarInner({
         }
       }
     },
+    onConnect: (info) => {
+      conversationIdRef.current =
+        info?.conversationId || info?.conversation_id || "";
+      if (conversationIdRef.current) {
+        console.log("[ElevenLabs] connected:", conversationIdRef.current);
+      } else {
+        // Visible signal: assisted-close lead won't link to its
+        // sales_session transcript/PIC (DESIGN §8). SDK shape changed?
+        console.warn(
+          "[ElevenLabs] connected but no conversation id in onConnect payload —",
+          "assisted-close lead↔transcript linkage will be skipped. info:",
+          info,
+        );
+      }
+    },
     onError: (error) => console.error("ElevenLabs error:", error),
     onDisconnect: (details) => {
       console.error(
@@ -292,6 +361,68 @@ function AvatarInner({
     return `Main view enriched for ${desc.product_id}`;
   });
 
+  // Phase 3 — render proof the agent retrieved via surface_proof.
+  useConversationClientTool("show_proof", (parameters) => {
+    const items = Array.isArray(parameters?.proof) ? parameters.proof : [];
+    console.log("show_proof called:", items.length, "items");
+    setProofItems(items);
+    if (items.length) {
+      setAgentSubtitle(
+        `Showing ${items.length} proof point${items.length > 1 ? "s" : ""}`,
+      );
+      if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+      subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 4000);
+    }
+    return items.length
+      ? `Displayed ${items.length} proof item(s)`
+      : "No proof to display";
+  });
+
+  // Phase 4 — assisted-close action tools. They act on the host marketing
+  // site via window.__TEAM_POP_HOST__ (Phase 0 bridge). No-op gracefully if
+  // the bridge is absent (e.g. the shopping/demo embed).
+  const host = () =>
+    typeof window !== "undefined" ? window.__TEAM_POP_HOST__ : undefined;
+
+  useConversationClientTool("navigate_site", (parameters) => {
+    const h = host();
+    if (!h) return "Navigation unavailable here";
+    const target = parameters?.target || "";
+    const r = h.navigate(target, { highlight: !!parameters?.highlight });
+    return r?.ok ? `Navigated to ${target}` : `Could not navigate to ${target}`;
+  });
+
+  useConversationClientTool("prefill_demo_form", (parameters) => {
+    const h = host();
+    if (!h) return "Form unavailable here";
+    h.prefillDemoForm({
+      name: parameters?.name || "",
+      email: parameters?.email || "",
+      company: parameters?.company || "",
+      use_case: parameters?.use_case || "",
+      conversation_id: conversationIdRef.current,
+    });
+    // INTENTIONAL: prefill IS the assisted close — the brain only emits
+    // this at the close (PROMPT_SALES), so we bring the visitor to the
+    // pre-filled form in one directive. Doing it here (vs. relying on the
+    // LLM to also chain navigate_site) is the robust path. It never
+    // submits — the visitor reviews + confirms. Decided behavior; see
+    // decisions.md 2026-05-17 (review remediation).
+    h.navigate("request-demo");
+    return "Demo form pre-filled — visitor can review and confirm";
+  });
+
+  useConversationClientTool("open_booking", (parameters) => {
+    const h = host();
+    if (!h) return "Booking unavailable here";
+    h.openBooking({
+      name: parameters?.name || "",
+      email: parameters?.email || "",
+      conversation_id: conversationIdRef.current,
+    });
+    return "Opened the booking calendar";
+  });
+
   const { sendContextualUpdate, sendUserMessage } = conversation;
 
   const visualState =
@@ -332,6 +463,30 @@ function AvatarInner({
     },
     [conversation.status, sendContextualUpdate, sendUserMessage],
   );
+
+  // Phase 2 — visitor-activity awareness. The host site dispatches
+  // `teampop:activity` events (section views, idle, CTA hover, route,
+  // scroll). We forward only salient ones to the agent as AMBIENT context
+  // (sendContextualUpdate) — never a forced turn. The sales brain decides
+  // what to do with it, so this can't regress into duplicate narration.
+  const activityStateRef = useRef(initialActivityState());
+  useEffect(() => {
+    function onActivity(e) {
+      if (conversation.status !== "connected") return;
+      const { state, notify, message } = reduceActivity(
+        activityStateRef.current,
+        e?.detail,
+        Date.now(),
+      );
+      activityStateRef.current = state;
+      if (notify && message) {
+        console.log("[awareness]", message);
+        sendContextualUpdate(message);
+      }
+    }
+    window.addEventListener("teampop:activity", onActivity);
+    return () => window.removeEventListener("teampop:activity", onActivity);
+  }, [conversation.status, sendContextualUpdate]);
 
   useEffect(() => {
     const carouselEl = carouselRef.current;
@@ -642,6 +797,10 @@ function AvatarInner({
             </div>
           </div>
         </div>
+      )}
+
+      {proofItems.length > 0 && (
+        <ProofPanel items={proofItems} onClose={() => setProofItems([])} />
       )}
     </>
   );

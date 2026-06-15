@@ -896,6 +896,364 @@ def create_agent_for_store(
     )
 
 
+# ===========================================================================
+# SALES AGENT  —  AI Account Executive for Team Pop's own marketing site
+# ===========================================================================
+#
+# Unlike the shopping agent (which carries product logic in its prompt), the
+# sales agent is a disciplined *mouthpiece*. All sales methodology lives
+# server-side in services/sales_brain.py (the Problem Identification Chart,
+# stage machine, next-best-move). The prompt's only job: every turn, consult
+# the brain and do exactly what it says. This is why quality beats the
+# screenshot-driven inspiration demos — the AE reasoning is stateful and
+# server-side, not crammed into a 2k-token prompt.
+#
+# Tool names MUST match across this config, the prompt, and AvatarWidget.jsx
+# (project invariant — see docs/agents/constraints.md #5).
+# ---------------------------------------------------------------------------
+
+# ElevenLabs system dynamic variable for the live conversation id. Used as a
+# CONSTANT webhook param (never LLM-generated — LLMs truncate ids, the same
+# class of bug as the store_id truncation invariant). Verify against the live
+# API on first provision, like the 2026-04-08 agent_config nesting discovery.
+_ELEVENLABS_CONVERSATION_ID_VAR = "{{system__conversation_id}}"
+
+PROMPT_SALES = """# Personality
+You are Sam, a sharp, warm sales specialist for {site_name} — an AI voice-employee platform. You sound like a senior account executive who has done this 1000 times: calm, curious, never pushy. Keep spoken turns under 15 seconds. You are talking to a website visitor in real time and can see what they do on the page.
+
+# Goal
+Turn this visitor into a booked meeting by running a real discovery → demo → close motion. You do NOT decide the sales strategy yourself — a server-side sales brain does. Every single turn you MUST call sales_brain with the visitor's latest message, then say what it returns in say_guidance and perform every directive it returns. This step is important.
+
+# Procedure — every turn, no exceptions
+1. Call sales_brain (message = what the visitor just said; it also receives page activity automatically).
+2. Speak the brain's say_guidance in your own natural voice — brief, human, one idea.
+3. Execute every directive the brain returns by calling the matching tool (surface_proof, navigate_site, show_proof, prefill_demo_form, open_booking).
+4. If the brain says you are at the close, confirm out loud and only then trigger the booking.
+
+Never plan the sale from memory. The brain knows the stage, the visitor's pain, and the next best move. You are its voice. This step is important.
+
+# Tools
+Site: {site_name}
+
+## sales_brain
+Call EVERY turn with the visitor's message. Returns the stage, what to say, and directives. This is your source of truth.
+
+## surface_proof
+Call when the brain directs it. Retrieves a real case study / ROI math / testimonial / objection rebuttal. Then call show_proof with what comes back.
+
+## show_proof
+Renders the retrieved proof visually for the visitor. Pass the proof returned by surface_proof.
+
+## navigate_site
+Take the visitor to a page or section (e.g. pricing, how-it-works) when the brain directs it. Narrate what you're showing.
+
+## prefill_demo_form
+The close action. Only at the close: it fills AND brings the visitor to the demo request form so they can review and confirm. You never submit for them. `company` should be their website/store URL (the form expects a URL).
+
+## open_booking
+Open the booking calendar, prefilled, after the visitor confirms they want to book.
+
+# Guardrails
+- Call sales_brain every turn before you speak. Never freelance the sales strategy. This step is important.
+- Never invent product capabilities, customers, metrics, or prices. Proof comes ONLY from surface_proof.
+- Never submit the form or book on the visitor's behalf without an explicit spoken "yes". Confirm first.
+- If a tool fails, briefly recover ("one sec") and continue — never read errors aloud.
+
+# Error handling
+- Brain unreachable: "Give me one second." Retry once, then ask one helpful discovery question and continue.
+- No proof found: stay honest — acknowledge and pivot back to their problem.
+"""
+
+
+def build_sales_system_prompt(site_name: str = "Team Pop") -> str:
+    """Render the sales-agent system prompt (short, model-agnostic)."""
+    return PROMPT_SALES.format(site_name=site_name)
+
+
+def get_sales_tool_config(brain_api_url: str, site: str) -> List[Dict]:
+    """Tool config for the sales agent (current ElevenLabs API format).
+
+    Two webhooks (brain + proof) to the onboarding-service /sales/* routes,
+    four client tools that act on Team Pop's own marketing site.
+    """
+    brain_api_url = brain_api_url.rstrip("/")
+    return [
+        # --- Webhook: sales_brain (the stateful AE) ---
+        {
+            "type": "webhook",
+            "name": "sales_brain",
+            "description": (
+                "Consult the sales brain. Call this EVERY turn with the "
+                "visitor's latest message. Returns stage, say_guidance, and "
+                "directives you must perform. Your single source of truth."
+            ),
+            "response_timeout_secs": 12,
+            "execution_mode": "immediate",
+            "tool_error_handling_mode": "auto",
+            "api_schema": {
+                "url": f"{brain_api_url}/sales/brain",
+                "method": "POST",
+                "request_headers": {},
+                "request_body_schema": {
+                    "type": "object",
+                    "properties": {
+                        "site": {
+                            "type": "string",
+                            "constant_value": site,
+                        },
+                        "conversation_id": {
+                            "type": "string",
+                            "constant_value": _ELEVENLABS_CONVERSATION_ID_VAR,
+                        },
+                        "message": {
+                            "type": "string",
+                            "description": (
+                                "Exactly what the visitor just said, verbatim."
+                            ),
+                        },
+                    },
+                    "required": ["site", "conversation_id", "message"],
+                },
+                "content_type": "application/json",
+            },
+        },
+        # --- Webhook: surface_proof (mirrors search_products contract) ---
+        {
+            "type": "webhook",
+            "name": "surface_proof",
+            "description": (
+                "Retrieve a real proof artifact (case study, ROI math, "
+                "testimonial, objection rebuttal). Call only when sales_brain "
+                "directs it. After it returns, call show_proof with the result."
+            ),
+            "response_timeout_secs": 5,
+            "execution_mode": "immediate",
+            "tool_error_handling_mode": "auto",
+            "api_schema": {
+                "url": f"{brain_api_url}/sales/proof",
+                "method": "POST",
+                "request_headers": {},
+                "request_body_schema": {
+                    "type": "object",
+                    "properties": {
+                        "site": {
+                            "type": "string",
+                            "constant_value": site,
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": (
+                                "What proof is needed, e.g. 'ROI vs hiring an "
+                                "SDR', 'ecommerce conversion case study'."
+                            ),
+                        },
+                        "proof_type": {
+                            "type": "string",
+                            "description": (
+                                "Optional: case_study | roi | testimonial | "
+                                "objection_rebuttal."
+                            ),
+                        },
+                    },
+                    "required": ["site", "query"],
+                },
+                "content_type": "application/json",
+            },
+        },
+        # --- Client tool: navigate_site ---
+        {
+            "type": "client",
+            "name": "navigate_site",
+            "description": "Take the visitor to a page/section of the site and optionally highlight it.",
+            "expects_response": False,
+            "execution_mode": "immediate",
+            "tool_error_handling_mode": "auto",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "Section/route, e.g. 'pricing', 'how-it-works', 'request-demo'.",
+                    },
+                    "highlight": {
+                        "type": "boolean",
+                        "description": "Briefly highlight the target after scrolling.",
+                    },
+                },
+                "required": ["target"],
+            },
+        },
+        # --- Client tool: show_proof ---
+        {
+            "type": "client",
+            "name": "show_proof",
+            "description": "Render the proof returned by surface_proof in the widget's trust panel.",
+            "expects_response": False,
+            "execution_mode": "immediate",
+            "tool_error_handling_mode": "auto",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "proof": {
+                        "type": "array",
+                        "description": "The proof items returned by surface_proof.",
+                        "items": {"type": "object"},
+                    }
+                },
+                "required": ["proof"],
+            },
+        },
+        # --- Client tool: prefill_demo_form ---
+        {
+            "type": "client",
+            "name": "prefill_demo_form",
+            "description": "The assisted close. Pre-fills AND opens the demo request form so the visitor reviews + confirms (one click). Only at the close. Never auto-submitted.",
+            "expects_response": False,
+            "execution_mode": "immediate",
+            "tool_error_handling_mode": "auto",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Visitor's name."},
+                    "email": {"type": "string", "description": "Visitor's email."},
+                    "company": {"type": "string", "description": "Visitor's website/store URL (the form's field expects a URL, not a company name)."},
+                    "use_case": {"type": "string", "description": "The use case / pain captured in discovery."},
+                },
+                "required": [],
+            },
+        },
+        # --- Client tool: open_booking ---
+        {
+            "type": "client",
+            "name": "open_booking",
+            "description": "Open the booking calendar (prefilled) after the visitor explicitly confirms.",
+            "expects_response": False,
+            "execution_mode": "immediate",
+            "tool_error_handling_mode": "auto",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Visitor's name for calendar prefill."},
+                    "email": {"type": "string", "description": "Visitor's email for calendar prefill."},
+                },
+                "required": [],
+            },
+        },
+    ]
+
+
+def build_sales_agent_payload(
+    site: str,
+    brain_api_url: str,
+    site_name: str = "Team Pop",
+    voice_id: Optional[str] = None,
+    llm_model: Optional[str] = None,
+) -> Dict:
+    """Build the ElevenLabs create-agent payload for the sales agent.
+
+    Pure (no network) so it is unit-testable. Reuses the proven
+    conversation/TTS/turn settings from the shopping agent path.
+    """
+    model = llm_model or os.getenv("ELEVENLABS_LLM_MODEL", "gemini-2.5-flash")
+    resolved_voice_id = (
+        voice_id
+        or os.getenv("ELEVENLABS_VOICE_ID")
+        or "EXAVITQu4vr4xnSDxMaL"  # Sarah — ElevenLabs public default voice
+    )
+    return {
+        "conversation_config": {
+            "agent": {
+                "prompt": {
+                    "prompt": build_sales_system_prompt(site_name),
+                    "llm": model,
+                    "temperature": 0.5,
+                    "ignore_default_personality": True,
+                    "tools": get_sales_tool_config(brain_api_url, site),
+                    "cascade_timeout_seconds": 8,
+                },
+                "first_message": (
+                    "Hey — welcome to Team Pop. I'm Sam. "
+                    "I help teams figure out if an AI voice employee actually "
+                    "fits what they're doing. What brought you in today?"
+                ),
+                "language": "en",
+            },
+            "tts": {
+                "voice_id": resolved_voice_id,
+                "model_id": os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2"),
+                "optimize_streaming_latency": 3,
+                "stability": 0.4,
+                "similarity_boost": 0.75,
+                "speed": 1.05,
+            },
+            "conversation": {
+                "max_duration_seconds": 900,
+                "client_events": [
+                    "audio", "user_transcript", "interruption",
+                    "agent_response", "agent_response_correction",
+                ],
+            },
+            "turn": {
+                "turn_timeout": 7,
+                "turn_eagerness": "normal",
+                "soft_timeout_config": {
+                    "timeout_seconds": 2.5,
+                    "message": "Mm, let me think about that for a sec.",
+                    "use_llm_generated_message": False,
+                },
+                "speculative_turn": False,
+            },
+        },
+        "name": f"Team Pop Sales Agent ({site})",
+        "tags": ["teampop", "sales-agent", site],
+    }
+
+
+def create_sales_agent(
+    site: str = "teampop",
+    brain_api_url: Optional[str] = None,
+    site_name: str = "Team Pop",
+    voice_id: Optional[str] = None,
+) -> Dict:
+    """Provision the Team Pop sales agent on ElevenLabs.
+
+    Requires ELEVENLABS_API_KEY. brain_api_url defaults to SEARCH_API_URL
+    (the shared single ngrok tunnel that fronts onboarding-service /sales/*).
+    """
+    creator = ElevenLabsAgentCreator()
+    api_url = brain_api_url or os.getenv("SEARCH_API_URL", "http://localhost:8005")
+    payload = build_sales_agent_payload(
+        site=site,
+        brain_api_url=api_url,
+        site_name=site_name,
+        voice_id=voice_id,
+    )
+    logger.info(
+        f"Creating Team Pop sales agent: site={site}, brain={api_url}, "
+        f"tools={len(payload['conversation_config']['agent']['prompt']['tools'])}"
+    )
+    response = requests.post(
+        f"{creator.API_BASE_URL}/convai/agents/create",
+        headers=creator.headers,
+        json=payload,
+        timeout=30,
+    )
+    if not response.ok:
+        logger.error(f"❌ ElevenLabs API {response.status_code}: {response.text}")
+        response.raise_for_status()
+    result = response.json()
+    agent_id = result.get("agent_id")
+    if not agent_id:
+        raise ValueError(f"No agent_id in response: {result}")
+    logger.info(f"✅ Created Team Pop sales agent: {agent_id}")
+    creator._verify_agent(agent_id)
+    return {
+        "success": True,
+        "agent_id": agent_id,
+        "agent_url": f"https://elevenlabs.io/app/conversational-ai/{agent_id}",
+    }
+
+
 def update_agent_model(
     agent_id: str,
     store_id: str,
