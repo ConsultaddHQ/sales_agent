@@ -232,6 +232,10 @@ Use immediately after search_products.
 Pass the complete products array from the result.
 This is required for UI rendering.
 
+## get_product_details
+Use when the user asks for specific product information (sizes, colors, fabric, detailed description) about a product you have already found.
+Only call this if you don't already have the information. Do NOT guess.
+
 # Guardrails
 - After a search_products result arrives, your very next action must be update_products. Do not speak between the tool result and the update_products call — the UI must update BEFORE the customer hears you describe products. This step is important.
 - Never describe product options before search_products + update_products.
@@ -417,6 +421,35 @@ class ElevenLabsAgentCreator:
                     "content_type": "application/json"
                 }
             },
+            # --- Webhook tool: get_product_details ---
+            {
+                "type": "webhook",
+                "name": "get_product_details",
+                "description": "Fetch detailed information about a specific product, such as available sizes, colors, and full description (including fabric/materials). Use this ONLY when the user asks for specific details about a product you've already found.",
+                "response_timeout_secs": 5,
+                "execution_mode": "immediate",
+                "tool_error_handling_mode": "auto",
+                "api_schema": {
+                    "url": f"{search_api_url}/product-details",
+                    "method": "POST",
+                    "request_headers": {},
+                    "request_body_schema": {
+                        "type": "object",
+                        "properties": {
+                            "store_id": {
+                                "type": "string",
+                                "constant_value": store_id,
+                            },
+                            "product_id": {
+                                "type": "string",
+                                "description": "The unique ID of the product to fetch details for. You can find this in the results from search_products.",
+                            }
+                        },
+                        "required": ["store_id", "product_id"]
+                    },
+                    "content_type": "application/json"
+                }
+            },
             # --- Client tool: update_products ---
             {
                 "type": "client",
@@ -592,7 +625,7 @@ class ElevenLabsAgentCreator:
                 logger.warning("⚠️ ignore_default_personality is NOT true — ElevenLabs default personality is active")
             if not stored_tools:
                 logger.error("❌ CRITICAL: Agent has NO tools configured!")
-            expected_tool_names = {"search_products", "update_products"}
+            expected_tool_names = {"search_products", "update_products", "get_product_details"}
             if actual_tool_names != expected_tool_names:
                 logger.warning(
                     "⚠️ Tool mismatch. Expected exactly %s, got %s",

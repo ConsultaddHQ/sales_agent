@@ -45,6 +45,11 @@ class SearchRequest(BaseModel):
     query: str = Field(..., examples=["red sneakers under 100"])
 
 
+class ProductDetailsRequest(BaseModel):
+    store_id: str = Field(..., examples=["c5a0c8a1-0e3a-4e0e-a5f4-4cb1f6c8a123"])
+    product_id: str = Field(..., examples=["some-product-id-uuid"])
+
+
 class ProductOut(BaseModel):
     id: str
     name: str
@@ -149,6 +154,7 @@ app.add_middleware(RequestLoggingMiddleware)
 from shared.config import IMAGE_SERVER_URL
 from shared.db import get_supabase
 from shared.embeddings import get_embedder
+from shared.parsing import strip_html
 
 
 async def _encode_query_embedding(query: str) -> List[float]:
@@ -363,6 +369,50 @@ async def search(
         )
 
     return SearchResponse(products=serialized_products, pitch=pitch)
+
+
+@app.post("/product-details")
+@limiter.limit(SEARCH_RATE_LIMIT)
+async def get_product_details(
+    request: Request,
+    req: ProductDetailsRequest,
+) -> Dict[str, Any]:
+    # --- Validation ---
+    try:
+        uuid.UUID(req.store_id)
+        uuid.UUID(req.product_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid store_id or product_id format. Must be a valid UUID.")
+
+    sb = get_supabase()
+    
+    # Query the products table
+    try:
+        resp = sb.table("products").select("name, metadata").eq("id", req.product_id).eq("store_id", req.store_id).execute()
+    except Exception as e:
+        logger.exception("Supabase product query failed")
+        raise HTTPException(status_code=500, detail=f"database query failed: {str(e)}")
+
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    row = resp.data[0]
+    name = row.get("name")
+    metadata = row.get("metadata") or {}
+
+    # Extract and clean up data for the LLM
+    variants = metadata.get("variants", [])
+    options = metadata.get("options", [])
+    full_html = metadata.get("full_description_html", "")
+    full_text = strip_html(full_html) if full_html else ""
+    
+    # We want to give the LLM a clean, concise representation
+    return {
+        "product_name": name,
+        "available_options": options,
+        "variants": variants,
+        "full_description": full_text
+    }
 
 
 # ---------------------------------------------------------------------------

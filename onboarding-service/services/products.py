@@ -37,6 +37,7 @@ class ProductRow:
     local_image_path: Optional[str]
     embedding: List[float]
     handle: str
+    metadata: Dict[str, Any]
     created_at: datetime
 
 
@@ -95,6 +96,24 @@ def build_product_rows(
             if variants:
                 price = parse_price(variants[0].get("price"))
 
+            # Build metadata (rich product info)
+            metadata = {
+                "options": product.get("options", []),
+                "variants": [
+                    {
+                        "id": v.get("id"),
+                        "title": v.get("title"),
+                        "price": v.get("price"),
+                        "available": v.get("available"),
+                        "sku": v.get("sku"),
+                    }
+                    for v in variants
+                ],
+                "full_description_html": product.get("body_html", ""),
+                "vendor": product.get("vendor", ""),
+                "product_type": product.get("product_type", ""),
+            }
+
             # Image URL (first image)
             image_url = None
             images = product.get("images", [])
@@ -125,6 +144,7 @@ def build_product_rows(
                 local_image_path=f"{store_id}/{local_image_path}" if local_image_path else None,
                 embedding=embedding,
                 handle=handle,
+                metadata=metadata,
                 created_at=datetime.now(),
             ))
         except Exception as e:
@@ -157,6 +177,7 @@ def store_products_in_supabase(rows: List[ProductRow]) -> None:
             "product_url": row.product_url,
             "local_image_path": row.local_image_path,
             "embedding": row.embedding,
+            "metadata": row.metadata,
             "created_at": row.created_at.isoformat(),
         })
 
