@@ -60,8 +60,10 @@ Never do more than one clarifying exchange before searching.
 
 When searching:
 1. Call search_products with a strong, expanded query
-2. Call update_products with the full products array from the result
+2. Call update_products with the full products array from the result — BEFORE speaking any words about the results
 3. Then describe what you found
+
+A short filler phrase BEFORE step 1 is fine ("Let me find that."). NEVER speak between step 1 and step 2. The carousel must appear before you describe anything. This step is important.
 
 When you see [CAROUSEL UPDATE], react naturally to the currently selected item.
 If the user says "the second one" or "that blue one", describe from the latest shown results by position/name. Do not call any navigation tool.
@@ -78,6 +80,7 @@ Pass the complete products array from search results.
 Without this call, the customer sees nothing. This step is important.
 
 # Guardrails
+- After a search_products result arrives, your VERY NEXT action must be update_products. Do not say any words between the tool result and the update_products call. The screen must update BEFORE the customer hears you describe products. This step is important.
 - Always call search_products then update_products before describing product options. This step is important.
 - Never invent product names, prices, or specs.
 - For checkout, shipping, sizing, or policy questions, direct users to the "Shop Now" flow.
@@ -103,8 +106,10 @@ Store ID: {store_id} | Categories: {product_categories} | Prices: {price_range}
 For product/browsing requests, do exactly this:
 1. Have one natural clarification turn first (max one), unless the request is specific or impatient.
 2. Call search_products.
-3. Call update_products with the full returned products array.
+3. Call update_products with the full returned products array — BEFORE speaking any words about results.
 4. Then speak about the results.
+
+NEVER speak between step 2 and step 3. The carousel must appear before you describe the products. A short filler phrase BEFORE step 2 is fine ("Let me find that."). This step is important.
 
 If the user says "just show me", "show me everything", or "surprise me", skip clarification and search immediately.
 If the request is already specific, search immediately.
@@ -127,6 +132,7 @@ Without update_products, the user sees nothing. This step is important.
 Natural storefront conversation: brief, specific, and responsive to user intent. On [CAROUSEL UPDATE], acknowledge what they selected and continue.
 
 # Guardrails
+- After search_products returns, call update_products IMMEDIATELY — no words between them. The UI must update BEFORE you speak about products. This step is important.
 - NEVER describe product options before search_products + update_products.
 - NEVER invent product details.
 - For purchase/shipping/sizing, direct to "Shop Now".
@@ -142,6 +148,7 @@ Natural storefront conversation: brief, specific, and responsive to user intent.
 # dual positive/negative per tool, critical rules in # Guardrails for special
 # model attention. Repeat only the single most important rule.
 PROMPT_GLM = """# Guardrails
+- After search_products returns, your VERY NEXT action must be update_products. Do NOT speak between the tool result and update_products. The carousel must update BEFORE you describe the products. This step is important.
 - Always call search_products then update_products before describing products. This step is important.
 - Never invent product details.
 - Never ask more than one clarifying turn before searching.
@@ -161,8 +168,10 @@ Skip clarification and search immediately when the request is specific or the us
 
 Search sequence:
 1. search_products (expanded query)
-2. update_products (full products array)
+2. update_products (full products array) — before speaking ANY words about results
 3. Speak about results
+
+Filler BEFORE step 1 is fine ("Let me find that."). NEVER speak between step 1 and step 2. This step is important.
 
 If user references "the second one" style language, resolve from the latest results and describe it.
 On [CAROUSEL UPDATE], react to the selected product naturally.
@@ -205,8 +214,10 @@ After one clarifying reply, do not ask another clarification. Search right away 
 
 When searching, always do:
 1. search_products
-2. update_products with the full returned products array
+2. update_products with the full returned products array — BEFORE saying any words about the results
 3. describe results and guide next choice
+
+A short filler BEFORE step 1 is fine ("Let me check that."). NEVER speak between step 1 and step 2. The customer must see the carousel update on screen BEFORE hearing you describe what you found. This step is important.
 
 For references like "the second one", resolve by position from the latest shown products and describe that item.
 When you receive [CAROUSEL UPDATE], acknowledge the newly selected product naturally.
@@ -222,6 +233,7 @@ Pass the complete products array from the result.
 This is required for UI rendering.
 
 # Guardrails
+- After a search_products result arrives, your very next action must be update_products. Do not speak between the tool result and the update_products call — the UI must update BEFORE the customer hears you describe products. This step is important.
 - Never describe product options before search_products + update_products.
 - Never invent product names, prices, or details.
 - Route checkout/shipping/sizing to "Shop Now".
@@ -255,8 +267,10 @@ Never do more than one clarification turn before searching.
 
 Search sequence (mandatory):
 1. call search_products
-2. call update_products with the full products array
+2. call update_products with the full products array — BEFORE saying any words about results
 3. then describe results
+
+A short filler BEFORE step 1 is fine ("One sec."). NEVER speak between step 1 and step 2. The carousel must appear BEFORE you speak about the products. This step is important.
 
 If user says "the second one" / similar, resolve from latest shown products and describe that product.
 On [CAROUSEL UPDATE], respond naturally to the current item.
@@ -272,6 +286,7 @@ Pass the full products array from search results.
 Without update_products, the UI does not update.
 
 # Guardrails
+- After search_products returns, your very next action must be update_products. Do not say any words between the tool result and the update_products call. The screen must update BEFORE you describe products. This step is important.
 - Never describe product options before both tools run.
 - Never invent product details.
 - Direct purchase/shipping/sizing to "Shop Now".
@@ -351,7 +366,7 @@ class ElevenLabsAgentCreator:
           - Qwen3-30B-A3B: aggressive reinforcement, one-shot example
           - GLM-4.5-Air: must-haves at top, concise
         """
-        model = llm_model or os.getenv("ELEVENLABS_LLM_MODEL", "gemini-2.5-flash")
+        model = llm_model or os.getenv("ELEVENLABS_LLM_MODEL", "claude-haiku-4-5")
         template = _select_prompt_for_model(model)
         logger.info(f"Selected prompt template for model '{model}': {template[:40]}...")
 
@@ -415,8 +430,24 @@ class ElevenLabsAgentCreator:
                     "properties": {
                         "products": {
                             "type": "array",
-                            "description": "Array of products from search_products result",
-                            "items": {"type": "object"}
+                            "description": (
+                                "The products array from the search_products result. "
+                                "Copy each product object through VERBATIM — especially "
+                                "image_url and product_url. Do NOT shorten, summarize, or "
+                                "omit image_url; the carousel cannot render images without it."
+                            ),
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "string", "description": "Product id, copied verbatim from the search result"},
+                                    "name": {"type": "string", "description": "Product name"},
+                                    "price": {"type": "number", "description": "Product price (omit if null)"},
+                                    "description": {"type": "string", "description": "Product description"},
+                                    "image_url": {"type": "string", "description": "Full image URL, copied verbatim from the search result — never truncate or alter"},
+                                    "product_url": {"type": "string", "description": "Full product URL, copied verbatim"},
+                                },
+                                "required": ["id", "name", "image_url"],
+                            },
                         }
                     },
                     "required": ["products"]
@@ -569,7 +600,12 @@ class ElevenLabsAgentCreator:
                     sorted(actual_tool_names),
                 )
             if stored_llm in ("<not set>", "gemini-2.5-flash"):
-                logger.warning(f"⚠️ LLM is '{stored_llm}' — may not follow complex prompts well")
+                logger.warning(
+                    f"⚠️ LLM is '{stored_llm}' — this model was disqualified by "
+                    f"the 2026-04-17 latency A/B test (1002 timeouts + slow 2nd-turn "
+                    f"reasoning). Consider upgrading to claude-haiku-4-5 via "
+                    f"testing/latency/upgrade_agent_model.py"
+                )
 
         except Exception as e:
             logger.warning(f"Agent verification skipped due to error: {e}")
@@ -581,9 +617,17 @@ class ElevenLabsAgentCreator:
         search_api_url: Optional[str] = None,
         voice_id: Optional[str] = None,
         agent_name: Optional[str] = None,
-        tags: Optional[List[str]] = None
+        tags: Optional[List[str]] = None,
+        llm_model: Optional[str] = None,
     ) -> Dict:
-        """Create a new conversational agent for a store."""
+        """Create a new conversational agent for a store.
+
+        llm_model:
+            Override the ElevenLabs `llm` string for this agent only
+            (e.g. "claude-haiku-4-5"). If None, falls back to the
+            ELEVENLABS_LLM_MODEL env var (default "gemini-2.5-flash").
+            Used by scripts/create_test_agents.py for the latency A/B matrix.
+        """
         # Validate store_id is a proper UUID before baking it into the webhook
         try:
             uuid.UUID(store_id)
@@ -596,8 +640,11 @@ class ElevenLabsAgentCreator:
         # Get search API URL
         api_url = search_api_url or os.getenv('SEARCH_API_URL', 'http://localhost:8006')
 
-        # Build model-aware system prompt
-        llm_model = os.getenv("ELEVENLABS_LLM_MODEL", "gemini-2.5-flash")
+        # Build model-aware system prompt (per-call override wins over env var).
+        # Default is claude-haiku-4-5 per the 2026-04-17 decision (6-model A/B
+        # test: 100% tool reliability, median User→Products ~3.4s, zero 1002
+        # timeouts). See docs/agents/decisions.md.
+        llm_model = llm_model or os.getenv("ELEVENLABS_LLM_MODEL", "claude-haiku-4-5")
         system_prompt = self._build_system_prompt(store_id, store_context, llm_model=llm_model)
 
         # Get tools configuration
@@ -752,10 +799,11 @@ class ElevenLabsAgentCreator:
             creator.update_agent(
                 agent_id="abc123",
                 store_id="c5a0c8a1-...",
-                llm_model="gemini-2.5-flash",
+                llm_model="claude-haiku-4-5",
             )
         """
-        model = llm_model or os.getenv("ELEVENLABS_LLM_MODEL", "gemini-2.5-flash")
+        # Default mirrors create_agent (Claude Haiku 4.5 — 2026-04-17 decision).
+        model = llm_model or os.getenv("ELEVENLABS_LLM_MODEL", "claude-haiku-4-5")
         api_url = search_api_url or os.getenv("SEARCH_API_URL", "http://localhost:8006")
 
         system_prompt = self._build_system_prompt(store_id, store_context, llm_model=model)

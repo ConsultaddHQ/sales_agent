@@ -1,7 +1,7 @@
 # Roadmap — Tasks, Improvements & Pending Work
 
 > **Purpose:** Single source of truth for what needs to be done, by whom, and priority.
-> **Updated:** 2026-04-14
+> **Updated:** 2026-04-17
 > **Rule:** Agents update this after completing work or discovering new tasks. Remove done items, add new ones.
 
 ---
@@ -28,6 +28,9 @@ These cannot be done by an agent — they require account access, credentials, o
 
 | Task | Owner | Status | Effort | Notes |
 |------|-------|--------|--------|-------|
+| Upgrade existing production agents to Claude Haiku 4.5 | Human | ⬜ Pending | 15 min per agent | Run `./onboarding-service/.venv/bin/python testing/latency/upgrade_agent_model.py --agent-id <id> --store-id <uuid>` for each live agent that should inherit the 2026-04-17 winner. `--from-json` for batch. |
+| Product-description strategy for larger catalogs | Agent | ⬜ Pending | 3–4 hrs | Today we truncate to 200 chars in `_truncate_for_voice`. As descriptions grow, consider: (a) pre-generate a 150-char `voice_description` column at ingestion and send that instead of truncation; or (b) add a `get_product_details(product_id)` tool the agent calls only when the user asks for more. Keep the full description in DB for the carousel card. |
+| Evaluate moving Supabase region closer to India (e.g. Mumbai) OR add search-service result cache | Human | ⬜ Pending | 2–4 hrs | ~1 s network floor on every search call today; region move or LRU cache are the two remaining levers to break that floor. |
 | Rate limiting on `/api/submit-request` | Agent | ⬜ Pending | 1 hr | Prevent spam submissions before public launch |
 | CORS restriction from `*` to actual domains | Agent | ⬜ Pending | 30 min | All services currently use wildcard — must restrict before production |
 | Production deployment + custom domain + SSL | Human + Agent | ⬜ Pending | 1 day | Needed before sharing with real clients |
@@ -66,12 +69,13 @@ These cannot be done by an agent — they require account access, credentials, o
 
 | Issue | Severity | Notes |
 |-------|----------|-------|
-| ngrok URL changes on restart | Medium | Single-tunnel setup mitigates (only 1 URL). Must re-onboard after restart. |
+| ngrok URL changes on restart | Medium | Single-tunnel setup mitigates (only 1 URL). After restart, update `IMAGE_SERVER_URL`/`SEARCH_API_URL`/`WIDGET_SCRIPT_URL` in both services' `.env` and restart — no re-onboard needed for images (search composes the host at read time as of 2026-06-12). A reserved ngrok domain removes this entirely. |
+| Onboarding stores absolute `image_url` in DB | Low | `products.py:109` bakes `{IMAGE_SERVER_URL}/images/...` at ingest, which goes stale on host change. Search now ignores it (composes from `local_image_path`), so the column is redundant — store only the relative path and drop the absolute write. |
 | Admin dashboard 422 on process-request | Medium | Needs investigation — may be Supabase schema or CORS issue |
 | ngrok free interstitial blocks widget | Low | External users must click "Visit Site" before widget JS loads |
 | Supermicro internal API undocumented | Low | `/en/structuredbapi/ps2/system/gpu/all` may change without notice |
 | Universal adapter not integration-tested | Medium | JSON-LD, platform selectors, sitemap discovery need live-site testing |
-| `glm-45-air-fp8` tool-calling unverified | Medium | New ElevenLabs-hosted LLM — may struggle with complex prompts, fallback to `gpt-4o-mini` via env var |
+| Gemini 2.5 Flash 2nd-turn dead air | Resolved (2026-04-17) | Fixed by STEP 3 model swap to `claude-haiku-4-5`. Default updated in code + .env.example. Existing agents still need per-agent upgrade via `testing/latency/upgrade_agent_model.py`. |
 | `sys.path.insert` for shared/ imports | Low | Upgrade to `pip install -e .` when team grows |
 | Search-service rate limiting assumes client IP visibility | Medium | If deployed behind a proxy/load balancer, configure forwarded IP handling or tune `SEARCH_RATE_LIMIT` to avoid mis-grouping traffic |
 
@@ -83,10 +87,8 @@ Move items here when done (keep last 5 for reference, then delete oldest).
 
 | Date | Task | Who |
 |------|------|-----|
-| 2026-04-14 | Phase 1 voice UX: reduced ElevenLabs tools to `search_products` + `update_products`, rewrote prompts for one-turn clarify-before-search behavior, and removed deprecated widget tool handlers | Codex |
-| 2026-04-14 | Phase 2 infrastructure: async search endpoint, thread-offloaded embedding/RPC, `slowapi` rate limiting, and ElevenLabs limits doc | Codex |
+| 2026-04-17 | Voice-agent latency STEP 3: 6-model A/B test picked Claude Haiku 4.5 (100% tool reliability, ~3.4s median). Code defaults flipped, harness moved to `testing/latency/` with new `upgrade_agent_model.py` helper. | Claude |
+| 2026-04-17 | Voice-agent latency STEP 1+2+4: search warmup + `X-Search-Duration-Ms` header; proxy client reuse + correlated logging; Supabase `hybrid_search_products` rewritten to use HNSW + new `products_fts_idx` GIN; tool-first prompt rule in all 5 templates. Search 2100–3100 ms → ~1000 ms | Claude |
+| 2026-04-14 | Phase 1 voice UX: reduced ElevenLabs tools to `search_products` + `update_products`, rewrote prompts for one-turn clarify-before-search | Codex |
+| 2026-04-14 | Phase 2 infrastructure: async search endpoint, thread-offloaded embedding/RPC, `slowapi` rate limiting | Codex |
 | 2026-04-10 | Human-facing `docs/knowledge-base/` handbook, root pointers, and personal-note canonical links | Codex |
-| 2026-04-08 | ElevenLabs API migration + latency optimization + single-tunnel sharing + widget latency tracking | Agent |
-| 2026-04-07 | Monorepo refactoring: shared/, adapter registry, unified pipeline, universal scraping chain | Agent |
-| 2026-04-07 | Marketing website redesign (monochrome + GSAP orb) | Agent |
-| 2026-04-07 | Client acquisition backend (6 endpoints + notifications) | Agent |

@@ -6,6 +6,97 @@
 
 ---
 
+## 2026-06-12 — N/A — Fix: Product images 404 in the running voice agent (4-layer root cause)
+
+- **Status:** Completed
+- **Owner:** Claude
+- **Summary:** Product cards in the voice widget showed broken images (404). The root cause was four independent defects stacked along the image path; fixed all four so a freshly-built image URL flows search → agent → widget.
+- **Why:** Images are core to the shopping UX; the carousel was rendering the dummy fallback (which itself 404'd) on every result.
+- **Defects & fixes:**
+  1. **Search dropped the good URL.** `search-service/main.py` computed `local_image_url` (current host + `local_image_path`) but `ProductOut` only returned the stale DB `image_url`. → `main.py:360` now returns `p.local_image_url or p.image_url`.
+  2. **Stale absolute host in DB + missing config.** `image_url` is baked at onboarding time (`products.py:109`) as an absolute URL; ngrok subdomains rotate, so the stored host goes dead. `search-service/.env` had no `IMAGE_SERVER_URL`, so `IMAGE_SERVER_URL()` defaulted to `http://localhost:8000` (nothing runs there). → Added `IMAGE_SERVER_URL` (current ngrok → onboarding `:8005`) to `search-service/.env`. Search now rebuilds the host at query time, decoupling from the stale DB value.
+  3. **LLM dropped image_url at the agent hop.** The `update_products` client tool used an opaque `items: {type: object}` schema, so the ElevenLabs LLM relayed a reconstructed array and dropped the long `image_url` (same failure class as the `store_id` truncation rule in constraints.md). → Gave `update_products.products.items` an explicit property schema with `image_url` required and "copy verbatim" wording, then pushed it to the live agent `agent_6501kpdsw9…` via `update_agent()` (re-pushes the tools config, no re-scrape).
+  4. **Wrong fallback path.** `DUMMY_IMAGE = "/image.png"` resolves to the host root and 404s; the asset is served at `/widget/image.png`. → Changed to `/widget/image.png` and rebuilt the widget.
+- **Files:** `search-service/main.py`, `search-service/.env`, `onboarding-service/elevenlabs_agent.py` (`_get_tool_config`), `www.teampop/frontend/src/components/AvatarWidget.jsx`.
+- **Tradeoffs:** Search still reads `local_image_path` from the DB; the absolute `image_url` write in `products.py:109` is now redundant for search but left in place (durable follow-up: store only the relative path). `IMAGE_SERVER_URL` in `search-service/.env` must be re-pointed whenever the free ngrok tunnel restarts (or use a reserved domain).
+- **Verification:** `/search` returns live-host URLs; `curl -I` on a product image → 200; `/widget/image.png` → 200; `update_agent` returned `success`; widget rebuilt clean (`npm run build`). Requires a hard-refresh of the demo page (stale `widget.js` cache) and a fresh conversation (schema change applies to new conversations).
+- **Related Decisions:** 2026-06-12 — Voice-agent image URLs are composed at read time and relayed via explicit tool schema.
+- **Notes:** The agent in question runs `gemini-2.5-flash`, which the 2026-04-17 A/B disqualified; upgrade is a separate task (`testing/latency/upgrade_agent_model.py`).
+
+## 2026-04-17 — N/A — Voice-Agent Latency STEP 3: 6-Model A/B Test + Claude Haiku 4.5 as New Default
+
+- **Status:** Completed (closes the voice-agent latency plan STEPS 1–4)
+- **Owner:** Claude
+- **Summary:** Ran the 6-model A/B latency protocol against one real store (see `testing/latency/README.md`), compiled results, and flipped the codebase default from Gemini 2.5 Flash to Claude Haiku 4.5. Also relocated the test harness into a durable `testing/latency/` folder with a new `upgrade_agent_model.py` helper so the experiment is re-runnable.
+- **Why:** After STEPs 1/2/4 shipped earlier in the day, search was at its ~1s India↔Supabase network floor but voice cycles were still 3–15s with occasional `closeCode 1002` session kills on Gemini 2.5 Flash. The only remaining lever big enough to matter was the LLM choice; a disciplined measurement prevented making the swap on vibes.
+- **Files:**
+  - `onboarding-service/elevenlabs_agent.py` — default fallback changed to `claude-haiku-4-5` in `create_agent`, `update_agent`, and `_build_system_prompt`; `_verify_agent` now warns when it sees an agent still running gemini-2.5-flash and points to the upgrade script; docstring example updated.
+  - `onboarding-service/.env.example` — `ELEVENLABS_LLM_MODEL=claude-haiku-4-5` with the full ranking (DQ reasons included).
+  - `testing/latency/create_test_agents.py` — moved from `onboarding-service/scripts/` and sys.path fixed; creates 6 parallel test agents for one store.
+  - `testing/latency/upgrade_agent_model.py` — NEW. Calls `update_agent` via the ElevenLabs PATCH endpoint to swap `llm` on a live agent. Supports single `--agent-id` or batch `--from-json` from the test harness output.
+  - `testing/latency/README.md` — moved from `docs/latency-test-protocol.md` and reframed as a reusable harness doc (not a one-off STEP 3 doc).
+  - `testing/README.md` — NEW. Short convention doc for future test harnesses.
+  - `.personal/learning/LEARNING_PATH.md` — path references updated to the new `testing/latency/` location (section 6A).
+- **Tradeoffs:**
+  - The Gemini 2.5 Flash default was left reachable via env var for emergency rollback; it wasn't deleted from the prompt map or the model comparison table.
+  - The 5 losing test agents were kept on the ElevenLabs dashboard per user request (they can be re-used or deleted manually). The `latency_test_agents.json` output file is gitignored-by-convention — not committed.
+  - Claude Haiku 4.5 costs slightly more per call than Gemini 2.5 Flash, but the net-net is probably cheaper because there are no more retry loops, 1002 cascades, or failed tool calls burning tokens.
+  - The harness is designed for one store at a time. Multi-store A/B isn't wired up; we can add it when/if model selection becomes store-dependent.
+- **Verification:**
+  - Compile: `python3 -m py_compile` passes on all three touched Python files.
+  - Functional: `./onboarding-service/.venv/bin/python testing/latency/create_test_agents.py --help` and `…upgrade_agent_model.py --help` both render cleanly under argparse.
+  - Empirical (from STEP 3 live run, one store, 10 cycles per model):
+
+    | Model | Tool reliability | User→Products p50 | 1002 kills | Verdict |
+    |---|---|---|---|---|
+    | claude-haiku-4-5 | 7/7 = 100% | 3.4 s | 0 | ✅ WINNER |
+    | gemini-2.5-flash-lite | 6/9 ≈ 67% | 2.0 s when fires | 0 | ✅ 2nd |
+    | glm-45-air-fp8 | 7/9 ≈ 78% | 5.6 s | 0 | 🟡 backup |
+    | gemini-2.5-flash | ~60% | 6.4 s + 18 s outlier | 1 | ❌ DQ |
+    | qwen3-30b-a3b | 2/10 = 20% | N/A (no carousel) | 0 | ❌ DQ |
+    | gpt-4.1-nano | 0/10 = 0% | N/A (no carousel) | 0 | ❌ DQ |
+
+    User's own subjective read matched: *"Claude conversation was good in flow more like human… latency too good."*
+- **Related Decisions:** 2026-04-17: Default ElevenLabs LLM = Claude Haiku 4.5 (winner of 6-model A/B test)
+- **Notes:**
+  - **Existing production agents are NOT upgraded automatically.** ElevenLabs bakes `llm` in at agent creation. Run `testing/latency/upgrade_agent_model.py --agent-id <id> --store-id <uuid>` per agent, or `--from-json` to batch. Human must decide which agents to upgrade and when.
+  - Rerun the harness whenever ElevenLabs adds a new hosted model or Anthropic/Google ship a next-tier small model.
+  - Product description is currently truncated to 200 chars before going to the LLM (`_truncate_for_voice` in `search-service/main.py`). For richer catalogs, consider a dedicated `voice_description` column generated at ingestion (see roadmap).
+
+---
+
+## 2026-04-17 — N/A — Voice-Agent Latency Tuning: Startup Warmup + Index-Aware Search RPC + Tool-First Prompt Rule
+
+- **Status:** Completed (STEP 1, 2, 4 of the latency plan; STEP 3 — 6-model A/B matrix — still pending)
+- **Owner:** Claude
+- **Summary:** Shipped three coordinated changes that took measured `search_ms` from 2100–3100 ms down to ~1000 ms (network floor, India↔Supabase) and partially closed the "agent speaks about products before carousel updates" UX gap. Full plan lives at `/Users/consultadd/.claude/plans/synchronous-churning-sky.md`.
+- **Why:** User reported 3–14 s end-to-end latency with frequent ElevenLabs `closeCode 1002 "Generating the LLM response took too long"` session kills. Baseline telemetry showed three root causes: (a) embedder cold-start stacking 1.5–3 s onto the first request of each session, (b) the `hybrid_search_products` RPC not using its own indexes so every call scanned all of a store's products, (c) Gemini speaking about search results before calling `update_products`, leaving the carousel 3–12 s behind the voice.
+- **Files:**
+  - `search-service/main.py` — added `@app.on_event("startup")` warmup that pre-loads `all-MiniLM-L6-v2` and opens the Supabase connection in a worker thread; added `X-Search-Duration-Ms` response header + correlated info log (`⏱ search_ms=… store_id=… query=… results=…`); CORS `expose_headers` so downstream can read the header.
+  - `onboarding-service/main.py` — hoisted `httpx.AsyncClient` to module scope with keepalive pool; `/search` proxy now forwards the `X-Search-Duration-Ms` header and emits a one-line summary log per request (`⏱ /search proxy | store_id=… | query=… | search_ms=… | proxy_total_ms=… | status=…`). Added matching startup/shutdown hooks.
+  - `onboarding-service/elevenlabs_agent.py` — tightened 5 model prompt templates (Gemini, Qwen, GLM, Claude, GPT) with one explicit rule in both the numbered procedure and `# Guardrails`: *"After a tool result, your very next action must be the next tool call. Do not speak between the result and the next tool. Filler before the first tool is fine."*
+  - Supabase schema — new `products_fts_idx` GIN on `to_tsvector('english', coalesce(name,'') || ' ' || coalesce(description,''))`; `hybrid_search_products` function body rewritten to use `ORDER BY embedding <=> p_query_embedding LIMIT 50` (HNSW-friendly) and `@@ plainto_tsquery(...)` filter (GIN-friendly). Same signature, same weighting.
+- **Tradeoffs:**
+  - Kept Supabase region as-is (~1 s network floor from India). Moving region or adding a result cache is the next lever if needed.
+  - Did not edit `start_services.sh` per user preference — they run services manually.
+  - Did not change TTS model (`eleven_flash_v2` kept; English-only, fastest).
+  - Prompt rule is advisory: LLMs that ignore it (Gemini 2.5 Flash does, sometimes) will still produce filler speech. Model swap (STEP 3) is the hard fix.
+- **Verification:**
+  - `python3 -m py_compile` passes on all three touched Python files.
+  - Measured `search_ms` per widget cycle in live onboarding log: 347, 718, 798, 1003, 1041, 1050, 1065, 1153, 1237, 1335, 1575, 1650 ms (avg ~1.1 s, median ~1.04 s).
+  - `EXPLAIN ANALYZE` on `hybrid_search_products(...)` shows 51.9 ms DB execution with the new function — confirmed HNSW and GIN are hit in the plan.
+  - Fresh-session Cycle 1 dropped from baseline ~18 s to ~283–380 ms to first AI — warmup verified.
+  - Remaining bottleneck confirmed as Gemini 2.5 Flash's 2nd-turn reasoning: Cycle 4 in last test showed `update_products` firing at 3047 ms but AI speech not starting until 17983 ms.
+- **Related Decisions:**
+  - 2026-04-17: Voice-Agent Prompt Contract — Tool-First-After-Result Rule Across All Models
+  - 2026-04-17: Supabase `hybrid_search_products` Rewritten to Use HNSW and GIN Indexes
+- **Notes:**
+  - STEP 3 scaffolding is the natural next piece of work: create 6 test agents under one store, run a fixed 10-prompt protocol against each, compare `User→AI` p95 and tool-call reliability. Candidates: `claude-haiku-4-5`, `gpt-4.1-nano`, `gemini-2.5-flash-lite`, `glm-45-air-fp8`, `qwen3-30b-a3b`, and `gemini-2.5-flash` as control. Exact ElevenLabs model strings should be verified against their `/v1/convai/agents/supported_llms` (or equivalent) endpoint before creating agents.
+  - New stores onboarded after this change inherit the fast-search path automatically (schema-level change).
+  - `@app.on_event` usage raises DeprecationWarning under current FastAPI — harmless; migrate to `lifespan` context manager in a future cleanup pass if desired.
+
+---
+
 ## 2026-04-14 — Phase 3: Push-to-Talk (PTT) orb mode
 
 **What was done:**

@@ -85,6 +85,7 @@ cp .env.example .env   # populate with your keys
 | `WIDGET_SCRIPT_URL` | No | `http://localhost:5173/widget.js` | Built widget.js URL |
 | `STORE_IMAGES_PATH` | No | `./images` | Directory for downloaded product images |
 | `ELEVENLABS_VOICE_ID` | No | `EXAVITQu4vr4xnSDxMaL` | ElevenLabs voice (default: Sarah) |
+| `ELEVENLABS_LLM_MODEL` | No | `claude-haiku-4-5` | ElevenLabs LLM for the agent brain. Default is the 2026-04-17 A/B test winner. See `testing/latency/README.md` for the harness and `docs/agents/decisions.md` for the ranking. Change via `testing/latency/upgrade_agent_model.py` to upgrade live agents. |
 | `ADMIN_PASSWORD` | No | `changeme` | Admin dashboard password |
 | `RESEND_API_KEY` | No | — | Resend email API key |
 | `SLACK_WEBHOOK_URL` | No | — | Slack incoming webhook for notifications |

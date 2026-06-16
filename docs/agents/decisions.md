@@ -6,6 +6,73 @@
 
 ---
 
+## 2026-06-12: Product image URLs are composed at read time and relayed via an explicit tool schema
+
+- **Decision:** Two standing rules for product image URLs end-to-end:
+  1. **Search composes the image URL at query time** from `local_image_path` + the service's configured `IMAGE_SERVER_URL`, and returns it as the canonical `image_url` (`search-service/main.py:360`, `p.local_image_url or p.image_url`). The absolute `image_url` baked into the DB at onboarding (`onboarding-service/services/products.py:109`) is treated as a fallback only — never the source of truth for the host.
+  2. **Anything the ElevenLabs LLM must relay verbatim needs an explicit JSON-schema property.** The `update_products` client tool defines per-product `items.properties` (incl. `image_url`, required) so the model cannot drop long URLs. Opaque `items: {type: object}` is banned for data the UI depends on.
+- **Context:** Product images 404'd in the voice widget. Root cause spanned four layers, but the durable lessons are these two: an absolute host stored in the DB goes stale (ngrok rotates), and the LLM silently drops long fields when a tool schema is opaque — the same failure class as the existing `store_id` UUID-truncation invariant.
+- **Rationale:** Composing at read time means the image host follows whatever tunnel/domain the search service is configured with, with no DB migration or re-onboard. An explicit tool schema is the only reliable way to force the hosted LLM to forward exact values.
+- **Alternatives considered:** (a) Re-onboard to rewrite DB URLs — rejected, fragile and repeats every tunnel change. (b) Trust the prompt to tell the LLM "pass the full array" — rejected, that was the failing behavior. (c) Pass only product IDs and have the widget re-fetch details — viable but a larger widget+endpoint change; deferred.
+- **Consequences:** `search-service/.env` must set `IMAGE_SERVER_URL` (defaults to `localhost:8000` otherwise, which serves nothing in the single-tunnel setup). Future tools that feed the widget must schematize every field the UI reads. Follow-up: stop writing the absolute `image_url` at onboarding and store only the relative path.
+- **Status:** Active
+- **Agent/Author:** Claude
+
+## 2026-04-17: Default ElevenLabs LLM = Claude Haiku 4.5 (winner of 6-model A/B test)
+
+- **Decision:** The default value of `ELEVENLABS_LLM_MODEL` (used by every new ElevenLabs agent created via `ElevenLabsAgentCreator.create_agent` and `update_agent`) is now `claude-haiku-4-5`. Fallback hardcoded in `onboarding-service/elevenlabs_agent.py` in three spots (`create_agent`, `update_agent`, `_build_system_prompt`) and advertised in `onboarding-service/.env.example` with the full ranking.
+- **Context:** After STEP 1/2/4 (warmup, HNSW+GIN indexes, tool-first prompt rule) landed, search was already at its India↔Supabase network floor of ~1s, but voice cycles still ran 3–15s on Gemini 2.5 Flash because of 2nd-turn reasoning lag and intermittent `closeCode 1002 "Generating the LLM response took too long"` session kills. STEP 3 of the plan (`~/.claude/plans/synchronous-churning-sky.md`) spun up six parallel agents — one per candidate LLM — against the same store and ran a fixed 10-prompt protocol (`testing/latency/README.md`).
+- **Rationale:** Measured results, 10 cycles per model, same 10 prompts:
+  - **claude-haiku-4-5: 100% tool reliability, median User→Products 3.4 s, 0 timeouts.** Winner on every axis of the three-axis frame.
+  - gemini-2.5-flash-lite: close 2nd on speed (~2 s when it fires) but only ~67% tool reliability.
+  - glm-45-air-fp8: 78% tool reliability, acceptable but slower (~5–8 s first cycle, ~3 s warm).
+  - **gemini-2.5-flash (previous default): DQ** — 1 session hit the 1002 timeout, had an 18 s dead-air outlier.
+  - **qwen3-30b-a3b: DQ** — only 2/10 `update_products` calls despite fast speech.
+  - **gpt-4.1-nano: DQ** — 0/10 `update_products` calls. Searched, spoke, but never updated the carousel. Surprising given its strong tool-calling reputation on direct OpenAI API; appears to be an ElevenLabs-hosted-tier quirk.
+  - Claude also handled the ordinal reference ("tell me more about the second one") correctly without triggering an unnecessary search — the only model to do so cleanly. User's subjective read ("more human, less silence") matched the numbers.
+- **Alternatives considered:** (1) Keep Gemini 2.5 Flash and increase ElevenLabs `cascade_timeout` — rejected; it would just turn 1002 kills into longer waits rather than fixing the root cause. (2) Ship Qwen for speed — rejected by the protocol's hard-fail threshold (>10% tool misses). (3) Stay on Gemini and add client-side "wait for update_products before TTS" gating — rejected because fighting the model is worse than picking a model that behaves.
+- **Consequences:**
+  - Every new store onboarded via `POST /onboard` immediately gets Claude Haiku 4.5. Existing agents keep their baked-in model until upgraded via `testing/latency/upgrade_agent_model.py`.
+  - Cost model shifts slightly: Claude Haiku 4.5 per-call cost is close to Gemini 2.5 Flash but the workload changes — no more retries or cascaded timeouts means fewer wasted tokens.
+  - Prompt templates in `elevenlabs_agent.py` already route `PROMPT_CLAUDE` for any model string containing "claude" via `MODEL_PROMPT_MAP`.
+  - `_verify_agent` now emits a warning when an agent is seen still running `gemini-2.5-flash`, pointing to the upgrade script.
+  - Re-run the A/B matrix whenever ElevenLabs adds a new hosted model or an existing model is deprecated. The harness lives in `testing/latency/` and is designed for reuse.
+- **Status:** Active
+- **Agent/Author:** Claude
+
+---
+
+## 2026-04-17: Voice-Agent Prompt Contract — Tool-First-After-Result Rule Across All Models
+
+- **Decision:** Every model prompt template (`PROMPT_GEMINI`, `PROMPT_QWEN`, `PROMPT_GLM`, `PROMPT_CLAUDE`, `PROMPT_GPT`) now carries one explicit rule in both the numbered procedure and the `# Guardrails` block: *"After a tool result arrives, the very next action must be the next tool call. Do not speak any words between the tool result and the next tool call. Filler BEFORE the first tool is fine."*
+- **Context:** Even after STEP 2 dropped search to ~1s, widget logs showed 3–15s gaps between `User→AI` and `User→Products` on many cycles. The cause was Gemini calling `update_products` AFTER speaking a product description, so the carousel lagged the voice by 3–12 seconds. The old prompts said "search → update_products → describe" but did not explicitly forbid speech between the search result and `update_products`.
+- **Rationale:** This rule is the minimal, model-agnostic change that aligns spoken output with UI state. It preserves natural conversation (filler before tools is still encouraged) while making the forbidden gap unambiguous. Putting the same text in both the procedure and `# Guardrails` matches ElevenLabs' prompting guidance — Guardrails are weighted higher, the procedure is what the model follows turn-by-turn.
+- **Alternatives considered:** (1) Add a client-side timer that withholds agent audio until `update_products` fires — rejected because it adds UX complexity and fights the model instead of guiding it. (2) Reduce `soft_timeout` below 2.5s — rejected; the static filler is a safety net, not a fix. (3) Use two separate tools with `expects_response: true` to force sequencing — rejected because the current client-tool shape is correct and changing it risks regressions.
+- **Consequences:**
+  - Every new agent created via `create_agent()` picks up the new rule automatically; existing agents need to be re-created to inherit it.
+  - The rule is consistent across all 6 candidate LLMs in the upcoming STEP 3 A/B matrix, so model comparison will be fair.
+  - Prompts grew by ~150–300 chars each; all still under ElevenLabs' ~8 KB limit.
+- **Status:** Active
+- **Agent/Author:** Claude
+
+---
+
+## 2026-04-17: Supabase `hybrid_search_products` Rewritten to Use HNSW and GIN Indexes
+
+- **Decision:** Replace the body of `public.hybrid_search_products(uuid, text, vector, numeric, int, float)` with a version that uses the canonical pgvector top-K pattern (`ORDER BY embedding <=> $query LIMIT 50`) for the vector CTE and a `to_tsvector(...) @@ plainto_tsquery(...)` filter for the text CTE. Add `products_fts_idx` — a GIN index on `to_tsvector('english', coalesce(name,'') || ' ' || coalesce(description,''))` — so the FTS filter actually uses an index. Function signature and return shape are unchanged.
+- **Context:** The previous function body scanned all rows for a given `store_id` to compute cosine distances in the `SELECT` list (which bypasses HNSW) and built tsvectors at query time for every row (no GIN usage). Measured `search_ms` was 2100–3100 ms for a single store's ~250 products; `EXPLAIN ANALYZE` after the fix shows DB execution at 52 ms. Remaining ~1s is India↔Supabase network, which is outside DB control.
+- **Rationale:** This is the smallest change that makes the existing indexes effective. It preserves the function's signature, its 0.6/0.4 hybrid weighting, and its FULL OUTER JOIN logic, so no service code changes are required. HNSW + GIN are now the durable contract: any future change to the RPC must keep them in use.
+- **Alternatives considered:** (1) Add a result cache in search-service — deferred; would reduce repeat-query cost but not first-query cost. (2) Move Supabase to a closer region (Mumbai) — deferred; bigger ops change, affects every service. (3) Switch to a managed vector DB (Pinecone, Weaviate) — rejected for alpha; introduces a second datastore.
+- **Consequences:**
+  - Every future store onboarded automatically inherits the fast path — the indexes and function are schema-level, no per-store code change.
+  - The tsvector expression in the GIN index and in the function body must stay identical; changing one without the other silently breaks the index match.
+  - `p_min_score` default was kept at 0.2 in the new function (old default); callers passing 0.25 continue to work.
+  - Products whose embedding is NULL are now excluded from the vector-matches CTE explicitly; previously they contributed 0 vector-score rows that got filtered later. Net output is the same but planning is cleaner.
+- **Status:** Active
+- **Agent/Author:** Claude
+
+---
+
 ## 2026-04-14: Search Service Scaling via Async Endpoint + Thread Offload + Worker Processes
 
 - **Decision:** Keep the existing synchronous Supabase Python client and sentence-transformer model, but make `POST /search` an async FastAPI endpoint that offloads embedding generation and the Supabase RPC call to `asyncio.to_thread()`. Add request rate limiting with `slowapi`, use thread-safe singleton initialization for shared clients/models, and run search-service with multiple Uvicorn workers outside reload mode.

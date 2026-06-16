@@ -8,7 +8,9 @@ import "../styles/ptt.css";
 import { useVoiceMode } from "../hooks/useVoiceMode";
 import { usePttInteraction } from "../hooks/usePttInteraction";
 
-const DUMMY_IMAGE = "/image.png";
+// Served from the widget mount (onboarding-service mounts dist/ at /widget),
+// not the page root — a bare "/image.png" 404s against the host origin.
+const DUMMY_IMAGE = "/widget/image.png";
 const WIDGET_LAYER_STYLE = {
   position: "fixed",
   bottom: "0",

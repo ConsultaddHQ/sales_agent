@@ -1,0 +1,39 @@
+{
+  "gemini-2.5-flash": {
+    "label": "Gemini 2.5 Flash (CONTROL)",
+    "agent_id": "agent_9501kpdsvycwezjs06gj3snwrgk1",
+    "agent_url": "https://elevenlabs.io/app/conversational-ai/agent_9501kpdsvycwezjs06gj3snwrgk1",
+    "notes": "Current production default. Baseline for comparison."
+  },
+  "qwen3-30b-a3b": {
+    "label": "Qwen3-30B-A3B",
+    "agent_id": "agent_2501kpdsw0ehefnrf13m35j49y38",
+    "agent_url": "https://elevenlabs.io/app/conversational-ai/agent_2501kpdsw0ehefnrf13m35j49y38",
+    "notes": "ElevenLabs-hosted, ~187ms; tool reliability is the risk."
+  },
+  "gpt-4.1-nano": {
+    "label": "GPT-4.1 Nano",
+    "agent_id": "agent_5901kpdsw2v7e7avadgrcxjmfa3p",
+    "agent_url": "https://elevenlabs.io/app/conversational-ai/agent_5901kpdsw2v7e7avadgrcxjmfa3p",
+    "notes": "OpenAI, ~504ms, very reliable native function calling."
+  },
+  "gemini-2.5-flash-lite": {
+    "label": "Gemini 2.5 Flash Lite",
+    "agent_id": "agent_0501kpdsw4y5f53bj1y3953swxcc",
+    "agent_url": "https://elevenlabs.io/app/conversational-ai/agent_0501kpdsw4y5f53bj1y3953swxcc",
+    "notes": "Fastest Gemini tier; simpler reasoning."
+  },
+  "glm-45-air-fp8": {
+    "label": "GLM-4.5 Air",
+    "agent_id": "agent_9801kpdsw73qen9bcxqesvyehjkp",
+    "agent_url": "https://elevenlabs.io/app/conversational-ai/agent_9801kpdsw73qen9bcxqesvyehjkp",
+    "notes": "ElevenLabs-hosted, ~634ms, agentic."
+  },
+  "claude-haiku-4-5": {
+    "label": "Claude Haiku 4.5",
+    "agent_id": "agent_6501kpdsw9gtfxktj1sxh4zh8cv2",
+    "agent_url": "https://elevenlabs.io/app/conversational-ai/agent_6501kpdsw9gtfxktj1sxh4zh8cv2",
+    "notes": "Anthropic, ~686ms; strongest instruction-following."
+  }
+}
+

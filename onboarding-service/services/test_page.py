@@ -133,10 +133,22 @@ def _inject_widget(soup: BeautifulSoup, agent_id: str) -> None:
     head = soup.find("head") or soup.new_tag("head")
     body = soup.find("body") or soup.new_tag("body")
 
+    # Agent id is baked into the page at generation time, but a URL override
+    # (`?agent=<id>`) wins so the same demo page can be used to A/B test
+    # multiple ElevenLabs agents without regenerating. Used by the latency
+    # test protocol (docs/latency-test-protocol.md) to compare candidate LLMs.
     config_script = soup.new_tag("script")
     config_script.string = f"""
-    window.__TEAM_POP_AGENT_ID__ = "{agent_id}";
-    console.log('[TeamPop] Widget config loaded — agent: {agent_id}');
+    (function() {{
+      var params = new URLSearchParams(window.location.search);
+      var override = params.get('agent');
+      window.__TEAM_POP_AGENT_ID__ = override || "{agent_id}";
+      console.log(
+        '[TeamPop] Widget config loaded — agent:',
+        window.__TEAM_POP_AGENT_ID__,
+        override ? '(URL override)' : '(baked)'
+      );
+    }})();
     """
     head.append(config_script)
 

@@ -34,6 +34,7 @@ Create a `.env` from `.env.example` with the following vars:
 
 - `SUPABASE_URL` – your Supabase project URL.
 - `SUPABASE_KEY` – service-role API key.
+- `IMAGE_SERVER_URL` – base URL that serves product images (the tunnel/host pointing at onboarding-service `:8005`, which mounts `/images`). Search composes each result's `image_url` as `{IMAGE_SERVER_URL}/images/{local_image_path}` at query time, so this must be the **current** host. Defaults to `http://localhost:8000` (the legacy standalone image server) — set it explicitly in the single-tunnel setup or product images 404. Re-point it whenever a free ngrok tunnel restarts.
 - `OPENROUTER_API_KEY` – legacy key for optional price parsing experiments.
 - `OPENROUTER_BASE_URL` – optional custom endpoint.
 - `OPENROUTER_MODEL` – model name for completions (default `xai/grok-beta`).
@@ -77,6 +78,22 @@ Common 400 errors:
 
 Common 429 errors:
 - **Rate limit exceeded**: The same client exceeded `SEARCH_RATE_LIMIT`. Raise the limit for trusted internal traffic or put the service behind a proxy that forwards the real client IP.
+
+## Performance / Latency
+
+On startup the service runs a warmup hook (`@app.on_event("startup")`) that pre-loads the `all-MiniLM-L6-v2` embedder and opens the Supabase connection in a worker thread. You should see:
+
+```
+🔥 Warmup: loading embedding model...
+🔥 Warmup: embedder ready in XXX ms
+🔥 Warmup: Supabase connection ready in XXX ms
+```
+
+Without this, the first real request of each process pays a 1.5–3 s cold-start cost for the model load. If these lines do not appear, search will be slow on the first user query after each restart.
+
+Every `/search` response carries an `X-Search-Duration-Ms` header measuring embed + Supabase RPC time. The `onboarding-service` `/search` proxy forwards this header and emits one correlated info log per call (`⏱ /search proxy | store_id=… | query=… | search_ms=… | proxy_total_ms=… | status=…`). CORS `expose_headers` includes `X-Search-Duration-Ms` so browser callers can read it too.
+
+The Supabase `hybrid_search_products` function is index-aware as of 2026-04-17 — it uses HNSW via `ORDER BY embedding <=> p_query_embedding LIMIT 50` and a GIN-backed `@@ plainto_tsquery(...)` filter. See `docs/agents/decisions.md` for details. Warm typical search is ~1 s end-to-end; ~50 ms of that is DB compute, the rest is India↔Supabase network. Moving Supabase region or adding a short-TTL result cache in this service are the remaining levers if the network floor needs breaking.
 
 ## Notes
 

@@ -2,13 +2,14 @@ import asyncio
 import logging
 import os
 import sys
+import time
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -101,6 +102,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Expose our custom timing header so downstream services/clients can read it.
+    expose_headers=["X-Search-Duration-Ms"],
 )
 
 
@@ -301,7 +304,11 @@ def health() -> Dict[str, str]:
 
 @app.post("/search", response_model=SearchResponse)
 @limiter.limit(SEARCH_RATE_LIMIT)
-async def search(request: Request, req: SearchRequest) -> SearchResponse:
+async def search(
+    request: Request,
+    response: Response,
+    req: SearchRequest,
+) -> SearchResponse:
     # --- Validation with clear diagnostic logging ---
     if not req.query.strip():
         logger.warning(
@@ -325,12 +332,21 @@ async def search(request: Request, req: SearchRequest) -> SearchResponse:
             status_code=400,
             detail=f"Invalid store_id format: '{req.store_id}'. Must be a valid UUID (36 characters).{hint}"
         )
-    
+
     sb = get_supabase()
 
+    # ── Measure embed + RPC duration so callers can correlate latency ──
+    t0 = time.perf_counter()
     products = await _hybrid_search_products(
         sb=sb, store_id=req.store_id, query=req.query, limit=5
     )
+    search_ms = int((time.perf_counter() - t0) * 1000)
+    response.headers["X-Search-Duration-Ms"] = str(search_ms)
+    logger.info(
+        f"⏱  search_ms={search_ms} | store_id={req.store_id} | "
+        f"query={req.query!r} | results={len(products)}"
+    )
+
     pitch = f"Found {len(products)} products." if products else "No matching products found."
 
     serialized_products: List[ProductOut] = []
@@ -341,12 +357,52 @@ async def search(request: Request, req: SearchRequest) -> SearchResponse:
                 name=p.name,
                 price=float(p.price) if p.price is not None else None,
                 description=_truncate_for_voice(p.description, 200),
-                image_url=p.image_url,
+                image_url=p.local_image_url or p.image_url,
                 product_url=p.product_url,
             )
         )
 
     return SearchResponse(products=serialized_products, pitch=pitch)
+
+
+# ---------------------------------------------------------------------------
+# Startup warmup — eliminates ~1.5–3s cold-start on the first real request.
+#
+# Without this, the first user request of a process pays:
+#   1. SentenceTransformer("all-MiniLM-L6-v2") load   (~1.5–3s, 90 MB)
+#   2. Supabase Python client init                    (~100 ms)
+#   3. First embedding inference (kernel JIT warmup)  (~50–100 ms)
+#
+# STEP 1 goal from plan: bring Cycle 1 of a fresh session down from ~18s
+# (observed in baseline) to <6s. Warmup moves those costs off the hot path.
+# ---------------------------------------------------------------------------
+@app.on_event("startup")
+async def _warmup_on_startup() -> None:
+    def _warm_sync() -> None:
+        try:
+            logger.info("🔥 Warmup: loading embedding model...")
+            t0 = time.perf_counter()
+            get_embedder().encode("warmup", normalize_embeddings=True)
+            logger.info(
+                f"🔥 Warmup: embedder ready in {int((time.perf_counter() - t0) * 1000)} ms"
+            )
+        except Exception as e:
+            logger.warning(f"Warmup: embedder load failed (non-fatal): {e}")
+
+        try:
+            t1 = time.perf_counter()
+            sb = get_supabase()
+            # Cheap query to warm the Supabase HTTPS connection + auth headers.
+            # Does not depend on any specific store_id existing.
+            sb.table("products").select("id").limit(1).execute()
+            logger.info(
+                f"🔥 Warmup: Supabase connection ready in {int((time.perf_counter() - t1) * 1000)} ms"
+            )
+        except Exception as e:
+            logger.warning(f"Warmup: Supabase warmup failed (non-fatal): {e}")
+
+    # Run sync warmup in a worker thread so it doesn't block the event loop.
+    await asyncio.to_thread(_warm_sync)
 
 
 if __name__ == "__main__":

@@ -39,6 +39,7 @@ This is the **canonical shared instruction file** for all coding agents working 
 - `universal-scraper/`: legacy scraping scripts (referenced by adapters)
 - `docs/`: human-facing project docs and agent support files
 - `docs/knowledge-base/`: canonical human-facing KT hub for system understanding
+- `testing/`: durable test harnesses kept for reruns (e.g. `testing/latency/` — voice-agent LLM A/B matrix)
 
 ---
 
