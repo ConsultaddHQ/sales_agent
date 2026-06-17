@@ -6,6 +6,42 @@
 
 ---
 
+## 2026-06-17 — N/A — Production hardening (workstream 1): abuse/cost protection + observability + tests
+
+- **Status:** Completed (lean core; per-store rate limiting deferred)
+- **Owner:** Claude
+- **Summary:** Two backward-compatible increments on the `production-hardening` branch. (1) Abuse/cost protection: shared-secret webhook auth, lower session cap, agent scope guardrail, env-driven CORS. (2) Observability + tests: cross-service request-id correlation and a hermetic 13-test pytest harness for search-service.
+- **Why:** The voice endpoints were open to anyone with the URL, sessions could run 10 min, the agent could be used off-scope (burning ElevenLabs minutes/tokens), CORS was wildcard, logs couldn't be correlated across services, and there were no automated tests.
+- **What changed:**
+  - **Webhook secret:** `search-service` validates `X-TeamPop-Secret` (constant-time) on `/search`+`/product-details` when `WEBHOOK_SECRET` is set; the onboarding proxy relays it; `elevenlabs_agent` bakes it into both webhook tools' `request_headers`. Unset = no enforcement (demo unaffected).
+  - **Session cost caps:** agent `max_duration_seconds` 600→300; added a "only help with shopping here; not a general assistant" guardrail to all five prompt templates.
+  - **CORS:** wildcard → `ALLOWED_ORIGINS` env allowlist (default `*`) in search, onboarding, image_server.
+  - **Request-id:** contextvar + `logging.Filter` injects `[request_id]` into every search-service log line; middleware reads/generates `X-Request-ID` and echoes it; onboarding proxy generates/forwards it so both services share one id per turn.
+  - **Tests:** `search-service/tests/` — 13 hermetic tests (Supabase + embedder faked) covering `/health`, `/search` paths, `/product-details` paths, secret auth (401/accept), and `_truncate_for_voice`. Added `requirements-dev.txt`.
+- **Files:** `search-service/main.py`, `onboarding-service/main.py`, `onboarding-service/elevenlabs_agent.py`, `image_server.py`, `search-service/tests/{conftest,test_main}.py`, both `.env.example`.
+- **Tradeoffs:** Secret defaults to OFF for compatibility — must be activated explicitly (set env in both services + re-push agents). Per-store rate limiting deferred (needs Redis; ElevenLabs' shared IPs break IP-based limiting). Request-id is per-process (not a distributed trace).
+- **Verification:** all services compile + import; secret logic unit-checked (no-op unset, 401 missing/wrong, accept correct); tool headers populated only when secret set; `[request_id]` confirmed in log output; `pytest` → 13 passed.
+- **Related Decisions:** 2026-06-17 — Webhook edge contract (`X-TeamPop-Secret` + `X-Request-ID`).
+- **Notes:** Branch not yet merged to `version/v2` — left for human review.
+
+## 2026-06-17 — N/A — `get_product_details` wired end-to-end + sensesindia enriched
+
+- **Status:** Completed
+- **Owner:** Claude (hardening); Gemini (initial impl)
+- **Summary:** The `get_product_details` enrichment (on-demand tool + `metadata` JSONB) had been committed but was non-functional. Fixed all blockers so the agent answers real product questions (sizes, per-size price/availability, fabric) and explicitly says "not listed" when data is absent, instead of always deflecting to "Shop Now".
+- **Why:** Goal 1 of the demo roadmap — make the sensesindia voice agent genuinely knowledgeable without re-bloating per-turn latency/cost, and never fabricate.
+- **Blockers fixed:**
+  1. **search-service wouldn't boot** — `/product-details` annotated `Dict[str, Any]` but `Any` wasn't imported → `NameError` at import (crashed `/search` too). Added the import.
+  2. **Tool 404'd through ngrok** — onboarding only proxied `/search`. Generalized `_do_proxy` to take a path and added a `/product-details` proxy route.
+  3. **Prompt contradiction / fabrication risk** — removed the old "route sizing to Shop Now" rule, documented `get_product_details` in all five templates, and added the anti-fabrication contract.
+  4. **Migration** — made `add_metadata_column.sql` idempotent (`ADD COLUMN IF NOT EXISTS`).
+  5. **Data + agent** — re-onboarded sensesindia with `store_type="shopify"` (custom domain auto-detects as universal, which drops variants); fresh agent picked up all three tools.
+- **Files:** `search-service/main.py`, `onboarding-service/main.py`, `onboarding-service/elevenlabs_agent.py`, `add_metadata_column.sql`, `onboarding-service/services/products.py` (capture, by Gemini).
+- **Tradeoffs:** `/product-details` returns raw variant objects (compact for ~8 variants; revisit shaping if catalogs grow). Custom-domain Shopify still needs explicit `store_type="shopify"` until `matches_url` probes `/products.json`.
+- **Verification:** search-service imports cleanly with `/product-details` registered; live `POST {ngrok}/product-details` returns variants/options/fabric; voice test confirmed sizes-answered and wash-care "not listed".
+- **Related Decisions:** 2026-06-17 — On-demand product detail via `get_product_details` + `metadata` JSONB.
+- **Notes:** sensesindia re-onboard mints a new `store_id`/`agent_id`/demo URL (pipeline generates a fresh uuid per run).
+
 ## 2026-06-12 — N/A — Fix: Product images 404 in the running voice agent (4-layer root cause)
 
 - **Status:** Completed

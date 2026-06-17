@@ -29,11 +29,13 @@ These cannot be done by an agent — they require account access, credentials, o
 | Task | Owner | Status | Effort | Notes |
 |------|-------|--------|--------|-------|
 | Upgrade existing production agents to Claude Haiku 4.5 | Human | ⬜ Pending | 15 min per agent | Run `./onboarding-service/.venv/bin/python testing/latency/upgrade_agent_model.py --agent-id <id> --store-id <uuid>` for each live agent that should inherit the 2026-04-17 winner. `--from-json` for batch. |
-| Product-description strategy for larger catalogs | Agent | ⬜ Pending | 3–4 hrs | Today we truncate to 200 chars in `_truncate_for_voice`. As descriptions grow, consider: (a) pre-generate a 150-char `voice_description` column at ingestion and send that instead of truncation; or (b) add a `get_product_details(product_id)` tool the agent calls only when the user asks for more. Keep the full description in DB for the carousel card. |
+| Product-description strategy for larger catalogs | Agent | ✅ Done (2026-06-17) | — | Solved via option (b): `get_product_details` on-demand tool + `metadata` JSONB column. Search payload stays lean (200-char blurb); full variants/options/fabric fetched only when asked. See decisions 2026-06-17. |
 | Evaluate moving Supabase region closer to India (e.g. Mumbai) OR add search-service result cache | Human | ⬜ Pending | 2–4 hrs | ~1 s network floor on every search call today; region move or LRU cache are the two remaining levers to break that floor. |
 | Rate limiting on `/api/submit-request` | Agent | ⬜ Pending | 1 hr | Prevent spam submissions before public launch |
-| CORS restriction from `*` to actual domains | Agent | ⬜ Pending | 30 min | All services currently use wildcard — must restrict before production |
-| Production deployment + custom domain + SSL | Human + Agent | ⬜ Pending | 1 day | Needed before sharing with real clients |
+| CORS restriction from `*` to actual domains | Agent | ✅ Done (2026-06-17) | — | Now env-driven `ALLOWED_ORIGINS` (default `*`) in search/onboarding/image_server. Set real domains in prod `.env`. |
+| Activate webhook auth (set `WEBHOOK_SECRET`) | Human + Agent | ⬜ Pending | 30 min | Code shipped 2026-06-17, OFF by default. Set the same `WEBHOOK_SECRET` in both services' `.env`, re-push live agents (header baked at creation time), restart. |
+| Per-store rate limiting (shared state) | Agent | ⬜ Pending | 2–3 hrs | IP-based limiting mis-groups ElevenLabs' shared egress IPs. Needs Redis/shared store keyed by `store_id`. Fold into the AWS phase. |
+| Production deployment + custom domain + SSL | Human + Agent | ⬜ Pending | 1 day | Target (2026-06-17 plan): containerize both services + Caddy for domain+TLS to retire ngrok; keep a warm host so the embedding model stays loaded (EC2+Compose recommended for SMB; ECS Fargate when concurrency grows). |
 | Request deduplication (same email/URL) | Agent | ⬜ Pending | 30 min | Prevent duplicate submissions |
 
 ---
@@ -56,7 +58,7 @@ These cannot be done by an agent — they require account access, credentials, o
 |------|-------|--------|--------|-------|
 | Admin auth upgrade (password → JWT tokens) | Agent | ⬜ Pending | 2 hrs | Current X-Admin-Password header is basic |
 | RLS policies on `agent_requests` table | Agent | ⬜ Pending | 1 hr | Currently using service-role key (acceptable for backend) |
-| Automated testing (API + frontend) | Agent | ⬜ Pending | 3 hrs | No test suite for the new endpoints |
+| Automated testing (API + frontend) | Agent | 🟡 Partial (2026-06-17) | 2 hrs | search-service has a 13-test hermetic pytest suite (`search-service/tests/`). Still needed: onboarding-service + frontend tests. |
 | SEO meta tags + Open Graph for website | Agent | ⬜ Pending | 1 hr | Improve social sharing and search visibility |
 | Dark mode toggle on website | Agent | ⬜ Pending | 1 hr | Currently dark-only, some users may prefer light |
 | Multi-language support | Agent | ⬜ Pending | 4 hrs | i18n for the marketing website |
@@ -75,9 +77,10 @@ These cannot be done by an agent — they require account access, credentials, o
 | ngrok free interstitial blocks widget | Low | External users must click "Visit Site" before widget JS loads |
 | Supermicro internal API undocumented | Low | `/en/structuredbapi/ps2/system/gpu/all` may change without notice |
 | Universal adapter not integration-tested | Medium | JSON-LD, platform selectors, sitemap discovery need live-site testing |
+| Custom-domain Shopify auto-detects as universal | Medium | `ShopifyAdapter.matches_url` only matches `myshopify.com`, so custom domains (e.g. `sensesindia.in`) route to the universal adapter and lose variants/options/`body_html` (empty `metadata`). Workaround: onboard with `store_type="shopify"`. Fix: probe `/products.json` in `matches_url`. |
 | Gemini 2.5 Flash 2nd-turn dead air | Resolved (2026-04-17) | Fixed by STEP 3 model swap to `claude-haiku-4-5`. Default updated in code + .env.example. Existing agents still need per-agent upgrade via `testing/latency/upgrade_agent_model.py`. |
 | `sys.path.insert` for shared/ imports | Low | Upgrade to `pip install -e .` when team grows |
-| Search-service rate limiting assumes client IP visibility | Medium | If deployed behind a proxy/load balancer, configure forwarded IP handling or tune `SEARCH_RATE_LIMIT` to avoid mis-grouping traffic |
+| Search-service rate limiting is IP-based | Medium | All ElevenLabs webhook calls share egress IPs, so per-IP limits mis-group them. Webhook shared-secret (2026-06-17) blocks external abuse; true per-store limiting needs shared state (Redis) — tracked in High Priority. Behind a proxy, also configure forwarded-IP handling. |
 
 ---
 
@@ -87,8 +90,8 @@ Move items here when done (keep last 5 for reference, then delete oldest).
 
 | Date | Task | Who |
 |------|------|-----|
-| 2026-04-17 | Voice-agent latency STEP 3: 6-model A/B test picked Claude Haiku 4.5 (100% tool reliability, ~3.4s median). Code defaults flipped, harness moved to `testing/latency/` with new `upgrade_agent_model.py` helper. | Claude |
-| 2026-04-17 | Voice-agent latency STEP 1+2+4: search warmup + `X-Search-Duration-Ms` header; proxy client reuse + correlated logging; Supabase `hybrid_search_products` rewritten to use HNSW + new `products_fts_idx` GIN; tool-first prompt rule in all 5 templates. Search 2100–3100 ms → ~1000 ms | Claude |
-| 2026-04-14 | Phase 1 voice UX: reduced ElevenLabs tools to `search_products` + `update_products`, rewrote prompts for one-turn clarify-before-search | Codex |
-| 2026-04-14 | Phase 2 infrastructure: async search endpoint, thread-offloaded embedding/RPC, `slowapi` rate limiting | Codex |
-| 2026-04-10 | Human-facing `docs/knowledge-base/` handbook, root pointers, and personal-note canonical links | Codex |
+| 2026-06-17 | Prod-hardening #2: cross-service request-id correlation + 13-test hermetic search-service pytest suite | Claude |
+| 2026-06-17 | Prod-hardening #1: webhook shared-secret auth, session cap 600→300, scope guardrail (5 prompts), env-driven CORS | Claude |
+| 2026-06-17 | Wired `get_product_details` end-to-end (fixed search crash, proxy 404, anti-fabrication prompts, idempotent migration); sensesindia re-onboarded as Shopify | Claude |
+| 2026-06-12 | Fixed product-image 404s in voice agent (4-layer root cause) | Claude |
+| 2026-04-17 | Voice-agent latency STEP 3: 6-model A/B → Claude Haiku 4.5 default; harness in `testing/latency/` | Claude |

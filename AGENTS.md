@@ -33,7 +33,7 @@ This is the **canonical shared instruction file** for all coding agents working 
 - `onboarding-service/routes/`: API endpoints split by domain (onboard, admin, client)
 - `onboarding-service/services/`: business logic (products, test_page, agent_creator)
 - `search-service/`: FastAPI hybrid search API (imports from shared/)
-- `image_server.py`: primary image server used by `start_services.sh`
+- `image_server.py`: standalone image server (port 8000). In the single-tunnel/demo setup, onboarding-service serves `/images` directly, so this is optional for local dev.
 - `www.teampop/frontend/`: embeddable React widget in Shadow DOM
 - `www.teampop/website/`: marketing website + client acquisition flow (React + GSAP + Tailwind)
 - `universal-scraper/`: legacy scraping scripts (referenced by adapters)
@@ -46,16 +46,13 @@ This is the **canonical shared instruction file** for all coding agents working 
 ## Common Commands
 
 ```bash
-# Start all services
-./start_services.sh
+# No aggregate start/stop script exists — start each service manually
+# (in its own terminal). Stop with Ctrl-C or: lsof -ti tcp:8005 tcp:8006 | xargs kill
 
-# Stop all services
-./stop_services.sh
-
-# Onboarding service
+# Onboarding service (port 8005 — also proxies /search, /product-details, /images, /widget, /demo)
 cd onboarding-service && source .venv/bin/activate && python main.py
 
-# Search service
+# Search service (port 8006)
 cd search-service && source .venv/bin/activate && uvicorn main:app --port 8006
 
 # Widget

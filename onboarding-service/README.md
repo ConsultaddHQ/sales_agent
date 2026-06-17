@@ -86,6 +86,8 @@ cp .env.example .env   # populate with your keys
 | `STORE_IMAGES_PATH` | No | `./images` | Directory for downloaded product images |
 | `ELEVENLABS_VOICE_ID` | No | `EXAVITQu4vr4xnSDxMaL` | ElevenLabs voice (default: Sarah) |
 | `ELEVENLABS_LLM_MODEL` | No | `claude-haiku-4-5` | ElevenLabs LLM for the agent brain. Default is the 2026-04-17 A/B test winner. See `testing/latency/README.md` for the harness and `docs/agents/decisions.md` for the ranking. Change via `testing/latency/upgrade_agent_model.py` to upgrade live agents. |
+| `WEBHOOK_SECRET` | No | — | Shared secret baked into every agent's webhook tool headers at creation and relayed by the `/search` + `/product-details` proxy. Must match `WEBHOOK_SECRET` in search-service. Blank = no enforcement (dev/demo). Set it AND re-push agents to activate. |
+| `ALLOWED_ORIGINS` | No | `*` | Comma-separated CORS allowlist. Set real domains in prod. |
 | `ADMIN_PASSWORD` | No | `changeme` | Admin dashboard password |
 | `RESEND_API_KEY` | No | — | Resend email API key |
 | `SLACK_WEBHOOK_URL` | No | — | Slack incoming webhook for notifications |
@@ -101,7 +103,7 @@ uvicorn main:app --reload --port 8005
 
 ### Onboarding
 
-- `POST /onboard` — Unified endpoint for all store types. Body: `{"url": "...", "store_type": "auto"}`. Auto-detects platform or specify: `shopify`, `threadless`, `supermicro`, `universal`.
+- `POST /onboard` — Unified endpoint for all store types. Body: `{"url": "...", "store_type": "auto"}`. Auto-detects platform or specify: `shopify`, `threadless`, `supermicro`, `universal`. **Custom-domain Shopify stores must pass `store_type="shopify"` explicitly** — auto-detect only matches `myshopify.com` and otherwise falls back to the universal adapter, which does not capture variants/options/fabric into `metadata` (so `get_product_details` would return empty).
 - `POST /onboard-threadless` — Legacy alias, delegates to `/onboard` with `store_type=threadless`.
 - `POST /onboard-supermicro` — Legacy alias, delegates to `/onboard` with `store_type=supermicro`.
 
@@ -114,9 +116,14 @@ uvicorn main:app --reload --port 8005
 - `POST /api/update-request/{id}` — Admin: update request metadata.
 - `POST /api/send-agent/{id}` — Admin: send delivery email with test link.
 
-### Other
+### Other / single-tunnel edge
+
+The onboarding service is the only externally-tunneled origin (single ngrok tunnel), so it also fronts everything the widget and ElevenLabs agent need:
 
 - `GET /health` — Health check.
+- `POST /search` — Proxies to search-service `/search` (so the ElevenLabs webhook hits one tunnel).
+- `POST /product-details` — Proxies to search-service `/product-details` for the `get_product_details` tool. Both proxies relay the `X-TeamPop-Secret` (webhook auth) and `X-Request-ID` (log correlation) headers downstream.
+- `/widget`, `/images`, `/demo` — StaticFiles mounts for the built widget IIFE, downloaded product images, and generated demo pages.
 
 All onboarding endpoints return:
 ```json

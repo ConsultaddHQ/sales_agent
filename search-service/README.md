@@ -26,7 +26,14 @@ widget.
   ```json
   { "store_id": "...", "query": "..." }
   ```
-  Responds with a list of products and a marketing pitch.
+  Responds with a lean list of products (name, price, 200-char blurb, image/product URLs) and a marketing pitch.
+- `POST /product-details` – On-demand rich detail for ONE product, called by the ElevenLabs `get_product_details` tool only when the user asks for specifics. Accepts JSON:
+  ```json
+  { "store_id": "...", "product_id": "..." }
+  ```
+  Returns `{ product_name, available_options, variants, full_description }` from the product's `metadata` JSONB (sizes, per-variant price/availability/SKU, fabric). 404 if not found; 400 on a bad UUID.
+
+Both POST endpoints require an `X-TeamPop-Secret` header **when `WEBHOOK_SECRET` is set** (the ElevenLabs webhook sends it; the onboarding proxy relays it). Both also accept/echo an `X-Request-ID` for cross-service log correlation.
 
 ## Environment
 
@@ -38,7 +45,9 @@ Create a `.env` from `.env.example` with the following vars:
 - `OPENROUTER_API_KEY` – legacy key for optional price parsing experiments.
 - `OPENROUTER_BASE_URL` – optional custom endpoint.
 - `OPENROUTER_MODEL` – model name for completions (default `xai/grok-beta`).
-- `SEARCH_RATE_LIMIT` – per-client limit for `POST /search` (default `30/minute`).
+- `SEARCH_RATE_LIMIT` – per-client (IP) limit for the POST endpoints (default `30/minute`). Note: ElevenLabs webhook calls share egress IPs, so this is coarse — true per-store limiting is a tracked follow-up (needs Redis).
+- `WEBHOOK_SECRET` – when set, `/search` and `/product-details` require a matching `X-TeamPop-Secret` header. Must equal `WEBHOOK_SECRET` in onboarding-service. Blank = no enforcement (dev/demo).
+- `ALLOWED_ORIGINS` – comma-separated CORS allowlist; `*` (default) allows all (dev only). Set real widget/site domains in prod.
 - `UVICORN_WORKERS` – worker count for non-reload runs (default `4`).
 - `RELOAD` – set `false` to enable multi-worker process mode from `python main.py`.
 - `LOG_LEVEL` – `INFO`/`DEBUG`.
@@ -62,14 +71,24 @@ source .venv/bin/activate
 uvicorn main:app --host 0.0.0.0 --port 8006 --workers 4
 ```
 
+## Tests
+
+A hermetic pytest suite lives in `search-service/tests/` (no DB, no model download — Supabase and the embedder are faked). Covers `/health`, `/search` (happy / empty query / bad store_id / no results), `/product-details` (happy / 404 / bad uuid), webhook-secret auth (401 + accept), and `_truncate_for_voice`.
+
+```bash
+cd search-service
+.venv/bin/pip install -r requirements-dev.txt   # pytest, httpx (one-time)
+.venv/bin/python -m pytest -q
+```
+
 ## Debugging
 
-The service includes a `RequestLoggingMiddleware` that logs every incoming request:
+The service includes a `RequestLoggingMiddleware` that logs every incoming request. Every line is prefixed with a `[request_id]` (read from the incoming `X-Request-ID` or generated, and echoed back in the response header) so a single voice turn can be traced across onboarding-proxy → search-service logs:
 
 ```
-➡️  POST /search | client=34.59.11.47 | body={"store_id": "...", "query": "..."}
-🚫 400: Invalid store_id | store_id='...' (35 chars) | query='...'
-⬅️  POST /search → 400
+2026-06-17 ... search-service [a1b2c3d4] - ➡️  POST /search | client=34.59.11.47 | body={"store_id": "...", "query": "..."}
+2026-06-17 ... search-service [a1b2c3d4] - 🚫 400: Invalid store_id | store_id='...' (35 chars) | query='...'
+2026-06-17 ... search-service [a1b2c3d4] - ⬅️  POST /search → 400
 ```
 
 Common 400 errors:
@@ -91,7 +110,7 @@ On startup the service runs a warmup hook (`@app.on_event("startup")`) that pre-
 
 Without this, the first real request of each process pays a 1.5–3 s cold-start cost for the model load. If these lines do not appear, search will be slow on the first user query after each restart.
 
-Every `/search` response carries an `X-Search-Duration-Ms` header measuring embed + Supabase RPC time. The `onboarding-service` `/search` proxy forwards this header and emits one correlated info log per call (`⏱ /search proxy | store_id=… | query=… | search_ms=… | proxy_total_ms=… | status=…`). CORS `expose_headers` includes `X-Search-Duration-Ms` so browser callers can read it too.
+Every `/search` response carries an `X-Search-Duration-Ms` header measuring embed + Supabase RPC time. The `onboarding-service` proxy (both `/search` and `/product-details`) forwards this header and emits one correlated info log per call (`⏱ {path} proxy | req_id=… | store_id=… | detail=… | search_ms=… | proxy_total_ms=… | status=…`). CORS `expose_headers` includes `X-Search-Duration-Ms` so browser callers can read it too.
 
 The Supabase `hybrid_search_products` function is index-aware as of 2026-04-17 — it uses HNSW via `ORDER BY embedding <=> p_query_embedding LIMIT 50` and a GIN-backed `@@ plainto_tsquery(...)` filter. See `docs/agents/decisions.md` for details. Warm typical search is ~1 s end-to-end; ~50 ms of that is DB compute, the rest is India↔Supabase network. Moving Supabase region or adding a short-TTL result cache in this service are the remaining levers if the network floor needs breaking.
 

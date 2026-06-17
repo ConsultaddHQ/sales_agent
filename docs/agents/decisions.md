@@ -6,6 +6,30 @@
 
 ---
 
+## 2026-06-17: Webhook edge contract — `X-TeamPop-Secret` auth + `X-Request-ID` correlation
+
+- **Decision:** The public search endpoints (`/search`, `/product-details`) gain two standing header contracts, both relayed by the onboarding `/search`-proxy edge:
+  1. **Auth:** when `WEBHOOK_SECRET` is set, both endpoints require a matching `X-TeamPop-Secret` header (constant-time compare in `search-service/main.py:_check_webhook_secret`). `elevenlabs_agent._get_tool_config` bakes the secret into every webhook tool's `request_headers` at agent-creation time; the onboarding proxy forwards it downstream. Unset = no enforcement (dev/demo stays open).
+  2. **Correlation:** every request carries an `X-Request-ID` (read or generated at the onboarding edge, forwarded to search-service, injected into every search-service log line via a contextvar + `logging.Filter`, echoed back in the response header).
+- **Context:** The endpoints were open to anyone with the ngrok/domain URL, and IP rate-limiting mis-groups because all ElevenLabs webhook calls share ElevenLabs' egress IPs. Debugging also required manually stitching onboarding-proxy logs to search-service logs.
+- **Rationale:** A shared secret is the simplest auth that fits a server-to-server webhook (no user identity involved) and is backward-compatible (off until configured). A single correlation id threaded through the proxy makes a voice turn greppable across both services.
+- **Alternatives considered:** (1) Per-store API keys — heavier, premature for one tenant. (2) mTLS / signed requests — overkill for alpha. (3) Validate only at the edge — rejected; search-service owns the data, so it validates (defense in depth), edge just relays.
+- **Consequences:** `WEBHOOK_SECRET` must match in both services' `.env`; activating it requires re-pushing existing agents (the header is baked at creation). Per-store rate limiting still needs shared state (Redis) and is deferred to the AWS phase. The log format now includes `[request_id]`; the filter is attached to the handler so even uvicorn records get the field (no `KeyError`).
+- **Status:** Active
+- **Agent/Author:** Claude
+
+## 2026-06-17: On-demand product detail via `get_product_details` + `metadata` JSONB
+
+- **Decision:** Rich per-product data (full variant/option arrays, per-size price/availability/SKU, fabric/description via `body_html`, vendor, product_type) is captured into a new `products.metadata` JSONB column at onboarding and exposed through a **third** ElevenLabs tool, `get_product_details(store_id, product_id)` — a webhook the agent calls **only when the user asks for specifics**. Search results stay lean (name + price + 200-char blurb). This extends the 2026-04-14 two-tool contract to three tools. The agent prompt now carries an anti-fabrication rule: answer specifics ONLY from the tool result; if a field is absent (e.g. wash-care), say it isn't listed and point to "Shop Now" — never invent.
+- **Context:** v1 discarded all variant/metadata to keep voice context/latency/cost low, so the agent had to deflect every detail question to "Shop Now". The goal was to answer real product questions without re-bloating every turn.
+- **Rationale:** On-demand retrieval keeps base latency/cost unchanged (extra round-trip only on detail turns) and makes fabrication structurally impossible (the data is present or explicitly absent). A JSONB column avoids per-attribute schema migrations across store types.
+- **Alternatives considered:** (1) Fat search payload (full variants every turn) — reintroduces the v1 latency/cost problem. (2) ElevenLabs Knowledge-Base RAG — fuzzy retrieval, per-store sync overhead, weaker for exact specs. Both rejected; see the 2026-06-17 session.
+- **Consequences:** `add_metadata_column.sql` (idempotent) must be applied per Supabase project; existing rows need re-onboarding to populate `metadata`. **Custom-domain Shopify stores must be onboarded with `store_type="shopify"`** — auto-detect routes them to the universal adapter, which doesn't capture variants (tracked follow-up: probe `/products.json` in `ShopifyAdapter.matches_url`). The `/product-details` route must be proxied by onboarding for the single-tunnel/ngrok setup.
+- **Status:** Active
+- **Agent/Author:** Claude (impl hardened); Gemini (initial tool/endpoint)
+
+---
+
 ## 2026-06-12: Product image URLs are composed at read time and relayed via an explicit tool schema
 
 - **Decision:** Two standing rules for product image URLs end-to-end:
