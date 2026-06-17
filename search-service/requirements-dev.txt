@@ -1,0 +1,7 @@
+# Dev/test dependencies for search-service (not needed at runtime).
+# Install:  .venv/bin/pip install -r requirements-dev.txt
+# Run:      .venv/bin/python -m pytest -q
+pytest>=8
+# httpx is pulled in transitively (used by fastapi.testclient) but pin it here
+# so the test client works even on a minimal install.
+httpx

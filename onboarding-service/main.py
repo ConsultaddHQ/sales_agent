@@ -91,6 +91,7 @@ def health_check():
 # ── Search proxy (so ElevenLabs webhook can hit the same ngrok tunnel) ──
 import json as _json
 import time as _time
+import uuid as _uuid
 
 import httpx
 from fastapi import Request
@@ -150,7 +151,8 @@ async def search_proxy(request: Request):
         pass
 
     secret = request.headers.get("X-TeamPop-Secret")
-    return await _proxy_to_search("/search", body, store_id_log, query_log, secret)
+    req_id = request.headers.get("X-Request-ID") or _uuid.uuid4().hex[:8]
+    return await _proxy_to_search("/search", body, store_id_log, query_log, secret, req_id)
 
 
 @app.post("/product-details")
@@ -174,8 +176,9 @@ async def product_details_proxy(request: Request):
         pass
 
     secret = request.headers.get("X-TeamPop-Secret")
+    req_id = request.headers.get("X-Request-ID") or _uuid.uuid4().hex[:8]
     return await _proxy_to_search(
-        "/product-details", body, store_id_log, product_id_log, secret
+        "/product-details", body, store_id_log, product_id_log, secret, req_id
     )
 
 
@@ -185,6 +188,7 @@ async def _proxy_to_search(
     store_id_log: str,
     detail_log: str,
     secret: str | None = None,
+    req_id: str | None = None,
 ):
     """Forward a request body to `{SEARCH_SERVICE_URL}{path}` and relay the response."""
     client = _search_proxy_client
@@ -193,8 +197,8 @@ async def _proxy_to_search(
         # one-shot client so we never 500 on this path.
         logger.warning("Search proxy client missing on startup; using one-shot client")
         async with httpx.AsyncClient(timeout=25) as one_shot:
-            return await _do_proxy(one_shot, path, body, store_id_log, detail_log, secret)
-    return await _do_proxy(client, path, body, store_id_log, detail_log, secret)
+            return await _do_proxy(one_shot, path, body, store_id_log, detail_log, secret, req_id)
+    return await _do_proxy(client, path, body, store_id_log, detail_log, secret, req_id)
 
 
 async def _do_proxy(
@@ -204,12 +208,16 @@ async def _do_proxy(
     store_id_log: str,
     detail_log: str,
     secret: str | None = None,
+    req_id: str | None = None,
 ):
     # Relay the shared webhook secret downstream so search-service can
-    # authenticate the call (the public edge is this proxy).
+    # authenticate the call (the public edge is this proxy). Forward the
+    # correlation id so both services' logs share one request id.
     headers = {"Content-Type": "application/json"}
     if secret:
         headers["X-TeamPop-Secret"] = secret
+    if req_id:
+        headers["X-Request-ID"] = req_id
 
     proxy_start = _time.perf_counter()
     try:
@@ -220,14 +228,14 @@ async def _do_proxy(
         )
     except Exception as e:
         logger.error(
-            f"Proxy error | path={path} | store_id={store_id_log} | detail={detail_log!r} | {e}"
+            f"Proxy error | req_id={req_id} | path={path} | store_id={store_id_log} | detail={detail_log!r} | {e}"
         )
         return JSONResponse(content={"error": str(e)}, status_code=502)
 
     proxy_ms = int((_time.perf_counter() - proxy_start) * 1000)
     downstream_ms = resp.headers.get("X-Search-Duration-Ms", "?")
     logger.info(
-        f"⏱  {path} proxy | store_id={store_id_log} | detail={detail_log!r} "
+        f"⏱  {path} proxy | req_id={req_id} | store_id={store_id_log} | detail={detail_log!r} "
         f"| search_ms={downstream_ms} | proxy_total_ms={proxy_ms} "
         f"| status={resp.status_code}"
     )

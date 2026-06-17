@@ -24,12 +24,31 @@ _REPO_ROOT = str(Path(__file__).resolve().parent.parent)
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+import contextvars
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=LOG_LEVEL,
-    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    format="%(asctime)s %(levelname)s %(name)s [%(request_id)s] - %(message)s",
 )
 logger = logging.getLogger("search-service")
+
+# Per-request correlation id. Read from X-Request-ID (set by the onboarding
+# proxy) or generated per request, then injected into every log line so a
+# single voice turn can be traced across services.
+_request_id_ctx: contextvars.ContextVar = contextvars.ContextVar("request_id", default="-")
+
+
+class _RequestIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = _request_id_ctx.get()
+        return True
+
+
+# Attach to the handler (not a logger) so EVERY record it formats — including
+# uvicorn's — gets request_id set before formatting, avoiding KeyErrors.
+for _h in logging.getLogger().handlers:
+    _h.addFilter(_RequestIdFilter())
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -134,27 +153,33 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
-        body = b""
-        if request.method in ("POST", "PUT", "PATCH"):
-            body = await request.body()
+        rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:8]
+        token = _request_id_ctx.set(rid)
+        try:
+            body = b""
+            if request.method in ("POST", "PUT", "PATCH"):
+                body = await request.body()
 
-        # Log the incoming request
-        body_preview = body[:500].decode("utf-8", errors="replace") if body else "<empty>"
-        logger.info(
-            f"➡️  {request.method} {request.url.path} "
-            f"| client={request.client.host if request.client else '?'} "
-            f"| body={body_preview}"
-        )
+            # Log the incoming request
+            body_preview = body[:500].decode("utf-8", errors="replace") if body else "<empty>"
+            logger.info(
+                f"➡️  {request.method} {request.url.path} "
+                f"| client={request.client.host if request.client else '?'} "
+                f"| body={body_preview}"
+            )
 
-        response = await call_next(request)
+            response = await call_next(request)
 
-        # Log the response status
-        level = logging.WARNING if response.status_code >= 400 else logging.INFO
-        logger.log(
-            level,
-            f"⬅️  {request.method} {request.url.path} → {response.status_code}"
-        )
-        return response
+            # Log the response status
+            level = logging.WARNING if response.status_code >= 400 else logging.INFO
+            logger.log(
+                level,
+                f"⬅️  {request.method} {request.url.path} → {response.status_code}"
+            )
+            response.headers["X-Request-ID"] = rid
+            return response
+        finally:
+            _request_id_ctx.reset(token)
 
 
 app.add_middleware(RequestLoggingMiddleware)
