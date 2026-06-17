@@ -519,7 +519,14 @@ class ElevenLabsAgentCreator:
             {
                 "type": "client",
                 "name": "update_carousel_main_view",
-                "description": "Focus on a specific product in the carousel by index",
+                "description": (
+                    "Focus the carousel's main view on an already-shown product by its "
+                    "zero-based position (0 = first product, 1 = second, ...). Call this "
+                    "BEFORE speaking when the user references a product by position or order "
+                    "(\"the second one\", \"that third option\"). Fire-and-forget: do not wait "
+                    "for a result. Does NOT fetch new products — only changes which existing "
+                    "product is in focus."
+                ),
                 "expects_response": False,
                 "execution_mode": "immediate",
                 "tool_error_handling_mode": "auto",
@@ -673,7 +680,7 @@ class ElevenLabsAgentCreator:
                 logger.warning("⚠️ ignore_default_personality is NOT true — ElevenLabs default personality is active")
             if not stored_tools:
                 logger.error("❌ CRITICAL: Agent has NO tools configured!")
-            expected_tool_names = {"search_products", "update_products", "get_product_details"}
+            expected_tool_names = {"search_products", "update_products", "get_product_details", "update_carousel_main_view"}
             if actual_tool_names != expected_tool_names:
                 logger.warning(
                     "⚠️ Tool mismatch. Expected exactly %s, got %s",

@@ -6,8 +6,7 @@ import {
 import "../styles/AvatarWidget.css";
 import "../styles/ptt.css";
 import { useVoiceMode } from "../hooks/useVoiceMode";
-// eslint-disable-next-line no-unused-vars
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue } from "framer-motion";
 import { usePttInteraction } from "../hooks/usePttInteraction";
 
 // Served from the widget mount (onboarding-service mounts dist/ at /widget),
@@ -249,6 +248,10 @@ function AvatarInner({
   setActiveIndex,
   carouselRef,
   handleCarouselScroll,
+  dragX,
+  dragY,
+  dragConstraintsRef,
+  saveDragPosition,
 }) {
   const [agentSubtitle, setAgentSubtitle] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
@@ -432,12 +435,15 @@ function AvatarInner({
   });
 
   useConversationClientTool("update_carousel_main_view", (parameters) => {
-    console.log("update_carousel_main_view called:", parameters);
-    const index = parameters?.index;
-    if (typeof index === "number" && index >= 0 && index < latestProductsRef.current.length) {
-      setActiveIndex(index);
+    // Coerce string→number (some LLMs emit "2" instead of 2), then clamp to valid range.
+    const raw = parameters?.index;
+    const index = typeof raw === "string" ? parseInt(raw, 10) : raw;
+    const len = latestProductsRef.current.length;
+    if (Number.isFinite(index) && len > 0) {
+      setActiveIndex(Math.max(0, Math.min(index, len - 1)));
     }
-    return "Carousel updated successfully";
+    // No context update — avoids a feedback loop where the agent re-narrates unnecessarily.
+    return "ok";
   });
 
   const { sendContextualUpdate, sendUserMessage } = conversation;
@@ -553,13 +559,21 @@ function AvatarInner({
   // ── Inactivity Timeout ─────────────────────────────────────────────────────
   const lastActivityRef = useRef(null);
 
+  // Reset on any real activity: messages, products, status change, or live audio.
+  // visualState === "ACTIVE" covers both the agent speaking and the mic being live in VAD mode.
   useEffect(() => {
     lastActivityRef.current = Date.now();
-  }, [chatHistory, latestProducts, conversation.status]);
+  }, [chatHistory, latestProducts, conversation.status, visualState]);
 
   useEffect(() => {
     if (conversation.status !== "connected") return;
     const interval = setInterval(() => {
+      // Don't time out while the agent/mic is live (ACTIVE = connected VAD, PTT_HOLDING = user talking).
+      const isLive = visualState === "ACTIVE" || visualState === "PTT_HOLDING";
+      if (isLive) {
+        lastActivityRef.current = Date.now();
+        return;
+      }
       if (lastActivityRef.current && Date.now() - lastActivityRef.current > 60000) {
         console.log("Ending session due to 60s inactivity");
         conversation.endSession();
@@ -567,7 +581,7 @@ function AvatarInner({
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [conversation.status, conversation.endSession, setActiveView]);
+  }, [conversation.status, conversation.endSession, setActiveView, visualState]);
 
   // ── Shared dock props ─────────────────────────────────────────────────────
   const sharedDockProps = {
@@ -587,14 +601,20 @@ function AvatarInner({
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <AnimatePresence mode="wait">
+    <AnimatePresence>
       {/* ── Products overlay view ──────────────────────────────────────────── */}
       {activeView === "PRODUCTS" && (
         <motion.div
+          key="products"
           layoutId="widget-container"
-          initial={{ opacity: 0, scale: 0.9, y: 50 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.9, y: 50 }}
+          layout
+          drag
+          dragMomentum={false}
+          dragConstraints={dragConstraintsRef}
+          dragElastic={0.08}
+          style={{ x: dragX, y: dragY }}
+          onDragEnd={() => saveDragPosition(dragX.get(), dragY.get())}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="shopping-mode-overlay flex flex-col h-[100dvh] w-screen md:w-[400px] md:h-[600px] md:bottom-4 md:right-4 md:fixed md:top-auto md:left-auto md:rounded-3xl bg-black overflow-hidden relative z-40"
         >
           <div className="flex-none p-4 flex justify-end items-start absolute top-0 w-full z-50 pointer-events-none">
@@ -724,11 +744,17 @@ function AvatarInner({
       {/* ── Closed dock view (default) ────────────────────────────────────── */}
       {activeView === "NONE" && (
         <motion.div
+          key="none"
           layoutId="widget-container"
+          layout
           drag
           dragMomentum={false}
+          dragConstraints={dragConstraintsRef}
+          dragElastic={0.08}
+          style={{ x: dragX, y: dragY, position: 'fixed', bottom: '20px', right: '20px', left: 'auto', width: 'auto' }}
+          onDragEnd={() => saveDragPosition(dragX.get(), dragY.get())}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="avatar-widget mode-closed"
-          style={{ position: 'fixed', bottom: '20px', right: '20px', left: 'auto', width: 'auto' }}
         >
           <div className="avatar-controls-column">
             <OrbDock
@@ -743,9 +769,17 @@ function AvatarInner({
       {/* ── Chat view ─────────────────────────────────────────────────────── */}
       {activeView === "CHAT" && (
         <motion.div
+          key="chat"
           layoutId="widget-container"
+          layout
+          drag
+          dragMomentum={false}
+          dragConstraints={dragConstraintsRef}
+          dragElastic={0.08}
+          style={{ x: dragX, y: dragY, position: 'fixed', bottom: '20px', right: '20px', left: 'auto', width: 'auto' }}
+          onDragEnd={() => saveDragPosition(dragX.get(), dragY.get())}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="avatar-widget mode-open"
-          style={{ position: 'fixed', bottom: '20px', right: '20px', left: 'auto', width: 'auto' }}
         >
           <div className="bubble flex flex-col h-[70vh] md:w-[400px] max-h-[600px] overflow-hidden shadow-2xl border border-white/10 relative pointer-events-auto">
             <div className="bubble-header flex-shrink-0 bg-zinc-900 border-b border-white/10 px-4 py-3 flex justify-between items-center z-50">
@@ -804,6 +838,8 @@ function AvatarInner({
 
 // ─── AvatarWidget ─────────────────────────────────────────────────────────────
 
+const DRAG_POS_KEY = "team-pop-widget-pos";
+
 function AvatarWidget({ agentId, preview = false }) {
   const resolvedAgentId = agentId || window.__TEAM_POP_AGENT_ID__ || "YOUR_ELEVENLABS_AGENT_ID";
   const [activeView, setActiveView] = useState(preview ? "CHAT" : "NONE");
@@ -812,6 +848,15 @@ function AvatarWidget({ agentId, preview = false }) {
   const carouselRef = useRef(null);
   const isProgrammaticScrollRef = useRef(false);
   const scrollEndTimerRef = useRef(null);
+
+  // ── Drag position — shared across all views so position persists on open/close ──
+  const savedPos = (() => { try { return JSON.parse(localStorage.getItem(DRAG_POS_KEY)) || {}; } catch { return {}; } })();
+  const dragX = useMotionValue(savedPos.x ?? 0);
+  const dragY = useMotionValue(savedPos.y ?? 0);
+  const dragConstraintsRef = useRef(null);
+  const saveDragPosition = useCallback((x, y) => {
+    try { localStorage.setItem(DRAG_POS_KEY, JSON.stringify({ x, y })); } catch { /* storage full */ }
+  }, []);
 
   const handleCarouselScroll = useCallback(() => {
     if (isProgrammaticScrollRef.current) return;
@@ -839,17 +884,24 @@ function AvatarWidget({ agentId, preview = false }) {
   }
 
   return (
-    <AvatarInner
-      agentId={resolvedAgentId}
-      activeView={activeView}
-      setActiveView={setActiveView}
-      latestProducts={latestProducts}
-      setLatestProducts={setLatestProducts}
-      activeIndex={activeIndex}
-      setActiveIndex={setActiveIndex}
-      carouselRef={carouselRef}
-      handleCarouselScroll={handleCarouselScroll}
-    />
+    // dragConstraintsRef bounds drag to the visible viewport so the widget can never be lost off-screen.
+    <div ref={dragConstraintsRef} style={{ position: "fixed", inset: 0, pointerEvents: "none" }}>
+      <AvatarInner
+        agentId={resolvedAgentId}
+        activeView={activeView}
+        setActiveView={setActiveView}
+        latestProducts={latestProducts}
+        setLatestProducts={setLatestProducts}
+        activeIndex={activeIndex}
+        setActiveIndex={setActiveIndex}
+        carouselRef={carouselRef}
+        handleCarouselScroll={handleCarouselScroll}
+        dragX={dragX}
+        dragY={dragY}
+        dragConstraintsRef={dragConstraintsRef}
+        saveDragPosition={saveDragPosition}
+      />
+    </div>
   );
 }
 
