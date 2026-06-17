@@ -146,39 +146,75 @@ async def search_proxy(request: Request):
     except Exception:
         pass
 
+    return await _proxy_to_search("/search", body, store_id_log, query_log)
+
+
+@app.post("/product-details")
+async def product_details_proxy(request: Request):
+    """Proxy get_product_details webhook calls to the search service.
+
+    The ElevenLabs `get_product_details` tool posts to this path on the same
+    single ngrok tunnel that serves `/search`. Without this route the tool
+    would 404 (onboarding service is the only externally-tunneled origin).
+    """
+    body = await request.body()
+
+    store_id_log = "?"
+    product_id_log = "?"
+    try:
+        parsed = _json.loads(body or b"{}")
+        if isinstance(parsed, dict):
+            store_id_log = str(parsed.get("store_id", "?"))
+            product_id_log = str(parsed.get("product_id", "?"))
+    except Exception:
+        pass
+
+    return await _proxy_to_search(
+        "/product-details", body, store_id_log, product_id_log
+    )
+
+
+async def _proxy_to_search(
+    path: str,
+    body: bytes,
+    store_id_log: str,
+    detail_log: str,
+):
+    """Forward a request body to `{SEARCH_SERVICE_URL}{path}` and relay the response."""
     client = _search_proxy_client
     if client is None:
         # Extremely unlikely — startup event hasn't fired. Fall back to a
         # one-shot client so we never 500 on this path.
         logger.warning("Search proxy client missing on startup; using one-shot client")
         async with httpx.AsyncClient(timeout=25) as one_shot:
-            return await _do_proxy(one_shot, body, store_id_log, query_log)
-    return await _do_proxy(client, body, store_id_log, query_log)
+            return await _do_proxy(one_shot, path, body, store_id_log, detail_log)
+    return await _do_proxy(client, path, body, store_id_log, detail_log)
 
 
 async def _do_proxy(
     client: httpx.AsyncClient,
+    path: str,
     body: bytes,
     store_id_log: str,
-    query_log: str,
+    detail_log: str,
 ):
     proxy_start = _time.perf_counter()
     try:
         resp = await client.post(
-            f"{SEARCH_SERVICE_URL}/search",
+            f"{SEARCH_SERVICE_URL}{path}",
             content=body,
             headers={"Content-Type": "application/json"},
         )
     except Exception as e:
         logger.error(
-            f"Search proxy error | store_id={store_id_log} | query={query_log!r} | {e}"
+            f"Proxy error | path={path} | store_id={store_id_log} | detail={detail_log!r} | {e}"
         )
         return JSONResponse(content={"error": str(e)}, status_code=502)
 
     proxy_ms = int((_time.perf_counter() - proxy_start) * 1000)
     downstream_ms = resp.headers.get("X-Search-Duration-Ms", "?")
     logger.info(
-        f"⏱  /search proxy | store_id={store_id_log} | query={query_log!r} "
+        f"⏱  {path} proxy | store_id={store_id_log} | detail={detail_log!r} "
         f"| search_ms={downstream_ms} | proxy_total_ms={proxy_ms} "
         f"| status={resp.status_code}"
     )

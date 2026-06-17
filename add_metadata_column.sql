@@ -1,1 +1,1 @@
-ALTER TABLE products ADD COLUMN metadata JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
