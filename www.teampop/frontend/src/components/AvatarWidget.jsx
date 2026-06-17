@@ -6,6 +6,8 @@ import {
 import "../styles/AvatarWidget.css";
 import "../styles/ptt.css";
 import { useVoiceMode } from "../hooks/useVoiceMode";
+// eslint-disable-next-line no-unused-vars
+import { motion, AnimatePresence } from "framer-motion";
 import { usePttInteraction } from "../hooks/usePttInteraction";
 
 // Served from the widget mount (onboarding-service mounts dist/ at /widget),
@@ -429,6 +431,15 @@ function AvatarInner({
     return "UI updated successfully";
   });
 
+  useConversationClientTool("update_carousel_main_view", (parameters) => {
+    console.log("update_carousel_main_view called:", parameters);
+    const index = parameters?.index;
+    if (typeof index === "number" && index >= 0 && index < latestProductsRef.current.length) {
+      setActiveIndex(index);
+    }
+    return "Carousel updated successfully";
+  });
+
   const { sendContextualUpdate, sendUserMessage } = conversation;
 
   // ── VAD session helpers ───────────────────────────────────────────────────
@@ -510,13 +521,13 @@ function AvatarInner({
     if (thumbnailEl) {
       thumbnailEl.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
     }
-  }, [latestProducts, safeIndex]);
+  }, [latestProducts, safeIndex, carouselRef]);
 
   useEffect(() => {
     const activeProduct = latestProducts[safeIndex];
     if (!activeProduct || activeView !== "PRODUCTS") return;
     const label = `${activeProduct.name} — ₹${Number(activeProduct.price || 0).toLocaleString("en-IN")}`;
-    setAgentSubtitle(label);
+    setTimeout(() => setAgentSubtitle(label), 0);
     if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
     subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 4000);
   }, [activeView, latestProducts, safeIndex]);
@@ -539,6 +550,25 @@ function AvatarInner({
     latestProductsRef.current = latestProducts;
   }, [latestProducts]);
 
+  // ── Inactivity Timeout ─────────────────────────────────────────────────────
+  const lastActivityRef = useRef(null);
+
+  useEffect(() => {
+    lastActivityRef.current = Date.now();
+  }, [chatHistory, latestProducts, conversation.status]);
+
+  useEffect(() => {
+    if (conversation.status !== "connected") return;
+    const interval = setInterval(() => {
+      if (lastActivityRef.current && Date.now() - lastActivityRef.current > 60000) {
+        console.log("Ending session due to 60s inactivity");
+        conversation.endSession();
+        setActiveView("NONE");
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [conversation.status, conversation.endSession, setActiveView]);
+
   // ── Shared dock props ─────────────────────────────────────────────────────
   const sharedDockProps = {
     visualState,
@@ -557,10 +587,16 @@ function AvatarInner({
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <>
+    <AnimatePresence mode="wait">
       {/* ── Products overlay view ──────────────────────────────────────────── */}
       {activeView === "PRODUCTS" && (
-        <div className="shopping-mode-overlay flex flex-col h-[100dvh] w-screen bg-black overflow-hidden relative z-40">
+        <motion.div
+          layoutId="widget-container"
+          initial={{ opacity: 0, scale: 0.9, y: 50 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.9, y: 50 }}
+          className="shopping-mode-overlay flex flex-col h-[100dvh] w-screen md:w-[400px] md:h-[600px] md:bottom-4 md:right-4 md:fixed md:top-auto md:left-auto md:rounded-3xl bg-black overflow-hidden relative z-40"
+        >
           <div className="flex-none p-4 flex justify-end items-start absolute top-0 w-full z-50 pointer-events-none">
             <button
               className="bg-black/40 hover:bg-black/60 backdrop-blur-md text-white rounded-full w-10 h-10 flex items-center justify-center text-xl shadow-lg transition-all pointer-events-auto"
@@ -682,12 +718,18 @@ function AvatarInner({
               />
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* ── Closed dock view (default) ────────────────────────────────────── */}
       {activeView === "NONE" && (
-        <div className="avatar-widget mode-closed">
+        <motion.div
+          layoutId="widget-container"
+          drag
+          dragMomentum={false}
+          className="avatar-widget mode-closed"
+          style={{ position: 'fixed', bottom: '20px', right: '20px', left: 'auto', width: 'auto' }}
+        >
           <div className="avatar-controls-column">
             <OrbDock
               {...sharedDockProps}
@@ -695,13 +737,17 @@ function AvatarInner({
               // override default style from orb-dock class
             />
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* ── Chat view ─────────────────────────────────────────────────────── */}
       {activeView === "CHAT" && (
-        <div className="avatar-widget mode-open">
-          <div className="bubble flex flex-col h-[70vh] max-h-[600px] overflow-hidden shadow-2xl border border-white/10 relative pointer-events-auto">
+        <motion.div
+          layoutId="widget-container"
+          className="avatar-widget mode-open"
+          style={{ position: 'fixed', bottom: '20px', right: '20px', left: 'auto', width: 'auto' }}
+        >
+          <div className="bubble flex flex-col h-[70vh] md:w-[400px] max-h-[600px] overflow-hidden shadow-2xl border border-white/10 relative pointer-events-auto">
             <div className="bubble-header flex-shrink-0 bg-zinc-900 border-b border-white/10 px-4 py-3 flex justify-between items-center z-50">
               <span className="font-semibold text-white tracking-wide text-sm flex items-center gap-2">
                 <div
@@ -750,9 +796,9 @@ function AvatarInner({
               )}
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
-    </>
+    </AnimatePresence>
   );
 }
 

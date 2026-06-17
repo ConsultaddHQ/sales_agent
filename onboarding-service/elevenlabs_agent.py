@@ -66,7 +66,7 @@ When searching:
 A short filler phrase BEFORE step 1 is fine ("Let me find that."). NEVER speak between step 1 and step 2. The carousel must appear before you describe anything. This step is important.
 
 When you see [CAROUSEL UPDATE], react naturally to the currently selected item.
-If the user says "the second one" or "that blue one", describe from the latest shown results by position/name. Do not call any navigation tool.
+When user references a specific product ("the third one") — call update_carousel_main_view with the zero-based index before speaking.
 
 # Tools
 ## search_products
@@ -81,6 +81,9 @@ Without this call, the customer sees nothing. This step is important.
 
 ## get_product_details
 Use when the user asks for specifics about a product already shown — sizes, colors, availability, price by size, fabric/material, or full description. Pass the product's id from the search results. Only call it if you don't already have the answer. Do NOT guess.
+
+## update_carousel_main_view
+Use when: customer references a product by position (e.g. "the second one"). Pass zero-based index.
 
 # Guardrails
 - After a search_products result arrives, your VERY NEXT action must be update_products. Do not say any words between the tool result and the update_products call. The screen must update BEFORE the customer hears you describe products. This step is important.
@@ -119,7 +122,7 @@ If the user says "just show me", "show me everything", or "surprise me", skip cl
 If the request is already specific, search immediately.
 Never ask more than one clarification before searching.
 
-If the user references position ("first", "second", "third"), map that to the latest shown products and describe that item naturally.
+When user references a specific product ("the third one") — call update_carousel_main_view with the zero-based index before speaking.
 
 # Tools
 ## search_products
@@ -134,6 +137,9 @@ Without update_products, the user sees nothing. This step is important.
 
 ## get_product_details
 Use when the user asks for specifics about a product already shown — sizes, colors, availability, price by size, fabric/material, or full description. Pass the product's id from the search results. Only call it if you don't already have the answer. Do NOT guess.
+
+## update_carousel_main_view
+Use when: customer references a product by position (e.g. "the second one"). Pass zero-based index.
 
 # Tone
 Natural storefront conversation: brief, specific, and responsive to user intent. On [CAROUSEL UPDATE], acknowledge what they selected and continue.
@@ -182,7 +188,7 @@ Search sequence:
 
 Filler BEFORE step 1 is fine ("Let me find that."). NEVER speak between step 1 and step 2. This step is important.
 
-If user references "the second one" style language, resolve from the latest results and describe it.
+When user references a specific product ("the third one") — call update_carousel_main_view with the zero-based index before speaking.
 On [CAROUSEL UPDATE], react to the selected product naturally.
 
 # Tools
@@ -196,6 +202,9 @@ Without update_products, nothing appears on screen.
 
 ## get_product_details
 Use when the user asks for specifics about a product already shown — sizes, colors, availability, price by size, fabric/material, or full description. Pass the product's id from the search results. Only call it if you don't already have the answer. Do NOT guess.
+
+## update_carousel_main_view
+Use when: customer references a product by position (e.g. "the second one"). Pass zero-based index.
 
 # Error handling
 - No results: ask for one tighter rephrase.
@@ -231,7 +240,7 @@ When searching, always do:
 
 A short filler BEFORE step 1 is fine ("Let me check that."). NEVER speak between step 1 and step 2. The customer must see the carousel update on screen BEFORE hearing you describe what you found. This step is important.
 
-For references like "the second one", resolve by position from the latest shown products and describe that item.
+When user references a specific product ("the third one") — call update_carousel_main_view with the zero-based index before speaking.
 When you receive [CAROUSEL UPDATE], acknowledge the newly selected product naturally.
 
 # Tools
@@ -289,7 +298,7 @@ Search sequence (mandatory):
 
 A short filler BEFORE step 1 is fine ("One sec."). NEVER speak between step 1 and step 2. The carousel must appear BEFORE you speak about the products. This step is important.
 
-If user says "the second one" / similar, resolve from latest shown products and describe that product.
+When user references a specific product ("the third one") — call update_carousel_main_view with the zero-based index before speaking.
 On [CAROUSEL UPDATE], respond naturally to the current item.
 
 # Tools
@@ -304,6 +313,9 @@ Without update_products, the UI does not update.
 
 ## get_product_details
 Use when the user asks for specifics about a product already shown — sizes, colors, availability, price by size, fabric/material, or full description. Pass the product's id from the search results. Only call it if you don't already have the answer. Do NOT guess.
+
+## update_carousel_main_view
+Use when: customer references a product by position (e.g. "the second one"). Pass zero-based index.
 
 # Guardrails
 - After search_products returns, your very next action must be update_products. Do not say any words between the tool result and the update_products call. The screen must update BEFORE you describe products. This step is important.
@@ -501,6 +513,25 @@ class ElevenLabsAgentCreator:
                         }
                     },
                     "required": ["products"]
+                }
+            },
+            # --- Client tool: update_carousel_main_view ---
+            {
+                "type": "client",
+                "name": "update_carousel_main_view",
+                "description": "Focus on a specific product in the carousel by index",
+                "expects_response": False,
+                "execution_mode": "immediate",
+                "tool_error_handling_mode": "auto",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "index": {
+                            "type": "integer",
+                            "description": "Zero-based index of product (0 = first, 1 = second, etc.)"
+                        }
+                    },
+                    "required": ["index"]
                 }
             }
         ]
