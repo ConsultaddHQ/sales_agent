@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import logging
 import os
 import sys
@@ -37,6 +38,13 @@ load_dotenv(BASE_DIR / ".env")
 SEARCH_RATE_LIMIT = os.getenv("SEARCH_RATE_LIMIT", "30/minute")
 UVICORN_WORKERS = max(1, int(os.getenv("UVICORN_WORKERS", "4")))
 RELOAD_ENABLED = os.getenv("RELOAD", "true").lower() == "true"
+
+# Shared secret for webhook auth. When set, /search and /product-details
+# require the X-TeamPop-Secret header (sent by the ElevenLabs webhook and
+# relayed by the onboarding proxy). Unset = no enforcement (dev/demo).
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
+# Comma-separated CORS allowlist; "*" (default) keeps current dev behavior.
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 
 
 
@@ -103,7 +111,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -303,6 +311,21 @@ async def _hybrid_search_products(
     )
 
 
+def _check_webhook_secret(request: Request) -> None:
+    """Reject calls lacking the shared secret, IF one is configured.
+
+    Backwards-compatible: when WEBHOOK_SECRET is unset (dev/demo) this is a
+    no-op. When set, the X-TeamPop-Secret header must match — the ElevenLabs
+    webhook sends it and the onboarding proxy relays it.
+    """
+    if not WEBHOOK_SECRET:
+        return
+    provided = request.headers.get("X-TeamPop-Secret", "")
+    if not hmac.compare_digest(provided, WEBHOOK_SECRET):
+        logger.warning("🚫 401: missing/invalid webhook secret on %s", request.url.path)
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
@@ -315,6 +338,7 @@ async def search(
     response: Response,
     req: SearchRequest,
 ) -> SearchResponse:
+    _check_webhook_secret(request)
     # --- Validation with clear diagnostic logging ---
     if not req.query.strip():
         logger.warning(
@@ -377,6 +401,7 @@ async def get_product_details(
     request: Request,
     req: ProductDetailsRequest,
 ) -> Dict[str, Any]:
+    _check_webhook_secret(request)
     # --- Validation ---
     try:
         uuid.UUID(req.store_id)

@@ -88,6 +88,7 @@ Use when the user asks for specifics about a product already shown — sizes, co
 - Never invent product names, prices, or specs.
 - For specifics (sizes, colors, availability, price by size, fabric/material, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. wash-care instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
 - For checkout, shipping, returns, or store-policy questions, direct users to the "Shop Now" flow.
+- Only help with shopping here — finding and describing this store's products. Politely decline anything unrelated; you are not a general assistant. This step is important.
 
 # Error handling
 - No results: ask for one tighter rephrase.
@@ -144,6 +145,7 @@ Natural storefront conversation: brief, specific, and responsive to user intent.
 - NEVER invent product details.
 - For specifics (sizes, colors, availability, price by size, fabric/material, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. wash-care instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
 - For purchase, shipping, returns, or store-policy questions, direct to "Shop Now".
+- Only help with shopping here — finding and describing this store's products. Politely decline anything unrelated; you are not a general assistant. This step is important.
 - Follow the required procedure. No exceptions.
 
 # Error handling
@@ -162,6 +164,7 @@ PROMPT_GLM = """# Guardrails
 - Never ask more than one clarifying turn before searching.
 - For specifics (sizes, colors, availability, price by size, fabric/material, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. wash-care instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
 - For purchase, shipping, returns, or store-policy questions, send users to "Shop Now".
+- Only help with shopping here — finding and describing this store's products. Politely decline anything unrelated; you are not a general assistant. This step is important.
 
 # Personality
 You are Sam for {store_name}, a {store_description}. Sound like a real in-store helper: casual, concise, and varied.
@@ -254,6 +257,7 @@ Only call this if you don't already have the information. Do NOT guess.
 - Never invent product names, prices, or details.
 - For specifics (sizes, colors, availability, price by size, fabric/material, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. wash-care instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
 - For checkout, shipping, returns, or store-policy questions, route to "Shop Now".
+- Only help with shopping here — finding and describing this store's products. Politely decline anything unrelated; you are not a general assistant. This step is important.
 
 # Error handling
 - No results: ask for one clearer direction.
@@ -311,6 +315,7 @@ Use when the user asks for specifics about a product already shown — sizes, co
 - Never invent product details.
 - For specifics (sizes, colors, availability, price by size, fabric/material, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. wash-care instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
 - For checkout, shipping, returns, or store-policy questions, direct to "Shop Now".
+- Only help with shopping here — finding and describing this store's products. Politely decline anything unrelated; you are not a general assistant. This step is important.
 
 # Error handling
 - No results: ask for one clearer rephrase.
@@ -408,6 +413,9 @@ class ElevenLabsAgentCreator:
         - LLM-generated params: just type + description (no value_type needed)
         - Client tools: parameters as JSON Schema object
         """
+        # Shared secret relayed to search-service for webhook auth (if configured).
+        secret = os.getenv("WEBHOOK_SECRET", "").strip()
+        webhook_headers = {"X-TeamPop-Secret": secret} if secret else {}
         return [
             # --- Webhook tool: search_products ---
             {
@@ -420,7 +428,7 @@ class ElevenLabsAgentCreator:
                 "api_schema": {
                     "url": f"{search_api_url}/search",
                     "method": "POST",
-                    "request_headers": {},
+                    "request_headers": webhook_headers,
                     "request_body_schema": {
                         "type": "object",
                         "properties": {
@@ -449,7 +457,7 @@ class ElevenLabsAgentCreator:
                 "api_schema": {
                     "url": f"{search_api_url}/product-details",
                     "method": "POST",
-                    "request_headers": {},
+                    "request_headers": webhook_headers,
                     "request_body_schema": {
                         "type": "object",
                         "properties": {
@@ -750,7 +758,7 @@ class ElevenLabsAgentCreator:
                     "speed": 1.08,
                 },
                 "conversation": {
-                    "max_duration_seconds": 600,
+                    "max_duration_seconds": 300,
                     "client_events": [
                         "audio", "user_transcript", "interruption",
                         "agent_response", "agent_response_correction",

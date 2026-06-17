@@ -15,11 +15,13 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="TeamPop Image Server", version="1.0.0")
 
-# CORS configuration - allow all origins for now
-# TODO: Update with specific domains in production
+# Comma-separated CORS allowlist; "*" (default) keeps current dev behavior.
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update this in production
+    allow_origins=ALLOWED_ORIGINS,  # set ALLOWED_ORIGINS env in prod
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

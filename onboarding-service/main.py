@@ -35,10 +35,13 @@ logger = logging.getLogger("onboarding-service")
 # FastAPI app
 app = FastAPI(title="TeamPop Onboarding Service", version="3.0.0")
 
+# Comma-separated CORS allowlist; "*" (default) keeps current dev behavior.
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
+    allow_origins=ALLOWED_ORIGINS,  # set ALLOWED_ORIGINS env in prod
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -146,7 +149,8 @@ async def search_proxy(request: Request):
     except Exception:
         pass
 
-    return await _proxy_to_search("/search", body, store_id_log, query_log)
+    secret = request.headers.get("X-TeamPop-Secret")
+    return await _proxy_to_search("/search", body, store_id_log, query_log, secret)
 
 
 @app.post("/product-details")
@@ -169,8 +173,9 @@ async def product_details_proxy(request: Request):
     except Exception:
         pass
 
+    secret = request.headers.get("X-TeamPop-Secret")
     return await _proxy_to_search(
-        "/product-details", body, store_id_log, product_id_log
+        "/product-details", body, store_id_log, product_id_log, secret
     )
 
 
@@ -179,6 +184,7 @@ async def _proxy_to_search(
     body: bytes,
     store_id_log: str,
     detail_log: str,
+    secret: str | None = None,
 ):
     """Forward a request body to `{SEARCH_SERVICE_URL}{path}` and relay the response."""
     client = _search_proxy_client
@@ -187,8 +193,8 @@ async def _proxy_to_search(
         # one-shot client so we never 500 on this path.
         logger.warning("Search proxy client missing on startup; using one-shot client")
         async with httpx.AsyncClient(timeout=25) as one_shot:
-            return await _do_proxy(one_shot, path, body, store_id_log, detail_log)
-    return await _do_proxy(client, path, body, store_id_log, detail_log)
+            return await _do_proxy(one_shot, path, body, store_id_log, detail_log, secret)
+    return await _do_proxy(client, path, body, store_id_log, detail_log, secret)
 
 
 async def _do_proxy(
@@ -197,13 +203,20 @@ async def _do_proxy(
     body: bytes,
     store_id_log: str,
     detail_log: str,
+    secret: str | None = None,
 ):
+    # Relay the shared webhook secret downstream so search-service can
+    # authenticate the call (the public edge is this proxy).
+    headers = {"Content-Type": "application/json"}
+    if secret:
+        headers["X-TeamPop-Secret"] = secret
+
     proxy_start = _time.perf_counter()
     try:
         resp = await client.post(
             f"{SEARCH_SERVICE_URL}{path}",
             content=body,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
         )
     except Exception as e:
         logger.error(
