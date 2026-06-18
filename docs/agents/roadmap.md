@@ -28,13 +28,19 @@ These cannot be done by an agent — they require account access, credentials, o
 
 | Task | Owner | Status | Effort | Notes |
 |------|-------|--------|--------|-------|
+| **[Refactor A] Rewrite search-service/main.py** | Agent | ⬜ Ready | 1 hr | Plan at `docs/refactor-plan-2026-06-19.md`. Adds: TTLCache (512/300s), /metrics endpoint, structured logging, WEBHOOK_SECRET, ALLOWED_ORIGINS CORS, request-ID correlation, asyncio.to_thread() in /product-details, semaphore init in startup |
+| **[Refactor B] Parallel image downloads + batch embedding + pipeline timing** | Agent | ⬜ Ready | 1–2 hrs | Plan at `docs/refactor-plan-2026-06-19.md`. Rewrites: `services/products.py` (4-phase batch pipeline) + `pipeline.py` (step timing, ElevenLabs retry, structured completion log) |
 | Upgrade existing production agents to Claude Haiku 4.5 | Human | ⬜ Pending | 15 min per agent | Run `./onboarding-service/.venv/bin/python testing/latency/upgrade_agent_model.py --agent-id <id> --store-id <uuid>` for each live agent that should inherit the 2026-04-17 winner. `--from-json` for batch. |
 | Product-description strategy for larger catalogs | Agent | ⬜ Pending | 3–4 hrs | Today we truncate to 200 chars in `_truncate_for_voice`. As descriptions grow, consider: (a) pre-generate a 150-char `voice_description` column at ingestion and send that instead of truncation; or (b) add a `get_product_details(product_id)` tool the agent calls only when the user asks for more. Keep the full description in DB for the carousel card. |
-| Evaluate moving Supabase region closer to India (e.g. Mumbai) OR add search-service result cache | Human | ⬜ Pending | 2–4 hrs | ~1 s network floor on every search call today; region move or LRU cache are the two remaining levers to break that floor. |
+| Add search-service result cache (LRU+TTL) | Agent | ⬜ Ready | 30 min | Covered in Refactor A above. ~1s network floor per search; 300s cache TTL eliminates repeat utterance cost entirely. |
 | Rate limiting on `/api/submit-request` | Agent | ⬜ Pending | 1 hr | Prevent spam submissions before public launch |
-| CORS restriction from `*` to actual domains | Agent | ⬜ Pending | 30 min | All services currently use wildcard — must restrict before production |
+| CORS restriction from `*` to actual domains | Agent | ⬜ Pending | 30 min | Covered in Refactor A (ALLOWED_ORIGINS env var). Both services currently use wildcard. |
 | Production deployment + custom domain + SSL | Human + Agent | ⬜ Pending | 1 day | Needed before sharing with real clients |
 | Request deduplication (same email/URL) | Agent | ⬜ Pending | 30 min | Prevent duplicate submissions |
+| Fix send_delivery_email not fire-and-forget (H3) | Agent | ⬜ Pending | 30 min | `routes/client.py:send_agent()` calls `send_delivery_email()` synchronously in request thread — blocks response. Move to executor submit. |
+| Add index on agent_requests.agent_id (H4) | Human | ⬜ Pending | 15 min | `admin.py:switch_agent_model()` filters by unindexed `agent_id` field → full table scan. Add Supabase index. |
+| Add LIMIT to admin list query (H5) | Agent | ⬜ Pending | 15 min | `admin.py:list_requests()` does unbounded `select("*")` — will OOM/timeout as table grows. Add `.limit(200)` or pagination. |
+| Unify two ThreadPoolExecutors into shared module (L2) | Agent | ⬜ Pending | 30 min | `admin.py` and `client.py` each have `_bg_executor = ThreadPoolExecutor(max_workers=4)` — no shared state, unbounded queues. Consolidate into `shared/executor.py`. |
 
 ---
 

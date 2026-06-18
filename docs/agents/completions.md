@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-06-19 — N/A — Codebase + Performance Audit; Refactor Plan (A + B)
+
+- **Status:** Audits complete. Refactor code pending execution.
+- **Owner:** Claude (Sonnet 4.6)
+- **Summary:** Full read-only audit of all three branches (`version/v2`, `feature/ui-enhancements-v2`, `production-hardening`). Produced a general audit (`docs/audit-2026-06-19.md`) covering security, CORS, currency, and test gaps; a structured performance audit (`docs/perf-audit-2026-06-19.md`) with 3 CRITICAL / 6 HIGH / 6 MEDIUM / 6 LOW findings; and a detailed implementation plan (`docs/refactor-plan-2026-06-19.md`) for two targeted refactors.
+- **Why:** Alpha-stage performance profile: zero result caching (every ElevenLabs utterance hits Supabase), serial image downloads (~400s for 200 products), no retry on ElevenLabs agent creation, no metrics endpoint, no structured per-request logging. Audit surfaced concrete impact estimates and priority order before any code changes.
+- **Files:** `docs/audit-2026-06-19.md` (created), `docs/perf-audit-2026-06-19.md` (created), `docs/refactor-plan-2026-06-19.md` (created)
+- **Key findings:**
+  - CRITICAL C2: Serial image downloads + per-product embedding are the dominant onboarding latency driver (200 products ≈ 400s → 20s after fix)
+  - CRITICAL C3: Zero search result cache — 50–100 req/s at 500 voice sessions would saturate Supabase
+  - HIGH H2: No retry on ElevenLabs agent creation (`requests.post`, 30s timeout, single attempt)
+  - Production-hardening branch (WEBHOOK_SECRET, ALLOWED_ORIGINS, request-ID, test suite) not merged into current working branch
+- **Tradeoffs:** Audit is read-only; no code changed. Refactor plan ready for execution (see handoff.md).
+- **Verification:** N/A — audit only. Code refactors have their own verification gates in the plan doc.
+- **Related Decisions:** None created — refactor details are implementation-level, not architectural.
+- **Notes:** Enterprise architecture blueprint (50–500 concurrent sessions) was requested but interrupted before delivery. Resume from `docs/agents/handoff.md`.
+
+---
+
 ## 2026-06-19 — N/A — Fix: Enforce get_product_details → update_carousel_main_view chain; Disable carousel click-to-agent
 
 - **Status:** Completed
