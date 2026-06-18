@@ -77,6 +77,24 @@ service.
 - Use `pip install --upgrade pip` periodically and lock dependencies with
   `pip freeze > requirements.txt` when shipping.
 
+## Current State (June 2026)
+
+The core voice-shopping flow is working end-to-end. Recent stabilisation work includes:
+
+| Area | Fix / Change |
+|------|-------------|
+| **Voice widget UX** | Inactive state is a small draggable Siri-inspired orb; chat/products panel is a stable phone-sized panel anchored right on desktop, full-height on mobile |
+| **Inactivity detection** | 30s smart timer: pauses while agent is speaking, ignores phantom VAD transcripts (`okay`, `hmm`), then ends the session after true user silence |
+| **Search service** | PyTorch CPU thread limits (`OMP_NUM_THREADS=1`, `torch.set_num_threads(1)`) + `asyncio.Semaphore(2)` gate prevent embedding thread-pool hangs under concurrent load |
+| **Carousel timing** | `update_products` and `update_carousel_main_view` client tools now use `expects_response: True` — carousel renders before agent speaks, eliminating the 1-3s visual lag |
+| **Carousel focus** | `get_product_details → update_carousel_main_view` chain enforced at three levels (tool description + `## Tools` + `# Guardrails`) across all 5 model prompts — carousel always focuses on the product being described |
+| **Carousel interaction** | Clicking a thumbnail is visual-only (no agent narration). `syncMainProduct()` is kept in `AvatarWidget.jsx` and can be re-enabled in one line |
+| **Agent model** | Default LLM: `claude-haiku-4-5` (winner of 6-model A/B test; 100% tool reliability, median 3.4s User→Products) |
+
+> See `docs/agents/completions.md` for detailed implementation notes and `docs/agents/decisions.md` for architectural rationale.
+
+---
+
 ## Contributing
 
 Add new features as separate microservices or components. Follow the existing

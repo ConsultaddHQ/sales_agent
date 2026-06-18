@@ -6,6 +6,30 @@
 
 ---
 
+## 2026-06-19: Carousel click-to-agent context disabled by default
+
+- **Decision:** Clicking a carousel thumbnail no longer sends a `[CAROUSEL UPDATE]` message to the ElevenLabs voice agent. The visual update (`setActiveIndex`) still fires, but `syncMainProduct()` is not called. The function is kept in the codebase with a comment — re-enable by uncommenting one line in `AvatarWidget.jsx` `onClick`.
+- **Context:** When users browsed carousel thumbnails by clicking, the agent would interrupt its current turn and narrate the newly clicked product. This was reported as intrusive — users want to visually browse without triggering an agent response each time.
+- **Rationale:** Carousel clicks are a browse gesture, not a "tell me about this" intent signal. The agent already narrates products when it calls `get_product_details` and focuses the carousel. Separating visual navigation from agent narration gives users control.
+- **Alternatives considered:** (a) Keep the feature with a longer debounce — rejected, even 600ms was too short; clicks felt like they hijacked the conversation. (b) Only trigger if the user holds the click — rejected, adds undiscoverable UX friction. (c) Add a separate "info" button per thumbnail — deferred, may be added as an explicit CTA later.
+- **Consequences:** Users can scroll/click through carousel thumbnails without triggering agent speech. To re-enable the feature, uncomment `syncMainProduct(latestProducts[idx])` in the `onClick` of the thumbnail map in `AvatarWidget.jsx`.
+- **Status:** Active
+- **Agent/Author:** Antigravity
+
+---
+
+## 2026-06-19: get_product_details must be followed by update_carousel_main_view (triple-lock enforcement)
+
+- **Decision:** When the agent calls `get_product_details` to fetch product specifics, it MUST immediately follow up with `update_carousel_main_view` (using the product's zero-based index) BEFORE speaking. This is enforced at three levels: (a) the `get_product_details` tool `description` field, (b) the `## get_product_details` and `## update_carousel_main_view` sections in all five model system prompts, and (c) a new `# Guardrails` rule in all five prompts.
+- **Context:** The agent was fetching product details and narrating them correctly, but the carousel main frame was not always focused on the described product — especially as conversation context grew and the LLM had to juggle more state. Users saw the agent describe a product while the carousel showed a different one.
+- **Rationale:** Same pattern as the proven `search_products → update_products` chain: the LLM's tool-calling reliability under context pressure is best ensured by redundant, multi-level reinforcement. The tool description is seen at every call site; `## Tools` is read in context; `# Guardrails` receives highest model attention per ElevenLabs prompting guidance. Triple-locking means any one level alone can carry the rule if the others are missed.
+- **Alternatives considered:** (a) Rely on the system prompt alone — rejected; this was the failing behavior for `update_products` too, before triple-lock was introduced. (b) Client-side hook: detect `get_product_details` tool call from websocket event and auto-fire `update_carousel_main_view` client-side — viable but adds complexity and couples frontend to backend tool names. (c) Make `get_product_details` a client-side compound tool — rejected; it's a webhook and must stay server-side.
+- **Consequences:** All new agents created via `create_agent()` inherit this rule automatically. Existing agents need to be re-created to get the updated prompts and tool descriptions. The `update_carousel_main_view` tool description no longer says "fire-and-forget" — it's a required step after `get_product_details`.
+- **Status:** Active
+- **Agent/Author:** Antigravity
+
+---
+
 ## 2026-06-12: Product image URLs are composed at read time and relayed via an explicit tool schema
 
 - **Decision:** Two standing rules for product image URLs end-to-end:
@@ -480,3 +504,26 @@
   - Onboarding service mounts `www.teampop/frontend/dist/` — build must be run before demo pages work
 - **Status:** Active
 - **Agent/Author:** Engineering team
+
+---
+
+## 2026-06-18: Client Tool Synchronous Sequencing (`expects_response` = True)
+
+- **Decision:** Set `"expects_response": True` for client-side tools (`update_products`, `update_carousel_main_view`) in the ElevenLabs agent configuration.
+- **Context:** The product carousel updated after a 1-3s delay while the agent was already narrating the results.
+- **Rationale:** Forcing the agent to wait for the client tool to complete execution guarantees that the carousel mounts and renders *before* the user hears the spoken descriptions.
+- **Consequences:** The LLM pauses speech generation until the client returns a status value (which happens instantly). This eliminates the voice-UI rendering lag.
+- **Status:** Active
+- **Agent/Author:** Antigravity (Gemini)
+
+---
+
+## 2026-06-18: WebSocket Manual Selection Event Consolidation
+
+- **Decision:** Consolidated the manual thumbnail selection in `syncMainProduct` (`AvatarWidget.jsx`) into a single `sendUserMessage` call instead of sending `sendContextualUpdate` followed by `sendUserMessage`.
+- **Context:** Thumbnail clicks triggered duplicate AI responses where the agent spoke the exact same description twice consecutively.
+- **Rationale:** Sending both messages over WebSocket in the same tick created a race condition on the ElevenLabs server, causing it to queue and generate two separate responses. Combining them into a single string ensures exactly one event is processed.
+- **Consequences:** WebSocket traffic is halved for thumbnail selection, and the race condition is completely prevented.
+- **Status:** Active
+- **Agent/Author:** Antigravity (Gemini)
+

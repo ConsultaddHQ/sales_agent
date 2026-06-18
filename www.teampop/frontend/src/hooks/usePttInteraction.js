@@ -101,8 +101,10 @@ export function usePttInteraction({ setMuted }) {
       } else if (status === "connected") {
         // Already connected — open mic immediately
         setMuted(false);
+      } else if (status === "connecting") {
+        // status === "connecting": record the press; onConnected() handles it
+        isAwaitingConnectRef.current = true;
       }
-      // status === "connecting": just record the press; onConnected() handles it
     },
     [setMuted]
   );

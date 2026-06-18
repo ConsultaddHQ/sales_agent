@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-06-19 — N/A — Fix: Enforce get_product_details → update_carousel_main_view chain; Disable carousel click-to-agent
+
+- **Status:** Completed
+- **Owner:** Antigravity
+- **Summary:** Two product behaviour fixes. (1) When the agent fetches product details via `get_product_details`, it now always focuses the carousel on that product via `update_carousel_main_view` before speaking — enforced at three levels: tool description, `## Tools` section, and `# Guardrails` in all five model-specific system prompts (Gemini, Qwen, GLM, Claude, GPT). (2) Clicking a carousel thumbnail no longer sends a `[CAROUSEL UPDATE]` context message to the agent. The visual carousel update (`setActiveIndex`) still fires; only the agent narration trigger is removed.
+- **Why:** (1) The agent was calling `get_product_details` but narrating without focusing the carousel, so the main frame lagged behind what the agent was describing — especially as conversation context grew. (2) Carousel click-to-agent caused the agent to interrupt itself or start an unwanted narration whenever the user browsed thumbnails.
+- **Files:** `onboarding-service/elevenlabs_agent.py` (tool descriptions + all 5 system prompts), `www.teampop/frontend/src/components/AvatarWidget.jsx` (`syncMainProduct` call commented out in thumbnail `onClick`)
+- **Pattern used:** Same triple-reinforcement proven for `search_products → update_products`: (a) tool `description` field, (b) `## ToolName` in system prompt, (c) `# Guardrails` rule. This makes the chain robust even as context grows.
+- **Verification:** `npm run build` ✓ — 496 modules, 1313 kB bundle, 0 errors, 3.18s.
+- **Re-enable carousel click:** Uncomment `syncMainProduct(latestProducts[idx])` in `AvatarWidget.jsx` onClick handler (search for "disabled — re-enable to have agent narrate clicked product").
+
+---
+
 ## 2026-06-12 — N/A — Fix: Product images 404 in the running voice agent (4-layer root cause)
 
 - **Status:** Completed

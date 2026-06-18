@@ -38,6 +38,18 @@ SEARCH_RATE_LIMIT = os.getenv("SEARCH_RATE_LIMIT", "30/minute")
 UVICORN_WORKERS = max(1, int(os.getenv("UVICORN_WORKERS", "4")))
 RELOAD_ENABLED = os.getenv("RELOAD", "true").lower() == "true"
 
+SEARCH_EMBEDDING_CONCURRENCY = int(os.getenv("SEARCH_EMBEDDING_CONCURRENCY", "2"))
+EMBEDDING_TIMEOUT = float(os.getenv("EMBEDDING_TIMEOUT", "5.0"))
+RPC_TIMEOUT = float(os.getenv("RPC_TIMEOUT", "5.0"))
+
+_embedding_semaphore: Optional[asyncio.Semaphore] = None
+
+def get_embedding_semaphore() -> asyncio.Semaphore:
+    global _embedding_semaphore
+    if _embedding_semaphore is None:
+        _embedding_semaphore = asyncio.Semaphore(SEARCH_EMBEDDING_CONCURRENCY)
+    return _embedding_semaphore
+
 
 
 class SearchRequest(BaseModel):
@@ -157,11 +169,37 @@ from shared.embeddings import get_embedder
 from shared.parsing import strip_html
 
 
-async def _encode_query_embedding(query: str) -> List[float]:
-    """Encode in a worker thread so concurrent requests do not block the event loop."""
-    return await asyncio.to_thread(
-        lambda: get_embedder().encode(query, normalize_embeddings=True).tolist()
-    )
+async def _encode_query_embedding(query: str) -> tuple[List[float], int, int]:
+    """Encode in a worker thread so concurrent requests do not block the event loop.
+    Gated by a semaphore and a timeout to prevent CPU thrashing and hangs.
+    """
+    t_start = time.perf_counter()
+    try:
+        t_acquired = t_start
+        
+        async def _run():
+            nonlocal t_acquired
+            async with get_embedding_semaphore():
+                t_acquired = time.perf_counter()
+                return await asyncio.to_thread(
+                    lambda: get_embedder().encode(query, normalize_embeddings=True).tolist()
+                )
+
+        embedding = await asyncio.wait_for(
+            _run(),
+            timeout=EMBEDDING_TIMEOUT
+        )
+        t_now = time.perf_counter()
+        queue_wait_ms = int((t_acquired - t_start) * 1000)
+        embedding_ms = int((t_now - t_acquired) * 1000)
+        return embedding, queue_wait_ms, embedding_ms
+    except asyncio.TimeoutError as e:
+        logger.error(f"Embedding timeout or semaphore acquisition timeout for query: {query}")
+        raise HTTPException(
+            status_code=503,
+            detail="Search service overloaded. Please try again later.",
+            headers={"Retry-After": "2"}
+        ) from e
 
 
 def _execute_hybrid_search_rpc(
@@ -232,6 +270,13 @@ def _execute_hybrid_search_rpc(
         resp = sb.rpc("hybrid_search_products", rpc_params).execute()
     except Exception as e:
         logger.exception("Supabase hybrid_search_products RPC failed")
+        err_msg = str(e).lower()
+        if "disconnected" in err_msg or "timeout" in err_msg or "connection" in err_msg or "pool" in err_msg:
+            raise HTTPException(
+                status_code=503,
+                detail="Database query overloaded or connection failed. Please try again later.",
+                headers={"Retry-After": "2"}
+            ) from e
         raise HTTPException(
             status_code=500,
             detail=f"supabase search failed: {str(e)}"
@@ -291,16 +336,31 @@ async def _hybrid_search_products(
     store_id: str,
     query: str,
     limit: int = 10,
-) -> List[ProductResult]:
-    query_embedding = await _encode_query_embedding(query)
-    return await asyncio.to_thread(
-        _execute_hybrid_search_rpc,
-        sb,
-        store_id,
-        query,
-        query_embedding,
-        limit,
-    )
+) -> tuple[List[ProductResult], int, int, int]:
+    query_embedding, queue_wait_ms, embedding_ms = await _encode_query_embedding(query)
+    
+    t_rpc_start = time.perf_counter()
+    try:
+        products = await asyncio.wait_for(
+            asyncio.to_thread(
+                _execute_hybrid_search_rpc,
+                sb,
+                store_id,
+                query,
+                query_embedding,
+                limit,
+            ),
+            timeout=RPC_TIMEOUT
+        )
+        rpc_ms = int((time.perf_counter() - t_rpc_start) * 1000)
+        return products, queue_wait_ms, embedding_ms, rpc_ms
+    except asyncio.TimeoutError as e:
+        logger.error(f"Supabase RPC timeout for query: {query}")
+        raise HTTPException(
+            status_code=503,
+            detail="Database query timeout. Please try again later.",
+            headers={"Retry-After": "2"}
+        ) from e
 
 
 @app.get("/health")
@@ -343,14 +403,15 @@ async def search(
 
     # ── Measure embed + RPC duration so callers can correlate latency ──
     t0 = time.perf_counter()
-    products = await _hybrid_search_products(
+    products, queue_wait_ms, embedding_ms, rpc_ms = await _hybrid_search_products(
         sb=sb, store_id=req.store_id, query=req.query, limit=5
     )
-    search_ms = int((time.perf_counter() - t0) * 1000)
-    response.headers["X-Search-Duration-Ms"] = str(search_ms)
+    total_ms = int((time.perf_counter() - t0) * 1000)
+    response.headers["X-Search-Duration-Ms"] = str(total_ms)
     logger.info(
-        f"⏱  search_ms={search_ms} | store_id={req.store_id} | "
-        f"query={req.query!r} | results={len(products)}"
+        f"⏱  Search performance: total_ms={total_ms} | queue_wait_ms={queue_wait_ms} | "
+        f"embedding_ms={embedding_ms} | rpc_ms={rpc_ms} | "
+        f"store_id={req.store_id} | query={req.query!r} | results={len(products)}"
     )
 
     pitch = f"Found {len(products)} products." if products else "No matching products found."

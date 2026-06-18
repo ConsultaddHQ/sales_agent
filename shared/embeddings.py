@@ -1,8 +1,15 @@
-"""Embedding model singleton shared across services."""
-
+import os
 import logging
 from threading import Lock
 from typing import Optional
+
+# Limit PyTorch CPU threads early, before model load to prevent CPU thrashing
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+
+import torch
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
 
 from sentence_transformers import SentenceTransformer
 

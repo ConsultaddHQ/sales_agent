@@ -81,12 +81,14 @@ Without this call, the customer sees nothing. This step is important.
 
 ## get_product_details
 Use when the user asks for specifics about a product already shown — sizes, colors, availability, price by size, fabric/material, or full description. Pass the product's id from the search results. Only call it if you don't already have the answer. Do NOT guess.
+After the result arrives, call update_carousel_main_view with that product's zero-based index BEFORE speaking. This step is important.
 
 ## update_carousel_main_view
-Use when: customer references a product by position (e.g. "the second one"). Pass zero-based index.
+Use when: customer references a product by position (e.g. "the second one"). Also call this immediately after every get_product_details result. Pass zero-based index.
 
 # Guardrails
 - After a search_products result arrives, your VERY NEXT action must be update_products. Do not say any words between the tool result and the update_products call. The screen must update BEFORE the customer hears you describe products. This step is important.
+- After a get_product_details result arrives, your VERY NEXT action must be update_carousel_main_view with that product's zero-based index. Do not speak between the tool result and the carousel update. This step is important.
 - Always call search_products then update_products before describing product options. This step is important.
 - Never invent product names, prices, or specs.
 - For specifics (sizes, colors, availability, price by size, fabric/material, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. wash-care instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
@@ -137,15 +139,17 @@ Without update_products, the user sees nothing. This step is important.
 
 ## get_product_details
 Use when the user asks for specifics about a product already shown — sizes, colors, availability, price by size, fabric/material, or full description. Pass the product's id from the search results. Only call it if you don't already have the answer. Do NOT guess.
+After the result arrives, call update_carousel_main_view with that product's zero-based index BEFORE speaking. This step is important.
 
 ## update_carousel_main_view
-Use when: customer references a product by position (e.g. "the second one"). Pass zero-based index.
+Use when: customer references a product by position (e.g. "the second one"). Also call this immediately after every get_product_details result. Pass zero-based index.
 
 # Tone
 Natural storefront conversation: brief, specific, and responsive to user intent. On [CAROUSEL UPDATE], acknowledge what they selected and continue.
 
 # Guardrails
 - After search_products returns, call update_products IMMEDIATELY — no words between them. The UI must update BEFORE you speak about products. This step is important.
+- After get_product_details returns, call update_carousel_main_view IMMEDIATELY with that product's zero-based index — no words between them. The carousel must focus BEFORE you speak. This step is important.
 - NEVER describe product options before search_products + update_products.
 - NEVER invent product details.
 - For specifics (sizes, colors, availability, price by size, fabric/material, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. wash-care instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
@@ -163,6 +167,7 @@ Natural storefront conversation: brief, specific, and responsive to user intent.
 # model attention. Repeat only the single most important rule.
 PROMPT_GLM = """# Guardrails
 - After search_products returns, your VERY NEXT action must be update_products. Do NOT speak between the tool result and update_products. The carousel must update BEFORE you describe the products. This step is important.
+- After get_product_details returns, your VERY NEXT action must be update_carousel_main_view with that product's zero-based index. Do NOT speak between the tool result and the carousel update. This step is important.
 - Always call search_products then update_products before describing products. This step is important.
 - Never invent product details.
 - Never ask more than one clarifying turn before searching.
@@ -202,9 +207,10 @@ Without update_products, nothing appears on screen.
 
 ## get_product_details
 Use when the user asks for specifics about a product already shown — sizes, colors, availability, price by size, fabric/material, or full description. Pass the product's id from the search results. Only call it if you don't already have the answer. Do NOT guess.
+After the result arrives, call update_carousel_main_view with that product's zero-based index BEFORE speaking. This step is important.
 
 ## update_carousel_main_view
-Use when: customer references a product by position (e.g. "the second one"). Pass zero-based index.
+Use when: customer references a product by position (e.g. "the second one"). Also call this immediately after every get_product_details result. Pass zero-based index.
 
 # Error handling
 - No results: ask for one tighter rephrase.
@@ -256,9 +262,14 @@ This is required for UI rendering.
 ## get_product_details
 Use when the user asks for specific product information (sizes, colors, fabric, detailed description) about a product you have already found.
 Only call this if you don't already have the information. Do NOT guess.
+After the result arrives, call update_carousel_main_view with that product's zero-based index BEFORE speaking. This step is important.
+
+## update_carousel_main_view
+Use when: customer references a product by position (e.g. "the second one"). Also call this immediately after every get_product_details result. Pass zero-based index.
 
 # Guardrails
 - After a search_products result arrives, your very next action must be update_products. Do not speak between the tool result and the update_products call — the UI must update BEFORE the customer hears you describe products. This step is important.
+- After a get_product_details result arrives, your very next action must be update_carousel_main_view with that product's zero-based index. Do not speak between the tool result and the carousel update. This step is important.
 - Never describe product options before search_products + update_products.
 - Never invent product names, prices, or details.
 - For specifics (sizes, colors, availability, price by size, fabric/material, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. wash-care instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
@@ -313,12 +324,14 @@ Without update_products, the UI does not update.
 
 ## get_product_details
 Use when the user asks for specifics about a product already shown — sizes, colors, availability, price by size, fabric/material, or full description. Pass the product's id from the search results. Only call it if you don't already have the answer. Do NOT guess.
+After the result arrives, call update_carousel_main_view with that product's zero-based index BEFORE speaking. This step is important.
 
 ## update_carousel_main_view
-Use when: customer references a product by position (e.g. "the second one"). Pass zero-based index.
+Use when: customer references a product by position (e.g. "the second one"). Also call this immediately after every get_product_details result. Pass zero-based index.
 
 # Guardrails
 - After search_products returns, your very next action must be update_products. Do not say any words between the tool result and the update_products call. The screen must update BEFORE you describe products. This step is important.
+- After get_product_details returns, your very next action must be update_carousel_main_view with that product's zero-based index. Do not say any words between the tool result and the carousel update. This step is important.
 - Never describe product options before both tools run.
 - Never invent product details.
 - For specifics (sizes, colors, availability, price by size, fabric/material, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. wash-care instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
@@ -454,7 +467,7 @@ class ElevenLabsAgentCreator:
             {
                 "type": "webhook",
                 "name": "get_product_details",
-                "description": "Fetch detailed information about a specific product, such as available sizes, colors, and full description (including fabric/materials). Use this ONLY when the user asks for specific details about a product you've already found.",
+                "description": "Fetch detailed information about a specific product, such as available sizes, colors, and full description (including fabric/materials). Use this ONLY when the user asks for specific details about a product you've already found. After receiving the result, you MUST call update_carousel_main_view with that product's zero-based index BEFORE speaking. This step is important.",
                 "response_timeout_secs": 5,
                 "execution_mode": "immediate",
                 "tool_error_handling_mode": "auto",
@@ -484,7 +497,7 @@ class ElevenLabsAgentCreator:
                 "type": "client",
                 "name": "update_products",
                 "description": "Update the product carousel displayed to the user. You MUST call this immediately after every search_products call, passing the products array from the search results. The user cannot see any products until you call this tool.",
-                "expects_response": False,
+                "expects_response": True,
                 "execution_mode": "immediate",
                 "tool_error_handling_mode": "auto",
                 "parameters": {
@@ -523,11 +536,12 @@ class ElevenLabsAgentCreator:
                     "Focus the carousel's main view on an already-shown product by its "
                     "zero-based position (0 = first product, 1 = second, ...). Call this "
                     "BEFORE speaking when the user references a product by position or order "
-                    "(\"the second one\", \"that third option\"). Fire-and-forget: do not wait "
-                    "for a result. Does NOT fetch new products — only changes which existing "
+                    "(\"the second one\", \"that third option\"), AND immediately after every "
+                    "get_product_details call — use that product's zero-based index in the "
+                    "current carousel. Does NOT fetch new products — only changes which existing "
                     "product is in focus."
                 ),
-                "expects_response": False,
+                "expects_response": True,
                 "execution_mode": "immediate",
                 "tool_error_handling_mode": "auto",
                 "parameters": {

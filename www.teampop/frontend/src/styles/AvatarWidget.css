@@ -12,6 +12,35 @@
   font-family: "Space Grotesk", sans-serif;
 }
 
+.avatar-widget.mode-open,
+.shopping-panel {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  z-index: 10005;
+  pointer-events: auto;
+  padding-bottom: 0;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.shopping-panel {
+  background: #000;
+  animation: fadeIn 0.3s ease-out;
+}
+
+@media (min-width: 768px) {
+  .avatar-widget.mode-open,
+  .shopping-panel {
+    inset: auto 16px 16px auto;
+    width: min(380px, calc(100vw - 32px));
+    height: min(740px, calc(100dvh - 32px));
+    max-height: calc(100dvh - 32px);
+    border-radius: 24px;
+  }
+}
+
 /* --- SHOPPING MODE (Full Screen Overlay) --- */
 /* --- SHOPPING MODE (Target Layout - Vertical Flex) --- */
 .shopping-mode-overlay {
@@ -305,6 +334,28 @@
   max-width: 340px;
   pointer-events: auto;
   position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.orb-dock.inactive {
+  width: 80px !important;
+  min-width: 80px !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  backdrop-filter: none !important;
+}
+.orb-dock.inactive > div:first-child,
+.orb-dock.inactive > div:last-child,
+.orb-dock.inactive > button:last-child,
+.orb-dock.inactive span {
+  display: none !important;
+}
+.orb-dock.inactive .orb-wrapper {
+  width: 64px;
+  height: 64px;
+  margin-top: 0;
 }
 
 /* 1. STATUS (Left) */
@@ -342,15 +393,30 @@
 .orb-core {
   width: 100%;
   height: 100%;
-  background: radial-gradient(
-    circle at 35% 35%,
-    #ffffff,
-    #46c2ff 40%,
-    #005f99 85%
-  );
+  background:
+    radial-gradient(circle at 20% 20%, rgba(70, 194, 255, 0.8), transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(0, 95, 153, 0.8), transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(94, 255, 177, 0.8), transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(0, 200, 255, 0.8), transparent 50%),
+    #0f1822;
+  background-size: 200% 200%;
+  animation: siriMesh 5s ease infinite;
   border-radius: 50%;
-  box-shadow: 0 8px 30px rgba(0, 100, 255, 0.3);
+  box-shadow: 0 8px 30px rgba(70, 194, 255, 0.3);
   transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes siriMesh {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 100% 100%; }
+  100% { background-position: 0% 0%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-core {
+    animation: none;
+    background-position: center;
+  }
 }
 
 .orb-wrapper:hover .orb-core {

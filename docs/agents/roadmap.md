@@ -1,7 +1,7 @@
 # Roadmap — Tasks, Improvements & Pending Work
 
 > **Purpose:** Single source of truth for what needs to be done, by whom, and priority.
-> **Updated:** 2026-04-17
+> **Updated:** 2026-06-19
 > **Rule:** Agents update this after completing work or discovering new tasks. Remove done items, add new ones.
 
 ---
@@ -87,8 +87,8 @@ Move items here when done (keep last 5 for reference, then delete oldest).
 
 | Date | Task | Who |
 |------|------|-----|
-| 2026-04-17 | Voice-agent latency STEP 3: 6-model A/B test picked Claude Haiku 4.5 (100% tool reliability, ~3.4s median). Code defaults flipped, harness moved to `testing/latency/` with new `upgrade_agent_model.py` helper. | Claude |
-| 2026-04-17 | Voice-agent latency STEP 1+2+4: search warmup + `X-Search-Duration-Ms` header; proxy client reuse + correlated logging; Supabase `hybrid_search_products` rewritten to use HNSW + new `products_fts_idx` GIN; tool-first prompt rule in all 5 templates. Search 2100–3100 ms → ~1000 ms | Claude |
-| 2026-04-14 | Phase 1 voice UX: reduced ElevenLabs tools to `search_products` + `update_products`, rewrote prompts for one-turn clarify-before-search | Codex |
-| 2026-04-14 | Phase 2 infrastructure: async search endpoint, thread-offloaded embedding/RPC, `slowapi` rate limiting | Codex |
-| 2026-04-10 | Human-facing `docs/knowledge-base/` handbook, root pointers, and personal-note canonical links | Codex |
+| 2026-06-19 | Enforced `get_product_details` → `update_carousel_main_view` tool chain at three levels (tool description, `## Tools`, `# Guardrails`) across all 5 model prompts; disabled carousel click-to-agent context (visual-only now). | Antigravity |
+| 2026-06-18 | Fixed carousel update delay (1-3s) by setting `expects_response: True` on client tools; fixed duplicate agent speech by consolidating thumbnail click into a single `sendUserMessage`. | Antigravity |
+| 2026-06-18 | Resolved search service hangs (PyTorch CPU thread limits + semaphore gate); implemented smart inactivity timer (pauses during agent speech, grace windows); fixed VAD startup silence. | Antigravity |
+| 2026-04-17 | Voice-agent latency STEP 3: A/B test picked Claude Haiku 4.5; code defaults flipped, harness moved to `testing/latency/` with new `upgrade_agent_model.py`. | Claude |
+| 2026-04-17 | Voice-agent latency STEP 1+2+4: search warmup, timing headers, proxy client reuse, HNSW/GIN database search indices, tool-first prompt rule. | Claude |

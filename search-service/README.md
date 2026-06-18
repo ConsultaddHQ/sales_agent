@@ -39,6 +39,9 @@ Create a `.env` from `.env.example` with the following vars:
 - `OPENROUTER_BASE_URL` – optional custom endpoint.
 - `OPENROUTER_MODEL` – model name for completions (default `xai/grok-beta`).
 - `SEARCH_RATE_LIMIT` – per-client limit for `POST /search` (default `30/minute`).
+- `SEARCH_EMBEDDING_CONCURRENCY` – concurrency semaphore limit for model encoding (default `2`).
+- `EMBEDDING_TIMEOUT` – timeout in seconds for embedding generation (default `5.0`).
+- `RPC_TIMEOUT` – timeout in seconds for Supabase RPC search queries (default `5.0`).
 - `UVICORN_WORKERS` – worker count for non-reload runs (default `4`).
 - `RELOAD` – set `false` to enable multi-worker process mode from `python main.py`.
 - `LOG_LEVEL` – `INFO`/`DEBUG`.
@@ -94,6 +97,8 @@ Without this, the first real request of each process pays a 1.5–3 s cold-start
 Every `/search` response carries an `X-Search-Duration-Ms` header measuring embed + Supabase RPC time. The `onboarding-service` `/search` proxy forwards this header and emits one correlated info log per call (`⏱ /search proxy | store_id=… | query=… | search_ms=… | proxy_total_ms=… | status=…`). CORS `expose_headers` includes `X-Search-Duration-Ms` so browser callers can read it too.
 
 The Supabase `hybrid_search_products` function is index-aware as of 2026-04-17 — it uses HNSW via `ORDER BY embedding <=> p_query_embedding LIMIT 50` and a GIN-backed `@@ plainto_tsquery(...)` filter. See `docs/agents/decisions.md` for details. Warm typical search is ~1 s end-to-end; ~50 ms of that is DB compute, the rest is India↔Supabase network. Moving Supabase region or adding a short-TTL result cache in this service are the remaining levers if the network floor needs breaking.
+
+To prevent CPU thrashing and hangs under concurrent loads, embedding generation is gated by a semaphore (`SEARCH_EMBEDDING_CONCURRENCY`, default `2`), and both model encoding and database RPC calls are protected by a fail-fast timeout (default `5.0s`), returning HTTP 503 Service Unavailable when overloaded.
 
 ## Notes
 

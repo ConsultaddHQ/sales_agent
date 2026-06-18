@@ -2,16 +2,37 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   useConversation,
   useConversationClientTool,
+  useConversationMode,
 } from "@elevenlabs/react";
 import "../styles/AvatarWidget.css";
 import "../styles/ptt.css";
 import { useVoiceMode } from "../hooks/useVoiceMode";
+// eslint-disable-next-line no-unused-vars -- motion is used as <motion.div> in JSX
 import { motion, AnimatePresence, useMotionValue } from "framer-motion";
 import { usePttInteraction } from "../hooks/usePttInteraction";
 
 // Served from the widget mount (onboarding-service mounts dist/ at /widget),
 // not the page root — a bare "/image.png" 404s against the host origin.
 const DUMMY_IMAGE = "/widget/image.png";
+const USER_INACTIVITY_TIMEOUT_MS = 30000;
+const SESSION_HARD_LIMIT_MS = 270000;
+const IGNORED_SILENCE_TRANSCRIPTS = new Set([
+  "ah",
+  "aha",
+  "alright",
+  "hmm",
+  "hm",
+  "mm",
+  "mmhmm",
+  "mm hmm",
+  "ok",
+  "okay",
+  "uh",
+  "um",
+  "yeah",
+  "yep",
+  "yes",
+]);
 const WIDGET_LAYER_STYLE = {
   position: "fixed",
   bottom: "0",
@@ -82,6 +103,18 @@ const formatMessage = (text) => {
     .replace(/\n/g, "<br />");
   formatted = formatted.replace(/(\d+\.)\s/g, "<br/>$1 ");
   return formatted;
+};
+
+const isMeaningfulUserSpeech = (text) => {
+  const normalized = String(text || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return false;
+  if (IGNORED_SILENCE_TRANSCRIPTS.has(normalized)) return false;
+  return normalized.length >= 2;
 };
 
 /**
@@ -159,13 +192,14 @@ function OrbDock({
   onRightAction,
   scale = "",
   style = {},
+  inactive = false,
 }) {
   const statusLabel = getStatusLabel(visualState);
   const isPtt = interactionMode === "ptt";
   const isLive = visualState !== "IDLE" && visualState !== "PTT_READY" && visualState !== "ERROR";
 
   return (
-    <div className="orb-dock" style={style}>
+    <div className={`orb-dock ${inactive ? "inactive" : ""}`} style={style}>
       {/* Left — mode toggle */}
       <div className="flex-1 flex justify-start items-center">
         <div className="mode-toggle" role="group" aria-label="Voice mode">
@@ -264,6 +298,27 @@ function AvatarInner({
   const latestProductsRef = useRef([]);
   const isSyntheticMessageRef = useRef(false);
   const syncDebounceRef = useRef(null);
+  const inactivityRef = useRef({ startAt: 0, lastMeaningfulUserAt: 0 });
+  const lastAgentActivityRef = useRef(0);
+  const connectedAtRef = useRef(0);
+  const hasAgentSpokenRef = useRef(false);
+  const isToolPendingRef = useRef(false);
+  const muteDelayTimerRef = useRef(null);
+
+  const { isSpeaking: agentIsSpeaking } = useConversationMode();
+
+  // Keep track of when the agent is speaking/active
+  useEffect(() => {
+    if (agentIsSpeaking) {
+      lastAgentActivityRef.current = Date.now();
+      hasAgentSpokenRef.current = true;
+    }
+  }, [agentIsSpeaking]);
+
+  /** Reset the inactivity tracker — call on any real user interaction */
+  const resetInactivity = useCallback(() => {
+    inactivityRef.current.lastMeaningfulUserAt = Date.now();
+  }, []);
 
   // ── Mode (VAD / PTT) ──────────────────────────────────────────────────────
   const [interactionMode, setInteractionMode] = useVoiceMode();
@@ -323,6 +378,11 @@ function AvatarInner({
 
       if (source === "user" && text) {
         _startLatencyTimer(text);
+        if (isMeaningfulUserSpeech(text)) {
+          resetInactivity();
+        } else {
+          console.log("[inactivity] Ignoring likely silence transcript:", text);
+        }
       }
 
       if (text) {
@@ -343,6 +403,7 @@ function AvatarInner({
       }
 
       if (source === "ai") {
+        console.log(`[ElevenLabs] AI message received at ${Date.now()} (time since connect: ${connectedAtRef.current ? (Date.now() - connectedAtRef.current) + 'ms' : 'unknown'})`);
         _markFirstAi();
         setAgentSubtitle(text);
         if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
@@ -363,14 +424,26 @@ function AvatarInner({
     },
     onError: (error) => console.error("ElevenLabs error:", error),
     onDisconnect: (details) => {
-      console.error(
-        "[ElevenLabs] Disconnected:",
+      console.log(
+        "[ElevenLabs] Disconnected from WebSocket:",
         "reason=", details?.reason,
         "closeCode=", details?.closeCode,
         "closeReason=", details?.closeReason,
         "message=", details?.message,
         "context=", details?.context,
       );
+    },
+    onInterruption: (details) => {
+      console.log(`[ElevenLabs] onInterruption event at ${Date.now()}:`, details);
+    },
+    onModeChange: (modeObj) => {
+      console.log(`[ElevenLabs] onModeChange event at ${Date.now()}:`, modeObj);
+    },
+    onVadScore: (score) => {
+      // Let's keep this light but log VAD activity if it's high
+      if (score > 0.8) {
+        console.log(`[ElevenLabs] onVadScore active:`, score);
+      }
     },
   });
 
@@ -400,13 +473,64 @@ function AvatarInner({
     }
   }); // intentionally runs on every render to catch all status transitions
 
-  // When switching INTO PTT mode while connected, mute mic immediately
+  // Reset inactivity tracking and handle VAD startup mute delay when session connects
   useEffect(() => {
-    if (interactionMode === "ptt" && conversation.status === "connected") {
-      setMuted(true);
+    if (conversation.status === "connected") {
+      const now = Date.now();
+      inactivityRef.current = { startAt: now, lastMeaningfulUserAt: now };
+      connectedAtRef.current = now;
+      hasAgentSpokenRef.current = false;
+
+      if (interactionMode === "vad") {
+        console.log("[VAD Startup] Connected. Starting muted, setting fallback timer to unmute...");
+        setMuted(true);
+
+        if (muteDelayTimerRef.current) clearTimeout(muteDelayTimerRef.current);
+        muteDelayTimerRef.current = setTimeout(() => {
+          console.log("[VAD Startup] Fallback timeout reached (2.5s). Unmuting mic...");
+          setMuted(false);
+          muteDelayTimerRef.current = null;
+        }, 2500);
+      } else {
+        setMuted(true);
+      }
+    } else if (conversation.status === "disconnected" || conversation.status === "error") {
+      if (muteDelayTimerRef.current) {
+        clearTimeout(muteDelayTimerRef.current);
+        muteDelayTimerRef.current = null;
+      }
     }
-    if (interactionMode === "vad" && conversation.status === "connected") {
-      setMuted(false); // hand mic control back to VAD
+  }, [conversation.status, interactionMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Unmute VAD early if the agent starts speaking before fallback timeout
+  useEffect(() => {
+    if (agentIsSpeaking && interactionMode === "vad" && conversation.status === "connected") {
+      hasAgentSpokenRef.current = true;
+      if (muteDelayTimerRef.current) {
+        console.log("[VAD Startup] Agent started speaking. Clearing fallback timer and unmuting mic...");
+        clearTimeout(muteDelayTimerRef.current);
+        muteDelayTimerRef.current = null;
+        setMuted(false);
+      }
+    }
+  }, [agentIsSpeaking, interactionMode, conversation.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle manual interaction mode toggles mid-conversation
+  useEffect(() => {
+    if (conversation.status === "connected") {
+      if (interactionMode === "ptt") {
+        if (muteDelayTimerRef.current) {
+          clearTimeout(muteDelayTimerRef.current);
+          muteDelayTimerRef.current = null;
+        }
+        setMuted(true);
+      } else if (interactionMode === "vad") {
+        // If we switch to VAD mid-conversation and agent has already spoken or we are past connection delay, unmute
+        const isPastInitialConnection = (Date.now() - connectedAtRef.current) > 2500;
+        if (hasAgentSpokenRef.current || isPastInitialConnection) {
+          setMuted(false);
+        }
+      }
     }
   }, [interactionMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -419,6 +543,7 @@ function AvatarInner({
 
   // ── Tool: update_products ─────────────────────────────────────────────────
   useConversationClientTool("update_products", (parameters) => {
+    isToolPendingRef.current = true;
     console.log("Update tool called : ", parameters);
     const products = Array.isArray(parameters?.products) ? parameters.products : [];
 
@@ -431,10 +556,12 @@ function AvatarInner({
     setAgentSubtitle(`Found ${products.length} products for you`);
     if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
     subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 3000);
+    isToolPendingRef.current = false;
     return "UI updated successfully";
   });
 
   useConversationClientTool("update_carousel_main_view", (parameters) => {
+    isToolPendingRef.current = true;
     // Coerce string→number (some LLMs emit "2" instead of 2), then clamp to valid range.
     const raw = parameters?.index;
     const index = typeof raw === "string" ? parseInt(raw, 10) : raw;
@@ -443,57 +570,87 @@ function AvatarInner({
       setActiveIndex(Math.max(0, Math.min(index, len - 1)));
     }
     // No context update — avoids a feedback loop where the agent re-narrates unnecessarily.
+    isToolPendingRef.current = false;
     return "ok";
   });
 
-  const { sendContextualUpdate, sendUserMessage } = conversation;
+  const { sendUserMessage } = conversation;
 
   // ── VAD session helpers ───────────────────────────────────────────────────
   const startVoiceSession = useCallback(() => {
+    setChatHistory([]);
+    setAgentSubtitle("");
+    setHighlightPrice(false);
+    const now = Date.now();
+    inactivityRef.current = { startAt: now, lastMeaningfulUserAt: now };
     conversation.startSession({ agentId, connectionType: "websocket" });
   }, [conversation, agentId]);
 
   const endVoiceSession = useCallback(() => {
+    console.log("[session] endVoiceSession called manually by user.");
+    setActiveView("NONE");
     conversation.endSession();
-  }, [conversation]);
+  }, [conversation, setActiveView]);
+
+  const endSessionAndCollapse = useCallback((reason) => {
+    console.log(`[session] endSessionAndCollapse called. Reason: "${reason}"`);
+    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+    if (priceTimerRef.current) clearTimeout(priceTimerRef.current);
+    setAgentSubtitle("");
+    setHighlightPrice(false);
+    setActiveView("NONE");
+    conversation.endSession();
+  }, [conversation, setActiveView]);
 
   /** VAD-mode tap: toggle session on/off */
   const handleOrbActivate = useCallback(() => {
     if (isSessionTransitioningRef.current) return;
     if (conversation.status === "connecting") return;
+    resetInactivity();
     isSessionTransitioningRef.current = true;
     if (conversation.status === "connected") {
-      endVoiceSession();
+      endSessionAndCollapse("Ending session from orb tap.");
     } else if (conversation.status === "disconnected" || conversation.status === "error") {
       startVoiceSession();
     }
     setTimeout(() => { isSessionTransitioningRef.current = false; }, 500);
-  }, [conversation.status, startVoiceSession, endVoiceSession]);
+  }, [conversation.status, startVoiceSession, endSessionAndCollapse, resetInactivity]);
 
   /** PTT pointer/keyboard handlers — forwarded to the orb */
   const handlePttPointerDown = useCallback(
-    (e) => ptt.beginPress(e, { agentId, startSession: conversation.startSession }),
-    [ptt, agentId, conversation.startSession]
+    (e) => {
+      resetInactivity();
+      ptt.beginPress(e, { agentId, startSession: conversation.startSession });
+    },
+    [ptt, agentId, conversation.startSession, resetInactivity]
   );
 
   const handleOrbKeyDown = useCallback(
     (e) => {
       if (interactionMode === "ptt") {
+        resetInactivity();
         ptt.handleKeyDown(e, { agentId, startSession: conversation.startSession });
       } else if (e.key === " " || e.key === "Enter") {
         e.preventDefault();
         handleOrbActivate();
       }
     },
-    [interactionMode, ptt, agentId, conversation.startSession, handleOrbActivate]
+    [interactionMode, ptt, agentId, conversation.startSession, handleOrbActivate, resetInactivity]
   );
 
   // ── Carousel sync ─────────────────────────────────────────────────────────
   const safeIndex = Math.min(activeIndex, Math.max(0, latestProducts.length - 1));
 
+  // DISABLED: syncMainProduct previously sent a [CAROUSEL UPDATE] message to the
+  // voice agent when the user clicked a thumbnail, prompting the agent to narrate
+  // the selected product. Disabled per product decision — clicking a thumbnail
+  // should only update the carousel visually, not trigger agent speech.
+  // To re-enable: uncomment syncMainProduct(latestProducts[idx]) in the onClick below.
+  // eslint-disable-next-line no-unused-vars
   const syncMainProduct = useCallback(
     (product) => {
       if (!product?.id) return;
+      resetInactivity(); // carousel interaction = real user activity
       if (conversation.status !== "connected") {
         setAgentSubtitle(
           `${product.name} — ₹${Number(product.price).toLocaleString("en-IN")}`,
@@ -506,17 +663,13 @@ function AvatarInner({
       if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
       syncDebounceRef.current = setTimeout(() => {
         console.log("[sync] Sending product context to agent:", product.name);
-        sendContextualUpdate(
-          `[CAROUSEL UPDATE] The user just manually selected a new product on screen. ` +
-          `Product name: "${product.name}". ` +
-          `Price: ₹${Number(product.price).toLocaleString("en-IN")}. ` +
-          `Please talk about this product naturally in your next response.`,
-        );
         isSyntheticMessageRef.current = true;
-        sendUserMessage("Tell me about this one");
+        sendUserMessage(
+          `[CAROUSEL UPDATE] (The user manually selected product: "${product.name}", Price: ₹${Number(product.price).toLocaleString("en-IN")}). Tell me about this one.`
+        );
       }, 600);
     },
-    [conversation.status, sendContextualUpdate, sendUserMessage],
+    [conversation.status, sendUserMessage, resetInactivity],
   );
 
   useEffect(() => {
@@ -543,6 +696,7 @@ function AvatarInner({
       clearTimeout(priceTimerRef.current);
       clearTimeout(subtitleTimerRef.current);
       clearTimeout(syncDebounceRef.current);
+      if (muteDelayTimerRef.current) clearTimeout(muteDelayTimerRef.current);
     };
   }, []);
 
@@ -556,39 +710,66 @@ function AvatarInner({
     latestProductsRef.current = latestProducts;
   }, [latestProducts]);
 
-  // ── Inactivity Timeout ─────────────────────────────────────────────────────
-  const lastActivityRef = useRef(null);
-
-  // Reset on any real activity: messages, products, status change, or live audio.
-  // visualState === "ACTIVE" covers both the agent speaking and the mic being live in VAD mode.
-  useEffect(() => {
-    lastActivityRef.current = Date.now();
-  }, [chatHistory, latestProducts, conversation.status, visualState]);
-
+  // ── Smart Inactivity & Hard Limit ──────────────────────────────────────────
   useEffect(() => {
     if (conversation.status !== "connected") return;
-    const interval = setInterval(() => {
-      // Don't time out while the agent/mic is live (ACTIVE = connected VAD, PTT_HOLDING = user talking).
-      const isLive = visualState === "ACTIVE" || visualState === "PTT_HOLDING";
-      if (isLive) {
-        lastActivityRef.current = Date.now();
+    const id = setInterval(() => {
+      const r = inactivityRef.current;
+      const now = Date.now();
+
+      // 1. Hard session limit (270s)
+      if (now - r.startAt > SESSION_HARD_LIMIT_MS) {
+        console.log("[session] Ending session due to 270s hard limit.");
+        endSessionAndCollapse("Ending session due to 270s hard limit.");
         return;
       }
-      if (lastActivityRef.current && Date.now() - lastActivityRef.current > 60000) {
-        console.log("Ending session due to 60s inactivity");
-        conversation.endSession();
-        setActiveView("NONE");
+
+      // 2. Ignore/reset inactivity conditions
+      if (agentIsSpeaking) {
+        // Reset/push forward inactivity while agent is speaking
+        r.lastMeaningfulUserAt = now;
+        return;
       }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [conversation.status, conversation.endSession, setActiveView, visualState]);
+
+      const isNewlyConnected = (now - connectedAtRef.current) < 20000;
+      const hasAgentSpoken = hasAgentSpokenRef.current;
+      if (isNewlyConnected && !hasAgentSpoken) {
+        // Give time for connection and first greeting to start
+        return;
+      }
+
+      const isGraceWindow = (now - lastAgentActivityRef.current) < 10000;
+      if (isGraceWindow) {
+        // Do not end session during post-speech grace window
+        return;
+      }
+
+      if (isToolPendingRef.current) {
+        // Do not end session if a client tool is actively executing
+        return;
+      }
+
+      // 3. User inactivity limit (30s)
+      if (now - r.lastMeaningfulUserAt >= USER_INACTIVITY_TIMEOUT_MS) {
+        console.log(
+          `[session] Ending session due to user inactivity. ` +
+          `now=${now}, lastUserSpeech=${r.lastMeaningfulUserAt} (${now - r.lastMeaningfulUserAt}ms ago), ` +
+          `lastAgentActivity=${lastAgentActivityRef.current} (${now - lastAgentActivityRef.current}ms ago)`
+        );
+        endSessionAndCollapse("Ending session: no meaningful user speech for 30s.");
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [conversation.status, agentIsSpeaking, endSessionAndCollapse]);
+
+  const isConnected = conversation.status === "connected";
 
   // ── Shared dock props ─────────────────────────────────────────────────────
   const sharedDockProps = {
     visualState,
     interactionMode,
     setMode: setInteractionMode,
-    isConnected: conversation.status === "connected",
+    isConnected,
     onOrbClick: handleOrbActivate,
     onPointerDown: handlePttPointerDown,
     onPointerUp: ptt.endPress,
@@ -606,16 +787,12 @@ function AvatarInner({
       {activeView === "PRODUCTS" && (
         <motion.div
           key="products"
-          layoutId="widget-container"
-          layout
-          drag
-          dragMomentum={false}
-          dragConstraints={dragConstraintsRef}
-          dragElastic={0.08}
-          style={{ x: dragX, y: dragY }}
-          onDragEnd={() => saveDragPosition(dragX.get(), dragY.get())}
+          initial={{ opacity: 0, scale: 0.92, y: 24 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 16 }}
+          style={{ transformOrigin: "bottom right", left: "auto" }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="shopping-mode-overlay flex flex-col h-[100dvh] w-screen md:w-[400px] md:h-[600px] md:bottom-4 md:right-4 md:fixed md:top-auto md:left-auto md:rounded-3xl bg-black overflow-hidden relative z-40"
+          className="shopping-panel flex flex-col bg-black overflow-hidden shadow-2xl pointer-events-auto"
         >
           <div className="flex-none p-4 flex justify-end items-start absolute top-0 w-full z-50 pointer-events-none">
             <button
@@ -685,7 +862,7 @@ function AvatarInner({
                       onClick={() => {
                         console.log(`[Thumbnail] Click → index ${idx} (${latestProducts[idx]?.name || "unknown"})`);
                         setActiveIndex(idx);
-                        syncMainProduct(latestProducts[idx]);
+                        // syncMainProduct(latestProducts[idx]); // disabled — re-enable to have agent narrate clicked product
                       }}
                     >
                       <img
@@ -745,8 +922,6 @@ function AvatarInner({
       {activeView === "NONE" && (
         <motion.div
           key="none"
-          layoutId="widget-container"
-          layout
           drag
           dragMomentum={false}
           dragConstraints={dragConstraintsRef}
@@ -754,13 +929,15 @@ function AvatarInner({
           style={{ x: dragX, y: dragY, position: 'fixed', bottom: '20px', right: '20px', left: 'auto', width: 'auto' }}
           onDragEnd={() => saveDragPosition(dragX.get(), dragY.get())}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
           className="avatar-widget mode-closed"
         >
           <div className="avatar-controls-column">
             <OrbDock
               {...sharedDockProps}
-              style={{ paddingLeft: "16px", paddingRight: "16px", minWidth: "280px" }}
-              // override default style from orb-dock class
+              inactive={conversation.status === "disconnected"}
+              style={{ paddingLeft: conversation.status === "disconnected" ? 0 : "16px", paddingRight: conversation.status === "disconnected" ? 0 : "16px", minWidth: conversation.status === "disconnected" ? "80px" : "280px" }}
             />
           </div>
         </motion.div>
@@ -770,18 +947,14 @@ function AvatarInner({
       {activeView === "CHAT" && (
         <motion.div
           key="chat"
-          layoutId="widget-container"
-          layout
-          drag
-          dragMomentum={false}
-          dragConstraints={dragConstraintsRef}
-          dragElastic={0.08}
-          style={{ x: dragX, y: dragY, position: 'fixed', bottom: '20px', right: '20px', left: 'auto', width: 'auto' }}
-          onDragEnd={() => saveDragPosition(dragX.get(), dragY.get())}
+          initial={{ opacity: 0, scale: 0.92, y: 24 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 16 }}
+          style={{ transformOrigin: "bottom right", left: "auto" }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="avatar-widget mode-open"
+          className="avatar-widget mode-open shadow-2xl border border-white/10 bg-zinc-950 overflow-hidden flex flex-col"
         >
-          <div className="bubble flex flex-col h-[70vh] md:w-[400px] max-h-[600px] overflow-hidden shadow-2xl border border-white/10 relative pointer-events-auto">
+          <div className="flex flex-col h-full overflow-hidden relative pointer-events-auto">
             <div className="bubble-header flex-shrink-0 bg-zinc-900 border-b border-white/10 px-4 py-3 flex justify-between items-center z-50">
               <span className="font-semibold text-white tracking-wide text-sm flex items-center gap-2">
                 <div
@@ -829,6 +1002,26 @@ function AvatarInner({
                 ))
               )}
             </div>
+
+            {/* Chat View Dock */}
+            <div className="flex-none w-full bg-zinc-950 pb-6 px-4 z-10 pointer-events-auto border-t border-white/10">
+              <div className="w-full flex items-center justify-center mt-4">
+                <OrbDock
+                  {...sharedDockProps}
+                  scale="scale-75"
+                  style={{
+                    position: "relative",
+                    width: "100%",
+                    margin: "0",
+                    height: "50px",
+                    boxShadow: "none",
+                    background: "transparent",
+                    border: "none",
+                    padding: "0",
+                  }}
+                />
+              </div>
+            </div>
           </div>
         </motion.div>
       )}
@@ -840,6 +1033,16 @@ function AvatarInner({
 
 const DRAG_POS_KEY = "team-pop-widget-pos";
 
+const clampDragPos = (pos) => {
+  if (typeof window === "undefined") return pos;
+  const maxLeft = -(window.innerWidth - 100);
+  const maxUp = -(window.innerHeight - 100);
+  return {
+    x: Math.max(maxLeft, Math.min(Number(pos?.x) || 0, 0)),
+    y: Math.max(maxUp, Math.min(Number(pos?.y) || 0, 0)),
+  };
+};
+
 function AvatarWidget({ agentId, preview = false }) {
   const resolvedAgentId = agentId || window.__TEAM_POP_AGENT_ID__ || "YOUR_ELEVENLABS_AGENT_ID";
   const [activeView, setActiveView] = useState(preview ? "CHAT" : "NONE");
@@ -850,12 +1053,39 @@ function AvatarWidget({ agentId, preview = false }) {
   const scrollEndTimerRef = useRef(null);
 
   // ── Drag position — shared across all views so position persists on open/close ──
-  const savedPos = (() => { try { return JSON.parse(localStorage.getItem(DRAG_POS_KEY)) || {}; } catch { return {}; } })();
+  const savedPos = (() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(DRAG_POS_KEY)) || {};
+      return clampDragPos(raw);
+    } catch { return { x: 0, y: 0 }; }
+  })();
   const dragX = useMotionValue(savedPos.x ?? 0);
   const dragY = useMotionValue(savedPos.y ?? 0);
   const dragConstraintsRef = useRef(null);
   const saveDragPosition = useCallback((x, y) => {
-    try { localStorage.setItem(DRAG_POS_KEY, JSON.stringify({ x, y })); } catch { /* storage full */ }
+    const clamped = clampDragPos({ x, y });
+    try { localStorage.setItem(DRAG_POS_KEY, JSON.stringify(clamped)); } catch { /* storage full */ }
+  }, []);
+
+  // Re-clamp drag position on viewport resize / orientation change
+  useEffect(() => {
+    const handleResize = () => {
+      const clamped = clampDragPos({ x: dragX.get(), y: dragY.get() });
+      dragX.set(clamped.x);
+      dragY.set(clamped.y);
+      try { localStorage.setItem(DRAG_POS_KEY, JSON.stringify(clamped)); } catch { /* storage full */ }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [dragX, dragY]);
+
+  // Clean up scroll end timer on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollEndTimerRef.current) {
+        clearTimeout(scrollEndTimerRef.current);
+      }
+    };
   }, []);
 
   const handleCarouselScroll = useCallback(() => {
