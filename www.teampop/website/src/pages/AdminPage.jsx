@@ -6,12 +6,12 @@ import {
 import { adminLogin, getRequests, processRequest, sendAgent, switchModel } from '../lib/api'
 
 const LLM_MODELS = [
+  { id: 'claude-haiku-4-5',      label: 'Claude Haiku 4.5 (default)', latency: '~686ms', cost: '$0.0064/min' },
   { id: 'qwen3-30b-a3b',         label: 'Qwen3 30B',             latency: '~187ms', cost: '$0.0020/min' },
   { id: 'gpt-oss-120b',          label: 'GPT-OSS 120B',          latency: '~356ms', cost: '$0.0016/min' },
   { id: 'gpt-4.1-nano',          label: 'GPT-4.1 Nano',          latency: '~504ms', cost: '$0.0006/min' },
   { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', latency: '~571ms', cost: '$0.0006/min' },
   { id: 'glm-45-air-fp8',        label: 'GLM 4.5 Air',           latency: '~634ms', cost: '$0.0066/min' },
-  { id: 'claude-haiku-4-5',      label: 'Claude Haiku 4.5',      latency: '~686ms', cost: '$0.0064/min' },
   { id: 'gpt-4o-mini',           label: 'GPT-4o Mini',           latency: '~767ms', cost: '$0.0009/min' },
   { id: 'gpt-5-nano',            label: 'GPT-5 Nano',            latency: '~768ms', cost: '$0.0003/min' },
   { id: 'gpt-5-mini',            label: 'GPT-5 Mini',            latency: '~840ms', cost: '$0.0017/min' },
@@ -220,7 +220,7 @@ function SendDialog({ row, password, baseUrl, onClose, onSent }) {
 // ── Model Switch Dialog ─────────────────────────────────────────────────────
 
 function ModelSwitchDialog({ row, password, onClose, onSwitched }) {
-  const [selected, setSelected] = useState(row.llm_model || '')
+  const [selected, setSelected] = useState(row.llm_model || 'claude-haiku-4-5')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)

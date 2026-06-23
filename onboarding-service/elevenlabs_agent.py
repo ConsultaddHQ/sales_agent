@@ -927,14 +927,14 @@ class ElevenLabsAgentCreator:
         # Agent config is nested INSIDE conversation_config.agent
         #
         # ── Settings aligned with tested ElevenLabs dashboard config ──
-        # 1. LLM: gemini-2.5-flash (~1.04s) — best tool reliability
+        # 1. LLM: claude-haiku-4-5 (~686ms) — 100% tool reliability, zero 1002 timeouts
         # 2. TTS: eleven_flash_v2_5 (~75ms TTFB) — fastest, English-only
         # 3. optimize_streaming_latency: 3 = max latency reduction
         # 4. turn_eagerness: "normal" — balanced (valid: patient/normal/eager)
         # 5. soft_timeout: 2.5s with static "Let me see..." — fills silence
         #    during tool execution without derailing LLM context
         # 6. speculative_turn: false — avoids premature responses
-        # 7. cascade_timeout_seconds: 8 = enough time for Gemini
+        # 7. cascade_timeout_seconds: 8 — buffer for tool round-trips
         # 8. ASR: elevenlabs provider, PCM 16000 Hz input
 
         context = store_context or {}
