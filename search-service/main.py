@@ -62,6 +62,12 @@ class ProductDetailsRequest(BaseModel):
     product_id: str = Field(..., examples=["some-product-id-uuid"])
 
 
+class SimilarProductsRequest(BaseModel):
+    store_id: str = Field(..., examples=["c5a0c8a1-0e3a-4e0e-a5f4-4cb1f6c8a123"])
+    product_id: str = Field(..., examples=["some-product-id-uuid"])
+    limit: int = Field(5, ge=1, le=20)
+
+
 class ProductOut(BaseModel):
     id: str
     name: str
@@ -523,6 +529,21 @@ async def similar_products(
         })
 
     return {"products": serialized}
+
+
+@app.post("/similar-products")
+@limiter.limit(SEARCH_RATE_LIMIT)
+async def similar_products_post(
+    request: Request,
+    req: SimilarProductsRequest,
+) -> Dict[str, Any]:
+    """POST variant of /similar-products — accepts JSON body.
+
+    ElevenLabs webhook tools require POST for request_body_schema; this mirrors
+    the GET endpoint so the agent tool can pass store_id, product_id, and limit
+    in the request body.
+    """
+    return await similar_products(request, product_id=req.product_id, store_id=req.store_id, limit=req.limit)
 
 
 @app.post("/product-details")

@@ -696,7 +696,7 @@ class ElevenLabsAgentCreator:
                 "tool_error_handling_mode": "auto",
                 "api_schema": {
                     "url": f"{search_api_url}/similar-products",
-                    "method": "GET",
+                    "method": "POST",
                     "request_headers": {},
                     "request_body_schema": {
                         "type": "object",
@@ -891,7 +891,7 @@ class ElevenLabsAgentCreator:
         llm_model:
             Override the ElevenLabs `llm` string for this agent only
             (e.g. "claude-haiku-4-5"). If None, falls back to the
-            ELEVENLABS_LLM_MODEL env var (default "gemini-2.5-flash").
+            ELEVENLABS_LLM_MODEL env var (default "claude-haiku-4-5").
             Used by scripts/create_test_agents.py for the latency A/B matrix.
         """
         # Validate store_id is a proper UUID before baking it into the webhook
