@@ -153,30 +153,14 @@
   display: block;
 }
 
-/* Text Overlay with Gradient */
+/* Product details — normal flow (split layout: image above, details below) */
 .shopping-card-info {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-
-  /* Gradient to make text readable */
-  background: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.95) 10%,
-    rgba(0, 0, 0, 0.6) 50%,
-    transparent 100%
-  );
-
-  padding: 24px;
-  /* CRITICAL: Extra padding at bottom so text clears the Dock & Message */
-  padding-bottom: 180px;
-
   display: flex;
   flex-direction: column;
   gap: 8px;
   text-align: left;
   color: #fff;
+  padding: 0;
 }
 
 .shopping-card-title {
@@ -426,33 +410,66 @@
   transform: scale(0.95);
 }
 
-/* Animation States */
-.orb-wrapper.LISTENING .orb-core {
-  animation: pulseGlow 1.5s infinite;
-  box-shadow: 0 0 40px #5effb1;
+/* ── Orb State Animations ──────────────────────────────────────────────────── */
+
+/* IDLE — subtle attention ring (plays 3×) */
+.orb-wrapper.IDLE .orb-core {
+  animation: idleRing 2.2s ease-out 3;
 }
-.orb-wrapper.SPEAKING .orb-core {
-  animation: pulseSpeak 0.4s infinite alternate;
+@keyframes idleRing {
+  0%   { box-shadow: 0 0 0 0 rgba(70, 194, 255, 0.45), 0 8px 30px rgba(70, 194, 255, 0.25); }
+  55%  { box-shadow: 0 0 0 14px rgba(70, 194, 255, 0), 0 8px 30px rgba(70, 194, 255, 0.25); }
+  100% { box-shadow: 0 0 0 0 rgba(70, 194, 255, 0), 0 8px 30px rgba(70, 194, 255, 0.25); }
 }
 
-@keyframes pulseGlow {
-  0% {
-    box-shadow: 0 0 0 rgba(94, 255, 177, 0);
-  }
-  50% {
-    box-shadow: 0 0 30px rgba(94, 255, 177, 0.6);
-  }
-  100% {
-    box-shadow: 0 0 0 rgba(94, 255, 177, 0);
-  }
+/* CONNECTING — amber fade pulse */
+.orb-wrapper.CONNECTING .orb-core {
+  animation: connectingPulse 1s ease-in-out infinite alternate;
 }
-@keyframes pulseSpeak {
-  from {
-    transform: scale(1);
-  }
-  to {
-    transform: scale(1.1);
-  }
+@keyframes connectingPulse {
+  from { box-shadow: 0 0 10px rgba(245, 158, 11, 0.3), 0 8px 30px rgba(70, 194, 255, 0.2); opacity: 0.85; }
+  to   { box-shadow: 0 0 28px rgba(245, 158, 11, 0.65), 0 8px 30px rgba(245, 158, 11, 0.2); opacity: 1; }
+}
+
+/* LISTENING — green glow, breathes with user voice */
+.orb-wrapper.LISTENING .orb-core {
+  animation: listenPulse 1.5s ease-in-out infinite;
+}
+@keyframes listenPulse {
+  0%, 100% { box-shadow: 0 0 14px rgba(34, 197, 94, 0.4), 0 0 28px rgba(34, 197, 94, 0.15); }
+  50%       { box-shadow: 0 0 28px rgba(34, 197, 94, 0.75), 0 0 52px rgba(34, 197, 94, 0.3); }
+}
+
+/* THINKING — cyan rotating spotlight orbit */
+.orb-wrapper.THINKING .orb-core {
+  animation: thinkingOrbit 1.1s linear infinite;
+  transform: scale(0.97);
+}
+@keyframes thinkingOrbit {
+  0%   { box-shadow: 22px 0   0 3px rgba(6, 182, 212, 0.85), 0 0 16px rgba(6, 182, 212, 0.25); }
+  25%  { box-shadow:  0  22px 0 3px rgba(6, 182, 212, 0.85), 0 0 16px rgba(6, 182, 212, 0.25); }
+  50%  { box-shadow: -22px 0  0 3px rgba(6, 182, 212, 0.85), 0 0 16px rgba(6, 182, 212, 0.25); }
+  75%  { box-shadow:  0 -22px 0 3px rgba(6, 182, 212, 0.85), 0 0 16px rgba(6, 182, 212, 0.25); }
+  100% { box-shadow: 22px 0   0 3px rgba(6, 182, 212, 0.85), 0 0 16px rgba(6, 182, 212, 0.25); }
+}
+
+/* AGENT_SPEAKING — purple glow scale pulse */
+.orb-wrapper.AGENT_SPEAKING .orb-core {
+  animation: speakPulse 0.4s ease-in-out infinite alternate;
+}
+@keyframes speakPulse {
+  from { box-shadow: 0 0 14px rgba(168, 85, 247, 0.5), 0 0 28px rgba(168, 85, 247, 0.2); transform: scale(1); }
+  to   { box-shadow: 0 0 32px rgba(168, 85, 247, 0.85), 0 0 60px rgba(168, 85, 247, 0.35); transform: scale(1.06); }
+}
+
+/* prefers-reduced-motion: static per-state glow, no animation — states still
+   distinguishable by color */
+@media (prefers-reduced-motion: reduce) {
+  .orb-wrapper.IDLE .orb-core        { animation: none; }
+  .orb-wrapper.CONNECTING .orb-core  { animation: none; box-shadow: 0 0 18px rgba(245, 158, 11, 0.5); }
+  .orb-wrapper.LISTENING .orb-core   { animation: none; box-shadow: 0 0 20px rgba(34, 197, 94, 0.55); }
+  .orb-wrapper.THINKING .orb-core    { animation: none; transform: none; box-shadow: 0 0 20px rgba(6, 182, 212, 0.55); }
+  .orb-wrapper.AGENT_SPEAKING .orb-core { animation: none; transform: none; box-shadow: 0 0 20px rgba(168, 85, 247, 0.55); }
 }
 
 /* 3. ACTION (Right) */

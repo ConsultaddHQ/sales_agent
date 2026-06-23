@@ -432,6 +432,99 @@ async def search(
     return SearchResponse(products=serialized_products, pitch=pitch)
 
 
+@app.get("/similar-products")
+@limiter.limit(SEARCH_RATE_LIMIT)
+async def similar_products(
+    request: Request,
+    product_id: str,
+    store_id: str,
+    limit: int = 5,
+) -> Dict[str, Any]:
+    """Return products semantically similar to the given product using vector similarity.
+
+    Uses the existing all-MiniLM-L6-v2 embeddings — no new data required.
+    Falls back to empty list (not an error) when the source product has no embedding.
+    """
+    try:
+        uuid.UUID(store_id)
+        uuid.UUID(product_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid store_id or product_id format. Must be a valid UUID.")
+
+    limit = max(1, min(limit, 20))
+    sb = get_supabase()
+
+    # 1. Fetch the source product's embedding + metadata for type-boost
+    try:
+        src_resp = sb.table("products").select("embedding, name, image_url, price, product_url, metadata").eq("id", product_id).eq("store_id", store_id).execute()
+    except Exception as e:
+        logger.exception("Supabase source-product fetch failed")
+        raise HTTPException(status_code=500, detail="database query failed")
+
+    if not src_resp.data:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    src = src_resp.data[0]
+    embedding = src.get("embedding")
+    if not embedding:
+        return {"products": [], "message": "Source product has no embedding — cannot compute similarity."}
+
+    src_type = (src.get("metadata") or {}).get("product_type", "")
+
+    # 2. Vector similarity search — exclude the source product itself
+    # We fetch limit+5 extra then trim, to allow filtering out the source row.
+    fetch_limit = limit + 5
+    try:
+        sim_resp = sb.rpc("hybrid_search_products", {
+            "p_store_id": store_id,
+            "p_query": "",
+            "p_query_embedding": "[" + ",".join(f"{x:.8f}" for x in embedding) + "]",
+            "p_limit": fetch_limit,
+            "p_min_score": 0.15,
+        }).execute()
+    except Exception as e:
+        logger.exception("Supabase similarity search failed")
+        raise HTTPException(status_code=500, detail="similarity search failed")
+
+    rows = sim_resp.data or []
+
+    # 3. Exclude source, optionally sort same-type products higher
+    results = []
+    for row in rows:
+        if str(row.get("id")) == str(product_id):
+            continue
+        results.append(row)
+
+    # Stable-sort: same product_type first, keep vector score order within each group
+    def _sort_key(r):
+        m = r.get("metadata") or {}
+        return 0 if m.get("product_type", "") == src_type else 1
+
+    results.sort(key=_sort_key)
+    results = results[:limit]
+
+    # 4. Serialize — reuse same helper used by /search
+    from shared.config import IMAGE_SERVER_URL  # already imported at module level
+    serialized = []
+    for r in results:
+        meta = r.get("metadata") or {}
+        raw_img = r.get("image_url") or meta.get("image_url") or ""
+        local_img = r.get("local_image_url") or ""
+        img = (
+            f"{IMAGE_SERVER_URL}/{local_img}" if local_img else raw_img
+        )
+        serialized.append({
+            "id": str(r.get("id", "")),
+            "name": r.get("name") or "",
+            "price": float(r["price"]) if r.get("price") is not None else None,
+            "description": _truncate_for_voice(r.get("description") or meta.get("description") or ""),
+            "image_url": img,
+            "product_url": r.get("product_url") or meta.get("product_url") or "",
+        })
+
+    return {"products": serialized}
+
+
 @app.post("/product-details")
 @limiter.limit(SEARCH_RATE_LIMIT)
 async def get_product_details(

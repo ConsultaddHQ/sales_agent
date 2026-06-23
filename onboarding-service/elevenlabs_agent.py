@@ -94,6 +94,20 @@ Use when: customer references a product by position (e.g. "the second one"). Als
 - For specifics (sizes, colors, availability, price by size, fabric/material, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. wash-care instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
 - For checkout, shipping, returns, or store-policy questions, direct users to the "Shop Now" flow.
 
+## add_to_cart
+Use ONLY when the user explicitly says they want to add something to their cart or buy it.
+Call this after the product is already visible. Confirm: "I've added [product name] to your cart!"
+If it fails, suggest the Shop Now link.
+
+## get_similar_products
+Use when the user asks "what goes with this?", "suggest pairings", "show similar", or "what else would match?"
+After receiving results, call update_products with the returned products array — BEFORE speaking about them. This step is important.
+You can proactively offer pairings after showing a product: "This pairs well with some other items — want me to show you?"
+
+# Session ending
+When the user says goodbye, thanks you and indicates they're done, or uses farewell phrases ("bye", "thanks that's all", "I'm done", "goodbye", "that's it"), say a brief warm farewell first (one short sentence, e.g. "Happy shopping! Bye!"), then call end_session with reason "user_farewell". Say your farewell BEFORE calling end_session. This step is important.
+When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks for visiting! Happy shopping!"), then call end_session with reason "session_wrap_up". This step is important.
+
 # Error handling
 - No results: ask for one tighter rephrase.
 - Tool failure: retry once, then apologize briefly and continue helping.
@@ -156,6 +170,20 @@ Natural storefront conversation: brief, specific, and responsive to user intent.
 - For purchase, shipping, returns, or store-policy questions, direct to "Shop Now".
 - Follow the required procedure. No exceptions.
 
+## add_to_cart
+Call ONLY when the user explicitly says they want to add something to their cart or buy it.
+Call after product is shown. Say "I've added [name] to your cart!" after success.
+If it fails, say to use the Shop Now link.
+
+## get_similar_products
+Call when user asks "what goes with this?", "suggest pairings", "show similar", or "what else would match?"
+After results: call update_products BEFORE speaking. This step is important.
+Proactively offer: "This pairs well with some other items — want me to show you?"
+
+# Session ending
+When the user says goodbye, thanks and indicates they're done, or uses farewell phrases ("bye", "thanks that's all", "I'm done", "goodbye", "that's it"), say a brief warm farewell first (one short sentence, e.g. "Happy shopping! Bye!"), then call end_session with reason "user_farewell". Say your farewell BEFORE calling end_session. This step is important.
+When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks for visiting! Happy shopping!"), then call end_session with reason "session_wrap_up". This step is important.
+
 # Error handling
 - No results: ask for one clearer direction.
 - Tool failure: retry once, then apologize and continue.
@@ -211,6 +239,19 @@ After the result arrives, call update_carousel_main_view with that product's zer
 
 ## update_carousel_main_view
 Use when: customer references a product by position (e.g. "the second one"). Also call this immediately after every get_product_details result. Pass zero-based index.
+
+## add_to_cart
+Call ONLY when user explicitly says they want to add to cart or buy.
+Call after product is visible. Confirm: "I've added [name] to your cart!"
+If fails, suggest Shop Now.
+
+## get_similar_products
+Call when user asks for pairings or similar items.
+After results: call update_products immediately — BEFORE speaking. This step is important.
+
+# Session ending
+When the user says goodbye, thanks and indicates they're done, or uses farewell phrases ("bye", "thanks that's all", "I'm done", "goodbye", "that's it"), say a brief warm farewell first (one short sentence, e.g. "Happy shopping! Bye!"), then call end_session with reason "user_farewell". Say your farewell BEFORE calling end_session. This step is important.
+When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks for visiting! Happy shopping!"), then call end_session with reason "session_wrap_up". This step is important.
 
 # Error handling
 - No results: ask for one tighter rephrase.
@@ -275,6 +316,21 @@ Use when: customer references a product by position (e.g. "the second one"). Als
 - For specifics (sizes, colors, availability, price by size, fabric/material, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. wash-care instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
 - For checkout, shipping, returns, or store-policy questions, route to "Shop Now".
 
+## add_to_cart
+Call only when the customer explicitly asks to add an item to their cart or buy it.
+Only call this after the product is already visible in the carousel.
+After a successful response, say: "I've added [product name] to your cart!"
+If the response indicates a failure, say: "I wasn't able to add that to your cart — you can use the Shop Now button instead."
+
+## get_similar_products
+Call when the customer asks "what goes with this?", "suggest pairings", "show similar items", or anything implying they want related products.
+After receiving results, call update_products with the returned array — BEFORE saying anything about the results. This step is important.
+You may proactively offer: "This pairs well with some other items — want me to show you?" after presenting a product.
+
+# Session ending
+When the user says goodbye, thanks and indicates they're done, or uses farewell phrases ("bye", "thanks that's all", "I'm done", "goodbye", "that's it"), say a brief warm farewell first (one short sentence, e.g. "Happy shopping! Bye!"), then call end_session with reason "user_farewell". Say your farewell BEFORE calling end_session. This step is important.
+When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks for visiting! Happy shopping!"), then call end_session with reason "session_wrap_up". This step is important.
+
 # Error handling
 - No results: ask for one clearer direction.
 - Tool failure: retry once, then apologize briefly.
@@ -336,6 +392,19 @@ Use when: customer references a product by position (e.g. "the second one"). Als
 - Never invent product details.
 - For specifics (sizes, colors, availability, price by size, fabric/material, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. wash-care instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
 - For checkout, shipping, returns, or store-policy questions, direct to "Shop Now".
+
+## add_to_cart
+Call only when user explicitly asks to add something to their cart or buy it.
+Only call after the product is shown. Confirm: "Added [name] to your cart!"
+If fails: "I couldn't add that — try the Shop Now button."
+
+## get_similar_products
+Call when user asks for pairings, similar items, or "what else would go with this?"
+After results: call update_products BEFORE speaking. This step is important.
+
+# Session ending
+When the user says goodbye, thanks and indicates they're done, or uses farewell phrases ("bye", "thanks that's all", "I'm done", "goodbye", "that's it"), say a brief warm farewell first (one short sentence, e.g. "Happy shopping! Bye!"), then call end_session with reason "user_farewell". Say your farewell BEFORE calling end_session. This step is important.
+When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks for visiting! Happy shopping!"), then call end_session with reason "session_wrap_up". This step is important.
 
 # Error handling
 - No results: ask for one clearer rephrase.
@@ -554,6 +623,101 @@ class ElevenLabsAgentCreator:
                     },
                     "required": ["index"]
                 }
+            },
+            # --- Client tool: end_session ---
+            {
+                "type": "client",
+                "name": "end_session",
+                "description": (
+                    "End the conversation and close the session. Call this ONLY AFTER you have "
+                    "finished speaking your farewell message. When the user says goodbye, "
+                    "'thanks that\\'s all', 'I\\'m done', or any farewell phrase: say a brief "
+                    "warm closing first, then call this tool. When you receive [SESSION ENDING]: "
+                    "say one short farewell sentence, then call this tool."
+                ),
+                "expects_response": False,
+                "execution_mode": "immediate",
+                "tool_error_handling_mode": "auto",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "reason": {
+                            "type": "string",
+                            "description": "Why the session is ending: 'user_farewell' or 'session_wrap_up'"
+                        }
+                    },
+                    "required": ["reason"]
+                }
+            },
+            # --- Client tool: add_to_cart ---
+            {
+                "type": "client",
+                "name": "add_to_cart",
+                "description": (
+                    "Add a product to the customer's shopping cart. Only call this when the user "
+                    "explicitly says they want to add something to their cart or buy it. "
+                    "Call this after the product is already shown via update_products. "
+                    "If it fails, tell the user to use the Shop Now button instead."
+                ),
+                "expects_response": True,
+                "execution_mode": "immediate",
+                "tool_error_handling_mode": "auto",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "product_id": {
+                            "type": "string",
+                            "description": "The product ID from the search results"
+                        },
+                        "variant_index": {
+                            "type": "integer",
+                            "description": "Zero-based index of the variant to add (0 = default/first variant)"
+                        },
+                        "quantity": {
+                            "type": "integer",
+                            "description": "Number of items to add (default 1)"
+                        }
+                    },
+                    "required": ["product_id"]
+                }
+            },
+            # --- Webhook tool: get_similar_products ---
+            {
+                "type": "webhook",
+                "name": "get_similar_products",
+                "description": (
+                    "Find products that pair well with or are similar to a given product. "
+                    "Use when the user says 'what goes with this', 'suggest pairings', 'show similar', "
+                    "'what else would match', or after showing a product you can proactively offer pairings. "
+                    "After receiving results, call update_products with the returned products array."
+                ),
+                "response_timeout_secs": 5,
+                "execution_mode": "immediate",
+                "tool_error_handling_mode": "auto",
+                "api_schema": {
+                    "url": f"{search_api_url}/similar-products",
+                    "method": "GET",
+                    "request_headers": {},
+                    "request_body_schema": {
+                        "type": "object",
+                        "properties": {
+                            "store_id": {
+                                "type": "string",
+                                "constant_value": store_id,
+                            },
+                            "product_id": {
+                                "type": "string",
+                                "description": "ID of the product to find similar/pairing products for"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of similar products to return (default 5)"
+                            }
+                        },
+                        "required": ["store_id", "product_id"]
+                    },
+                    "content_type": "application/json"
+                }
             }
         ]
 
@@ -694,7 +858,7 @@ class ElevenLabsAgentCreator:
                 logger.warning("⚠️ ignore_default_personality is NOT true — ElevenLabs default personality is active")
             if not stored_tools:
                 logger.error("❌ CRITICAL: Agent has NO tools configured!")
-            expected_tool_names = {"search_products", "update_products", "get_product_details", "update_carousel_main_view"}
+            expected_tool_names = {"search_products", "update_products", "get_product_details", "update_carousel_main_view", "end_session", "add_to_cart", "get_similar_products"}
             if actual_tool_names != expected_tool_names:
                 logger.warning(
                     "⚠️ Tool mismatch. Expected exactly %s, got %s",

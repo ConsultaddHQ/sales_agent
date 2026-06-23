@@ -149,6 +149,39 @@ async def search_proxy(request: Request):
     return await _proxy_to_search("/search", body, store_id_log, query_log)
 
 
+@app.get("/similar-products")
+async def similar_products_proxy(request: Request):
+    """Proxy get_similar_products webhook GET calls to the search service.
+
+    ElevenLabs webhook tools call this via GET with query params:
+      product_id, store_id, limit (optional)
+    """
+    query_string = str(request.url.query)
+    product_id_log = request.query_params.get("product_id", "?")
+    store_id_log = request.query_params.get("store_id", "?")
+
+    client = _search_proxy_client
+    proxy_start = _time.perf_counter()
+    try:
+        if client is None:
+            async with httpx.AsyncClient(timeout=25) as one_shot:
+                resp = await one_shot.get(f"{SEARCH_SERVICE_URL}/similar-products?{query_string}")
+        else:
+            resp = await client.get(f"{SEARCH_SERVICE_URL}/similar-products?{query_string}")
+    except Exception as e:
+        logger.error(f"Proxy error | /similar-products | store_id={store_id_log} | product_id={product_id_log} | {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=502)
+
+    proxy_ms = int((_time.perf_counter() - proxy_start) * 1000)
+    logger.info(f"⏱  /similar-products proxy | store_id={store_id_log} | product_id={product_id_log} | proxy_ms={proxy_ms} | status={resp.status_code}")
+
+    try:
+        content = resp.json()
+    except Exception:
+        content = {"error": "search service returned non-JSON body"}
+    return JSONResponse(content=content, status_code=resp.status_code)
+
+
 @app.post("/product-details")
 async def product_details_proxy(request: Request):
     """Proxy get_product_details webhook calls to the search service.

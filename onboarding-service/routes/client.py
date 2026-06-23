@@ -1,10 +1,11 @@
-"""Client-facing endpoints — submit request, send agent delivery."""
+"""Client-facing endpoints — submit request, send agent delivery, session feedback."""
 
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
@@ -104,3 +105,46 @@ def send_agent(request_id: str, body: SendAgentBody, x_admin_password: str = Hea
     }).eq("id", request_id).execute()
 
     return {"success": True, "test_url": full_test_url}
+
+
+class SessionFeedbackBody(BaseModel):
+    agent_id: str
+    duration_seconds: Optional[int] = None
+    rating: Optional[str] = None        # "positive" | "neutral" | "negative" | "none"
+    feedback_tag: Optional[str] = None  # e.g. "found_product", "too_slow"
+    products_shown: int = 0
+    products_clicked: int = 0
+    shop_now_clicked: bool = False
+    chat_messages: int = 0
+    end_reason: Optional[str] = None
+    conversation_id: Optional[str] = None
+    latency_first_ai_ms: Optional[int] = None
+    latency_products_ms: Optional[int] = None
+
+
+@router.post("/session-feedback")
+def submit_session_feedback(body: SessionFeedbackBody):
+    """Public: store post-session feedback and implicit signals. No auth — no PII stored."""
+    try:
+        sb = get_supabase()
+        valid_ratings = {"positive", "neutral", "negative", "none"}
+        rating = body.rating if body.rating in valid_ratings else "none"
+        sb.table("session_feedback").insert({
+            "agent_id": body.agent_id,
+            "duration_seconds": body.duration_seconds,
+            "rating": rating,
+            "feedback_tag": body.feedback_tag,
+            "products_shown": body.products_shown,
+            "products_clicked": body.products_clicked,
+            "shop_now_clicked": body.shop_now_clicked,
+            "chat_messages": body.chat_messages,
+            "end_reason": body.end_reason,
+            "conversation_id": body.conversation_id,
+            "latency_first_ai_ms": body.latency_first_ai_ms,
+            "latency_products_ms": body.latency_products_ms,
+        }).execute()
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Failed to store session feedback: {e}", exc_info=True)
+        # Never surface errors to the widget — feedback is non-critical
+        return {"success": False}

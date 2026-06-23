@@ -151,3 +151,51 @@ def switch_agent_model(body: SwitchModelBody, x_admin_password: str = Header(...
     except Exception as e:
         logger.error(f"Failed to switch model: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/feedback-summary/{agent_id}")
+def get_feedback_summary(agent_id: str, x_admin_password: str = Header(...)):
+    """Admin: aggregated session feedback stats for an agent."""
+    _verify_admin(x_admin_password)
+    try:
+        sb = get_supabase()
+        rows = (
+            sb.table("session_feedback")
+            .select("*")
+            .eq("agent_id", agent_id)
+            .order("created_at", desc=True)
+            .limit(200)
+            .execute()
+            .data
+        )
+        total = len(rows)
+        if total == 0:
+            return {"agent_id": agent_id, "total_sessions": 0}
+
+        positive = sum(1 for r in rows if r.get("rating") == "positive")
+        neutral  = sum(1 for r in rows if r.get("rating") == "neutral")
+        negative = sum(1 for r in rows if r.get("rating") == "negative")
+        avg_dur  = sum(r.get("duration_seconds") or 0 for r in rows) / total
+        shop_rate = sum(1 for r in rows if r.get("shop_now_clicked")) / total
+
+        # Tally feedback tags
+        tag_counts: dict = {}
+        for r in rows:
+            tag = r.get("feedback_tag")
+            if tag:
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        top_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        return {
+            "agent_id": agent_id,
+            "total_sessions": total,
+            "ratings": {"positive": positive, "neutral": neutral, "negative": negative, "no_rating": total - positive - neutral - negative},
+            "avg_duration_seconds": round(avg_dur, 1),
+            "shop_now_click_rate": round(shop_rate, 3),
+            "top_feedback_tags": [{"tag": t, "count": c} for t, c in top_tags],
+            "recent": rows[:10],
+        }
+    except Exception as e:
+        logger.error(f"Failed to fetch feedback summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+

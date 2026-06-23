@@ -46,7 +46,7 @@ const WIDGET_LAYER_STYLE = {
 
 // ─── ShoppingCard ─────────────────────────────────────────────────────────────
 
-const ShoppingCard = ({ product, isActive, highlightPrice }) => {
+const ShoppingCard = ({ product, isActive, highlightPrice, onShopNow }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -84,6 +84,7 @@ const ShoppingCard = ({ product, isActive, highlightPrice }) => {
           href={product.product_url}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={onShopNow}
           className="shopping-cta mt-3 text-center bg-white text-black px-6 py-2 rounded-full font-bold text-sm hover:bg-gray-200 transition"
         >
           Shop Now
@@ -92,6 +93,91 @@ const ShoppingCard = ({ product, isActive, highlightPrice }) => {
     </div>
   );
 };
+
+// ─── FeedbackCard ─────────────────────────────────────────────────────────────
+
+const FOLLOW_UP_OPTIONS = {
+  positive: ["Found what I wanted", "Great recommendations", "Fun to talk to", "Fast & responsive"],
+  neutral:  ["Didn't find my product", "Too slow", "Answers weren't helpful", "Just browsing"],
+  negative: ["Couldn't understand me", "Wrong products shown", "Too many questions", "Technical issue"],
+};
+const FOLLOW_UP_PROMPTS = {
+  positive: "What did you like most?",
+  neutral:  "What could be better?",
+  negative: "What went wrong?",
+};
+
+function FeedbackCard({ onRate, onDismiss, onStepChange }) {
+  const [step, setStep] = useState(1);
+  const [rating, setRating] = useState(null);
+
+  const handleEmoji = (r) => {
+    setRating(r);
+    setStep(2);
+    onStepChange?.(); // notify parent to cancel/extend auto-dismiss timer
+  };
+
+  const handleTag = (tag) => {
+    onRate(rating, tag);
+  };
+
+  if (step === 1) {
+    return (
+      <motion.div
+        key="feedback-step1"
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+        style={{ position: "fixed", bottom: "20px", right: "20px" }}
+        className="flex flex-col items-center gap-3 p-4 bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl pointer-events-auto w-56"
+      >
+        <span className="text-white text-sm font-semibold text-center">How was your experience?</span>
+        <div className="flex gap-3">
+          {[["😍", "positive"], ["😐", "neutral"], ["😕", "negative"]].map(([emoji, r]) => (
+            <button
+              key={r}
+              onClick={() => handleEmoji(r)}
+              className="w-12 h-12 rounded-full bg-zinc-800 hover:bg-zinc-700 border border-white/10 hover:border-white/30 transition-all flex items-center justify-center text-2xl hover:scale-110 active:scale-95"
+              aria-label={r}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+        <button onClick={onDismiss} className="text-gray-500 text-xs hover:text-gray-300 transition-colors cursor-pointer">
+          Skip
+        </button>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      key="feedback-step2"
+      initial={{ opacity: 0, y: 10, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+      style={{ position: "fixed", bottom: "20px", right: "20px" }}
+      className="flex flex-col items-center gap-2 p-4 bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl pointer-events-auto w-56"
+    >
+      <span className="text-white text-sm font-semibold text-center">{FOLLOW_UP_PROMPTS[rating]}</span>
+      <div className="flex flex-col gap-2 w-full">
+        {FOLLOW_UP_OPTIONS[rating].map((tag) => (
+          <button
+            key={tag}
+            onClick={() => handleTag(tag)}
+            className="w-full px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-white/10 hover:border-white/30 text-gray-200 text-xs text-left transition-all hover:text-white cursor-pointer"
+          >
+            {tag}
+          </button>
+        ))}
+      </div>
+      <button onClick={onDismiss} className="text-gray-500 text-xs hover:text-gray-300 transition-colors mt-1 cursor-pointer">
+        Skip
+      </button>
+    </motion.div>
+  );
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -121,10 +207,10 @@ const isMeaningfulUserSpeech = (text) => {
  * Derive a single visual-state token from conversation + PTT state.
  * This is the source of truth for orb CSS class and status pill copy.
  *
- * VAD states  : IDLE | CONNECTING | ACTIVE | ERROR
+ * VAD states  : IDLE | CONNECTING | LISTENING | THINKING | AGENT_SPEAKING | ERROR
  * PTT states  : PTT_READY | CONNECTING | PTT_MUTED_CONNECTED | PTT_HOLDING | ERROR
  */
-function getVisualState({ status, interactionMode, isPressActive }) {
+function getVisualState({ status, interactionMode, isPressActive, vadSubState }) {
   if (status === "connecting") return "CONNECTING";
   if (status === "error") return "ERROR";
 
@@ -132,7 +218,7 @@ function getVisualState({ status, interactionMode, isPressActive }) {
     if (interactionMode === "ptt") {
       return isPressActive ? "PTT_HOLDING" : "PTT_MUTED_CONNECTED";
     }
-    return "ACTIVE";
+    return vadSubState || "LISTENING";
   }
 
   // disconnected
@@ -144,9 +230,11 @@ function getVisualState({ status, interactionMode, isPressActive }) {
  */
 function getStatusLabel(visualState) {
   switch (visualState) {
-    case "IDLE":                return "Tap to speak";
-    case "CONNECTING":          return "Connecting";
-    case "ACTIVE":              return "Live";
+    case "IDLE":                return "Talk to AI";
+    case "CONNECTING":          return "Connecting...";
+    case "LISTENING":           return "Listening...";
+    case "THINKING":            return "Thinking...";
+    case "AGENT_SPEAKING":      return "Speaking...";
     case "PTT_READY":           return "Hold to speak";
     case "PTT_MUTED_CONNECTED": return "Hold to talk";
     case "PTT_HOLDING":         return "Listening";
@@ -196,7 +284,15 @@ function OrbDock({
 }) {
   const statusLabel = getStatusLabel(visualState);
   const isPtt = interactionMode === "ptt";
-  const isLive = visualState !== "IDLE" && visualState !== "PTT_READY" && visualState !== "ERROR";
+
+  const PILL_STYLES = {
+    LISTENING:     "bg-green-500/20 text-green-400 border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.2)]",
+    THINKING:      "bg-cyan-500/20 text-cyan-400 border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)]",
+    AGENT_SPEAKING:"bg-purple-500/20 text-purple-400 border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.2)]",
+    CONNECTING:    "bg-amber-500/20 text-amber-400 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]",
+    PTT_HOLDING:   "bg-green-500/20 text-green-400 border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.2)]",
+  };
+  const pillStyle = PILL_STYLES[visualState] || "bg-zinc-800/80 text-gray-400 border-white/5";
 
   return (
     <div className={`orb-dock ${inactive ? "inactive" : ""}`} style={style}>
@@ -223,12 +319,13 @@ function OrbDock({
       {/* Center — orb */}
       <div className="relative flex-shrink-0 flex flex-col items-center justify-center">
         <span
-          className={`absolute -top-7 text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap transition-all duration-300 ${
-            isLive
-              ? "bg-green-500/20 text-green-400 border border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.2)]"
-              : "bg-zinc-800/80 text-gray-400 border border-white/5"
-          }`}
+          className={`absolute -top-7 text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap transition-all duration-300 border flex items-center gap-1 ${pillStyle}`}
         >
+          {visualState === "IDLE" && (
+            <svg className="w-2.5 h-2.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V20H9v2h6v-2h-2v-2.08A7 7 0 0 0 19 11h-2z"/>
+            </svg>
+          )}
           {statusLabel}
         </span>
 
@@ -270,6 +367,96 @@ function OrbDock({
   );
 }
 
+// ─── ProductDetails ───────────────────────────────────────────────────────────
+
+const ProductDetails = ({ product, highlightPrice, onShopNow, onAddToCart }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const price = product.price
+    ? `₹${Number(product.price).toLocaleString("en-IN")}`
+    : "Check Price";
+
+  return (
+    <div className="flex flex-col gap-2 text-white">
+      <div className="font-bold text-base leading-tight">{product.name}</div>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div
+          className={`text-xl font-bold ${highlightPrice ? "price-glow text-green-400" : "text-green-300"}`}
+        >
+          {price}
+        </div>
+        <a
+          href={product.product_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={onShopNow}
+          className="shopping-cta text-center bg-white text-black px-5 py-2 rounded-full font-bold text-sm hover:bg-gray-200 transition"
+        >
+          Shop Now
+        </a>
+        {onAddToCart && (
+          <button
+            onClick={(e) => { e.preventDefault(); onAddToCart(product); }}
+            className="shopping-cta text-center bg-green-500 text-white px-5 py-2 rounded-full font-bold text-sm hover:bg-green-600 transition"
+          >
+            Add to Cart
+          </button>
+        )}
+      </div>
+      {product.description && (
+        <div className="flex flex-col gap-1">
+          <div
+            className={`text-sm text-gray-400 transition-all ${!isExpanded ? "line-clamp-2" : ""}`}
+          >
+            {product.description}
+          </div>
+          <button
+            onClick={(e) => { e.preventDefault(); setIsExpanded(!isExpanded); }}
+            className="text-xs text-blue-400 self-start font-semibold"
+          >
+            {isExpanded ? "Show less" : "Read more"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── FirstVisitNudge ──────────────────────────────────────────────────────────
+
+function FirstVisitNudge({ onDismiss }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 6000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+
+  return (
+    <motion.div
+      key="nudge"
+      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 8, scale: 0.9 }}
+      style={{ position: "fixed", bottom: "100px", right: "20px" }}
+      className="flex items-start gap-2 px-3 py-2.5 bg-zinc-900/95 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl pointer-events-auto max-w-[210px]"
+    >
+      <svg className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V20H9v2h6v-2h-2v-2.08A7 7 0 0 0 19 11h-2z"/>
+      </svg>
+      <span className="text-white text-xs leading-snug flex-1">
+        Tap me! I'm your AI shopping assistant.
+      </span>
+      <button
+        onClick={onDismiss}
+        className="text-gray-500 hover:text-white transition-colors ml-1 flex-shrink-0 cursor-pointer"
+        aria-label="Dismiss"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </motion.div>
+  );
+}
+
 // ─── AvatarInner ─────────────────────────────────────────────────────────────
 
 function AvatarInner({
@@ -304,6 +491,33 @@ function AvatarInner({
   const hasAgentSpokenRef = useRef(false);
   const isToolPendingRef = useRef(false);
   const muteDelayTimerRef = useRef(null);
+  // Task 1: graceful session ending
+  const isEndingRef = useRef(false);
+  const gracefulEndTimerRef = useRef(null);
+  const pendingFarewellEndRef = useRef(null); // set when agent calls end_session, cleared on disconnect
+  const farewellFallbackTimerRef = useRef(null); // 5s hard fallback if speech never finishes
+  // Task 2: drag vs tap discrimination
+  const isDraggingRef = useRef(false);
+  // VAD sub-states for connected mode: LISTENING | THINKING | AGENT_SPEAKING
+  const [vadSubState, setVadSubState] = useState("LISTENING");
+  const vadSubStateRef = useRef("LISTENING");
+  const thinkingTimerRef = useRef(null);
+  const rafVolRef = useRef(null);
+  const agentIsSpeakingRef = useRef(false);
+  // First-visit nudge
+  const [showNudge, setShowNudge] = useState(() => {
+    try { return !localStorage.getItem("team-pop-nudge-seen"); } catch { return false; }
+  });
+  const dismissNudge = useCallback(() => {
+    setShowNudge(false);
+    try { localStorage.setItem("team-pop-nudge-seen", "1"); } catch {}
+  }, []);
+  const [cartToast, setCartToast] = useState(null); // null | "adding" | "success" | "error"
+  const cartToastTimerRef = useRef(null);
+  // Task 3: session metrics for feedback
+  const sessionMetricsRef = useRef({ startAt: null, productsShown: 0, productsClicked: 0, shopNowClicked: false, chatMessages: 0, endReason: null });
+  const feedbackDismissTimerRef = useRef(null);
+  const conversationIdRef = useRef(null);
 
   const { isSpeaking: agentIsSpeaking } = useConversationMode();
 
@@ -314,6 +528,9 @@ function AvatarInner({
       hasAgentSpokenRef.current = true;
     }
   }, [agentIsSpeaking]);
+
+  // Keep ref in sync for safe access inside rAF callbacks
+  useEffect(() => { agentIsSpeakingRef.current = agentIsSpeaking; }, [agentIsSpeaking]);
 
   /** Reset the inactivity tracker — call on any real user interaction */
   const resetInactivity = useCallback(() => {
@@ -338,6 +555,7 @@ function AvatarInner({
       lc.firstAiAt = performance.now();
       const ms = Math.round(lc.firstAiAt - lc.userSpeechAt);
       console.log(`%c⏱ [Cycle ${lc.cycle}] First AI response: ${ms}ms`, "color: #81c784; font-weight: bold");
+      sessionMetricsRef.current.latencyFirstAiMs = ms;
     }
   }
 
@@ -355,6 +573,7 @@ function AvatarInner({
         `%c⏱ [Cycle ${lc.cycle}] BREAKDOWN → User→AI: ${lc.firstAiAt ? Math.round(lc.firstAiAt - lc.userSpeechAt) : "?"}ms | User→Products: ${totalMs}ms`,
         "color: #ce93d8; font-weight: bold; font-size: 14px"
       );
+      sessionMetricsRef.current.latencyProductsMs = totalMs;
     }
   }
 
@@ -380,6 +599,7 @@ function AvatarInner({
         _startLatencyTimer(text);
         if (isMeaningfulUserSpeech(text)) {
           resetInactivity();
+          sessionMetricsRef.current.chatMessages += 1;
         } else {
           console.log("[inactivity] Ignoring likely silence transcript:", text);
         }
@@ -445,10 +665,76 @@ function AvatarInner({
         console.log(`[ElevenLabs] onVadScore active:`, score);
       }
     },
+    onConversationMetadata: (metadata) => {
+      console.log("[ElevenLabs] onConversationMetadata:", metadata);
+    },
   });
 
   // Destructure mute control. setMuted(true) = mic off, setMuted(false) = mic on.
   const setMuted = conversation.setMuted ?? (() => {});
+
+  // Capture conversation ID once connected (cannot call getId in onConnect due to TDZ)
+  useEffect(() => {
+    if (conversation.status === "connected") {
+      try {
+        const cid = conversation.getId?.();
+        if (cid) { conversationIdRef.current = cid; console.log("[session] conversation_id:", cid); }
+      } catch (_e) {}
+    }
+  }, [conversation.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── VAD sub-state: LISTENING / THINKING / AGENT_SPEAKING ─────────────────
+  // Placed here (after conversation declaration) to avoid TDZ on conversation.status.
+
+  // Immediately switch vadSubState when agent starts/stops speaking
+  useEffect(() => {
+    if (agentIsSpeaking) {
+      if (thinkingTimerRef.current) { clearTimeout(thinkingTimerRef.current); thinkingTimerRef.current = null; }
+      vadSubStateRef.current = "AGENT_SPEAKING";
+      setVadSubState("AGENT_SPEAKING");
+    } else if (conversation.status === "connected") {
+      vadSubStateRef.current = "LISTENING";
+      setVadSubState("LISTENING");
+    }
+  }, [agentIsSpeaking, conversation.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Volume-reactive rAF loop: detects user speech (input vol) to distinguish LISTENING vs THINKING
+  useEffect(() => {
+    if (conversation.status !== "connected") {
+      if (rafVolRef.current) { cancelAnimationFrame(rafVolRef.current); rafVolRef.current = null; }
+      if (thinkingTimerRef.current) { clearTimeout(thinkingTimerRef.current); thinkingTimerRef.current = null; }
+      return;
+    }
+    const ALPHA = 0.25;
+    const INPUT_THRESHOLD = 0.04;
+    let smoothedIn = 0;
+    const tick = () => {
+      rafVolRef.current = requestAnimationFrame(tick);
+      if (agentIsSpeakingRef.current) return;
+      const rawIn = conversation.getInputVolume?.() ?? 0;
+      smoothedIn = smoothedIn * (1 - ALPHA) + rawIn * ALPHA;
+      if (smoothedIn > INPUT_THRESHOLD) {
+        if (thinkingTimerRef.current) { clearTimeout(thinkingTimerRef.current); thinkingTimerRef.current = null; }
+        if (vadSubStateRef.current !== "LISTENING") {
+          vadSubStateRef.current = "LISTENING";
+          setVadSubState("LISTENING");
+        }
+      } else if (!thinkingTimerRef.current && vadSubStateRef.current === "LISTENING") {
+        thinkingTimerRef.current = setTimeout(() => {
+          thinkingTimerRef.current = null;
+          if (!agentIsSpeakingRef.current) {
+            vadSubStateRef.current = "THINKING";
+            setVadSubState("THINKING");
+          }
+        }, 500);
+      }
+    };
+    rafVolRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafVolRef.current) { cancelAnimationFrame(rafVolRef.current); rafVolRef.current = null; }
+      if (thinkingTimerRef.current) { clearTimeout(thinkingTimerRef.current); thinkingTimerRef.current = null; }
+    };
+  }, [conversation.status, conversation.getInputVolume]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── PTT interaction hook ──────────────────────────────────────────────────
   const ptt = usePttInteraction({ setMuted });
@@ -539,6 +825,7 @@ function AvatarInner({
     status: conversation.status,
     interactionMode,
     isPressActive: ptt.isPressActiveRef.current,
+    vadSubState,
   });
 
   // ── Tool: update_products ─────────────────────────────────────────────────
@@ -548,6 +835,7 @@ function AvatarInner({
     const products = Array.isArray(parameters?.products) ? parameters.products : [];
 
     _markProductsArrived(products.length);
+    sessionMetricsRef.current.productsShown += products.length;
 
     setLatestProducts(products);
     latestProductsRef.current = products;
@@ -583,6 +871,7 @@ function AvatarInner({
     setHighlightPrice(false);
     const now = Date.now();
     inactivityRef.current = { startAt: now, lastMeaningfulUserAt: now };
+    sessionMetricsRef.current = { startAt: now, productsShown: 0, productsClicked: 0, shopNowClicked: false, chatMessages: 0, endReason: null, conversationId: null, latencyFirstAiMs: null, latencyProductsMs: null };
     conversation.startSession({ agentId, connectionType: "websocket" });
   }, [conversation, agentId]);
 
@@ -594,18 +883,146 @@ function AvatarInner({
 
   const endSessionAndCollapse = useCallback((reason) => {
     console.log(`[session] endSessionAndCollapse called. Reason: "${reason}"`);
+    // Clear any pending graceful-end timer and reset guard
+    if (gracefulEndTimerRef.current) { clearTimeout(gracefulEndTimerRef.current); gracefulEndTimerRef.current = null; }
+    isEndingRef.current = false;
     if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
     if (priceTimerRef.current) clearTimeout(priceTimerRef.current);
     setAgentSubtitle("");
     setHighlightPrice(false);
-    setActiveView("NONE");
+    sessionMetricsRef.current.endReason = reason;
     conversation.endSession();
+
+    // Show feedback card only for sessions longer than 10 seconds
+    const duration = sessionMetricsRef.current.startAt
+      ? Math.round((Date.now() - sessionMetricsRef.current.startAt) / 1000)
+      : 0;
+    if (duration >= 10) {
+      setActiveView("FEEDBACK");
+      feedbackDismissTimerRef.current = setTimeout(() => {
+        setActiveView((prev) => prev === "FEEDBACK" ? "NONE" : prev);
+      }, 8000);
+    } else {
+      setActiveView("NONE");
+    }
   }, [conversation, setActiveView]);
+
+  // ── Watch agentIsSpeaking to fire farewell-end after speech finishes ─────────
+  // Placed here so endSessionAndCollapse is already in scope (avoids TDZ crash).
+  useEffect(() => {
+    if (!agentIsSpeaking && pendingFarewellEndRef.current) {
+      const reason = pendingFarewellEndRef.current;
+      pendingFarewellEndRef.current = null;
+      if (farewellFallbackTimerRef.current) { clearTimeout(farewellFallbackTimerRef.current); farewellFallbackTimerRef.current = null; }
+      setTimeout(() => endSessionAndCollapse(reason), 500);
+    }
+  }, [agentIsSpeaking, endSessionAndCollapse]);
+
+  // ── Tool: end_session (Task 1 — agent-initiated farewell) ────────────────────
+  // Wait for agentIsSpeaking → false (watched in useEffect below), then disconnect.
+  // A 5s hard fallback fires if speech never finishes cleanly.
+  useConversationClientTool("end_session", (parameters) => {
+    const reason = `agent_farewell: ${parameters?.reason || "goodbye"}`;
+    console.log("[session] Agent called end_session:", reason);
+    // Cancel any pending graceful-end timer so it doesn't race
+    if (gracefulEndTimerRef.current) { clearTimeout(gracefulEndTimerRef.current); gracefulEndTimerRef.current = null; }
+    pendingFarewellEndRef.current = reason;
+    // Hard fallback: disconnect after 5s even if speech event never fires
+    if (farewellFallbackTimerRef.current) clearTimeout(farewellFallbackTimerRef.current);
+    farewellFallbackTimerRef.current = setTimeout(() => {
+      farewellFallbackTimerRef.current = null;
+      if (pendingFarewellEndRef.current) {
+        console.log("[session] Farewell fallback timer fired — ending now");
+        pendingFarewellEndRef.current = null;
+        endSessionAndCollapse(reason);
+      }
+    }, 5000);
+    return "session_ending";
+  });
+
+  useConversationClientTool("add_to_cart", (parameters) => {
+    const { product_id, variant_index = 0, quantity = 1 } = parameters || {};
+    const product = latestProductsRef.current.find(p => String(p.id) === String(product_id));
+    if (!product) return Promise.resolve("Product not found in current view");
+    const variants = product.metadata?.variants || product.variants || [];
+    const variant = variants[variant_index] || variants[0];
+    if (!variant?.id) return Promise.resolve("No variant available for this product. Please use the Shop Now link instead.");
+    return fetch('/cart/add.js', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: variant.id, quantity }),
+    })
+      .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(t)))
+      .then(() => {
+        setCartToast("success");
+        if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
+        cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
+        return `Added ${product.name} to cart!`;
+      })
+      .catch(err => {
+        return `Could not add to cart: ${err}. Please try the Shop Now link instead.`;
+      });
+  });
+
+  // ── Graceful session end (Task 1 — for timeouts) ─────────────────────────────
+  // Sends [SESSION ENDING] so the agent can speak a farewell, then force-ends after 4s.
+  const gracefulEndSession = useCallback((reason) => {
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
+    console.log(`[session] gracefulEndSession called. Reason: "${reason}"`);
+    if (conversation.status !== "connected") {
+      endSessionAndCollapse(reason);
+      return;
+    }
+    isSyntheticMessageRef.current = true;
+    sendUserMessage("[SESSION ENDING]");
+    gracefulEndTimerRef.current = setTimeout(() => {
+      gracefulEndTimerRef.current = null;
+      endSessionAndCollapse(reason);
+    }, 4000);
+  }, [conversation.status, endSessionAndCollapse, sendUserMessage]);
+
+  // ── Feedback submission (Task 3) ──────────────────────────────────────────────
+  const submitFeedback = useCallback((rating, tag) => {
+    if (feedbackDismissTimerRef.current) { clearTimeout(feedbackDismissTimerRef.current); feedbackDismissTimerRef.current = null; }
+    const m = sessionMetricsRef.current;
+    const duration = m.startAt ? Math.round((Date.now() - m.startAt) / 1000) : null;
+
+    // ElevenLabs built-in feedback signal (positive/negative boolean)
+    if (rating === "positive" || rating === "negative") {
+      try { conversation.sendFeedback(rating === "positive"); } catch (_e) { /* not all SDK versions support this */ }
+    }
+
+    // Send to our backend (fire-and-forget, never blocks UX)
+    const apiBase = window.__TEAM_POP_API_URL__ || "";
+    fetch(`${apiBase}/api/session-feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent_id: agentId,
+        duration_seconds: duration,
+        rating: rating || "none",
+        feedback_tag: tag || null,
+        products_shown: m.productsShown,
+        products_clicked: m.productsClicked,
+        shop_now_clicked: m.shopNowClicked,
+        chat_messages: m.chatMessages,
+        end_reason: m.endReason,
+        conversation_id: conversationIdRef.current,
+        latency_first_ai_ms: m.latencyFirstAiMs ?? null,
+        latency_products_ms: m.latencyProductsMs ?? null,
+      }),
+    }).catch((e) => console.warn("[feedback] Submission failed (non-blocking):", e));
+
+    setActiveView("NONE");
+  }, [agentId, conversation, setActiveView]);
 
   /** VAD-mode tap: toggle session on/off */
   const handleOrbActivate = useCallback(() => {
     if (isSessionTransitioningRef.current) return;
+    if (isDraggingRef.current) return; // Task 2: don't activate if a drag just finished
     if (conversation.status === "connecting") return;
+    if (showNudge) dismissNudge();
     resetInactivity();
     isSessionTransitioningRef.current = true;
     if (conversation.status === "connected") {
@@ -614,7 +1031,7 @@ function AvatarInner({
       startVoiceSession();
     }
     setTimeout(() => { isSessionTransitioningRef.current = false; }, 500);
-  }, [conversation.status, startVoiceSession, endSessionAndCollapse, resetInactivity]);
+  }, [conversation.status, startVoiceSession, endSessionAndCollapse, resetInactivity, showNudge, dismissNudge]);
 
   /** PTT pointer/keyboard handlers — forwarded to the orb */
   const handlePttPointerDown = useCallback(
@@ -697,6 +1114,10 @@ function AvatarInner({
       clearTimeout(subtitleTimerRef.current);
       clearTimeout(syncDebounceRef.current);
       if (muteDelayTimerRef.current) clearTimeout(muteDelayTimerRef.current);
+      if (farewellFallbackTimerRef.current) clearTimeout(farewellFallbackTimerRef.current);
+      if (feedbackDismissTimerRef.current) clearTimeout(feedbackDismissTimerRef.current);
+      if (rafVolRef.current) cancelAnimationFrame(rafVolRef.current);
+      if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);
     };
   }, []);
 
@@ -720,7 +1141,7 @@ function AvatarInner({
       // 1. Hard session limit (270s)
       if (now - r.startAt > SESSION_HARD_LIMIT_MS) {
         console.log("[session] Ending session due to 270s hard limit.");
-        endSessionAndCollapse("Ending session due to 270s hard limit.");
+        gracefulEndSession("Ending session due to 270s hard limit.");
         return;
       }
 
@@ -756,11 +1177,11 @@ function AvatarInner({
           `now=${now}, lastUserSpeech=${r.lastMeaningfulUserAt} (${now - r.lastMeaningfulUserAt}ms ago), ` +
           `lastAgentActivity=${lastAgentActivityRef.current} (${now - lastAgentActivityRef.current}ms ago)`
         );
-        endSessionAndCollapse("Ending session: no meaningful user speech for 30s.");
+        gracefulEndSession("Ending session: no meaningful user speech for 30s.");
       }
     }, 3000);
     return () => clearInterval(id);
-  }, [conversation.status, agentIsSpeaking, endSessionAndCollapse]);
+  }, [conversation.status, agentIsSpeaking, gracefulEndSession]);
 
   const isConnected = conversation.status === "connected";
 
@@ -803,50 +1224,77 @@ function AvatarInner({
             </button>
           </div>
 
+          {/* Cart feedback toast */}
+          {cartToast && (
+            <div
+              style={{ position: "absolute", top: "12px", left: "50%", transform: "translateX(-50%)", zIndex: 10 }}
+              className={`px-4 py-2 rounded-full text-sm font-semibold text-white shadow-lg ${
+                cartToast === "success" ? "bg-green-500" :
+                cartToast === "error" ? "bg-red-500" :
+                "bg-blue-500"
+              }`}
+            >
+              {cartToast === "success" ? "Added to cart!" :
+               cartToast === "error" ? "Couldn't add to cart" :
+               "Adding..."}
+            </div>
+          )}
+
           {latestProducts.length > 0 ? (
             <>
-              <div className="flex-1 w-full relative min-h-0 bg-zinc-900">
+              {/* Image — top 48%, object-contain so full product is visible */}
+              <div className="w-full bg-zinc-950 overflow-hidden flex-shrink-0" style={{ height: "48%" }}>
                 {latestProducts[safeIndex] && (
-                  <>
-                    <img
-                      src={latestProducts[safeIndex].local_image_url || latestProducts[safeIndex].image_url || DUMMY_IMAGE}
-                      alt={latestProducts[safeIndex].name}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        const p = latestProducts[safeIndex];
-                        if (p && e.target.src !== p.image_url && p.image_url) {
-                          e.target.src = p.image_url;
-                        } else {
-                          e.target.src = "https://placehold.co/400x400?text=No+Image";
-                        }
-                      }}
-                    />
-                    <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-black to-transparent pointer-events-none" />
-                  </>
+                  <img
+                    src={latestProducts[safeIndex].local_image_url || latestProducts[safeIndex].image_url || DUMMY_IMAGE}
+                    alt={latestProducts[safeIndex].name}
+                    className="w-full h-full object-contain"
+                    onError={(e) => {
+                      const p = latestProducts[safeIndex];
+                      if (p && e.target.src !== p.image_url && p.image_url) {
+                        e.target.src = p.image_url;
+                      } else {
+                        e.target.src = "https://placehold.co/400x400?text=No+Image";
+                      }
+                    }}
+                  />
                 )}
               </div>
 
-              <div className="flex-none w-full flex flex-col justify-end bg-black pb-4 px-4 z-10 pt-2 pointer-events-auto shrink-0">
-                <div className="w-full mb-3">
-                  {latestProducts[safeIndex] && (
-                    <ShoppingCard
-                      product={latestProducts[safeIndex]}
-                      isActive={true}
-                      highlightPrice={highlightPrice}
-                    />
-                  )}
-                </div>
-
-                <div className="w-full max-h-20 overflow-y-auto mb-3 no-scrollbar">
-                  {agentSubtitle && (
-                    <div className="text-white/90 bg-black/40 p-2 rounded-lg text-sm backdrop-blur-sm border border-white/10 shadow-sm leading-snug">
-                      {agentSubtitle}
-                    </div>
-                  )}
-                </div>
-
+              {/* Details — scrollable bottom section */}
+              <div className="flex-1 w-full overflow-y-auto bg-black px-4 pt-3 pb-2 min-h-0 pointer-events-auto">
+                {latestProducts[safeIndex] && (
+                  <ProductDetails
+                    product={latestProducts[safeIndex]}
+                    highlightPrice={highlightPrice}
+                    onShopNow={() => { sessionMetricsRef.current.shopNowClicked = true; }}
+                    onAddToCart={(product) => {
+                      const variants = product.metadata?.variants || product.variants || [];
+                      const variant = variants[0];
+                      if (!variant?.id) return;
+                      setCartToast("adding");
+                      fetch('/cart/add.js', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: variant.id, quantity: 1 }),
+                      })
+                        .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
+                        .then(() => {
+                          setCartToast("success");
+                          if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
+                          cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
+                        })
+                        .catch(() => {
+                          setCartToast("error");
+                          if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
+                          cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
+                        });
+                    }}
+                  />
+                )}
+                {/* Thumbnails */}
                 <div
-                  className="w-full flex items-center overflow-x-auto hide-scrollbar gap-3 mb-4"
+                  className="w-full flex items-center overflow-x-auto hide-scrollbar gap-3 mt-3 pb-1"
                   ref={carouselRef}
                   onScroll={handleCarouselScroll}
                 >
@@ -862,7 +1310,7 @@ function AvatarInner({
                       onClick={() => {
                         console.log(`[Thumbnail] Click → index ${idx} (${latestProducts[idx]?.name || "unknown"})`);
                         setActiveIndex(idx);
-                        // syncMainProduct(latestProducts[idx]); // disabled — re-enable to have agent narrate clicked product
+                        sessionMetricsRef.current.productsClicked += 1;
                       }}
                     >
                       <img
@@ -920,27 +1368,35 @@ function AvatarInner({
 
       {/* ── Closed dock view (default) ────────────────────────────────────── */}
       {activeView === "NONE" && (
-        <motion.div
-          key="none"
-          drag
-          dragMomentum={false}
-          dragConstraints={dragConstraintsRef}
-          dragElastic={0.08}
-          style={{ x: dragX, y: dragY, position: 'fixed', bottom: '20px', right: '20px', left: 'auto', width: 'auto' }}
-          onDragEnd={() => saveDragPosition(dragX.get(), dragY.get())}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="avatar-widget mode-closed"
-        >
-          <div className="avatar-controls-column">
-            <OrbDock
-              {...sharedDockProps}
-              inactive={conversation.status === "disconnected"}
-              style={{ paddingLeft: conversation.status === "disconnected" ? 0 : "16px", paddingRight: conversation.status === "disconnected" ? 0 : "16px", minWidth: conversation.status === "disconnected" ? "80px" : "280px" }}
-            />
-          </div>
-        </motion.div>
+        <>
+          <motion.div
+            key="none"
+            drag
+            dragMomentum={false}
+            dragConstraints={dragConstraintsRef}
+            dragElastic={0.08}
+            style={{ x: dragX, y: dragY, position: 'fixed', bottom: '20px', right: '20px', left: 'auto', width: 'auto' }}
+            onDragStart={() => { isDraggingRef.current = true; }}
+            onDragEnd={() => { saveDragPosition(dragX.get(), dragY.get()); setTimeout(() => { isDraggingRef.current = false; }, 100); }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="avatar-widget mode-closed"
+          >
+            <div className="avatar-controls-column">
+              <OrbDock
+                {...sharedDockProps}
+                inactive={conversation.status === "disconnected"}
+                style={{ paddingLeft: conversation.status === "disconnected" ? 0 : "16px", paddingRight: conversation.status === "disconnected" ? 0 : "16px", minWidth: conversation.status === "disconnected" ? "80px" : "280px" }}
+              />
+            </div>
+          </motion.div>
+          <AnimatePresence>
+            {showNudge && conversation.status === "disconnected" && (
+              <FirstVisitNudge key="nudge" onDismiss={dismissNudge} />
+            )}
+          </AnimatePresence>
+        </>
       )}
 
       {/* ── Chat view ─────────────────────────────────────────────────────── */}
@@ -1025,23 +1481,23 @@ function AvatarInner({
           </div>
         </motion.div>
       )}
+
+      {/* ── Feedback card (Task 3) ────────────────────────────────────────── */}
+      {activeView === "FEEDBACK" && (
+        <FeedbackCard
+          onRate={(r, tag) => submitFeedback(r, tag)}
+          onDismiss={() => submitFeedback(null, null)}
+          onStepChange={() => {
+            // User tapped an emoji — cancel the 8s auto-dismiss so step 2 isn't cut short
+            if (feedbackDismissTimerRef.current) { clearTimeout(feedbackDismissTimerRef.current); feedbackDismissTimerRef.current = null; }
+          }}
+        />
+      )}
     </AnimatePresence>
   );
 }
 
 // ─── AvatarWidget ─────────────────────────────────────────────────────────────
-
-const DRAG_POS_KEY = "team-pop-widget-pos";
-
-const clampDragPos = (pos) => {
-  if (typeof window === "undefined") return pos;
-  const maxLeft = -(window.innerWidth - 100);
-  const maxUp = -(window.innerHeight - 100);
-  return {
-    x: Math.max(maxLeft, Math.min(Number(pos?.x) || 0, 0)),
-    y: Math.max(maxUp, Math.min(Number(pos?.y) || 0, 0)),
-  };
-};
 
 function AvatarWidget({ agentId, preview = false }) {
   const resolvedAgentId = agentId || window.__TEAM_POP_AGENT_ID__ || "YOUR_ELEVENLABS_AGENT_ID";
@@ -1052,32 +1508,12 @@ function AvatarWidget({ agentId, preview = false }) {
   const isProgrammaticScrollRef = useRef(false);
   const scrollEndTimerRef = useRef(null);
 
-  // ── Drag position — shared across all views so position persists on open/close ──
-  const savedPos = (() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(DRAG_POS_KEY)) || {};
-      return clampDragPos(raw);
-    } catch { return { x: 0, y: 0 }; }
-  })();
-  const dragX = useMotionValue(savedPos.x ?? 0);
-  const dragY = useMotionValue(savedPos.y ?? 0);
+  // ── Drag position — always starts at bottom-right on page load (no persistence) ──
+  const dragX = useMotionValue(0);
+  const dragY = useMotionValue(0);
   const dragConstraintsRef = useRef(null);
-  const saveDragPosition = useCallback((x, y) => {
-    const clamped = clampDragPos({ x, y });
-    try { localStorage.setItem(DRAG_POS_KEY, JSON.stringify(clamped)); } catch { /* storage full */ }
-  }, []);
-
-  // Re-clamp drag position on viewport resize / orientation change
-  useEffect(() => {
-    const handleResize = () => {
-      const clamped = clampDragPos({ x: dragX.get(), y: dragY.get() });
-      dragX.set(clamped.x);
-      dragY.set(clamped.y);
-      try { localStorage.setItem(DRAG_POS_KEY, JSON.stringify(clamped)); } catch { /* storage full */ }
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [dragX, dragY]);
+  // No-op: drag position is not persisted across page loads
+  const saveDragPosition = useCallback(() => {}, []);
 
   // Clean up scroll end timer on unmount
   useEffect(() => {

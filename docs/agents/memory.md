@@ -1,7 +1,7 @@
 # Agent Memory — Active Work State
 
 > **Keep this file under 2KB.** It is read by every agent at session start.
-> **Last updated:** 2026-06-19
+> **Last updated:** 2026-06-23
 
 ---
 
@@ -19,6 +19,8 @@
 
 ## Recent Completions (for quick context)
 
+- **2026-06-23** — Metrics enrichment + Cart integration + Product pairing: `conversation_id`/latency persisted to `session_feedback`, `add_to_cart` client tool + "Add to Cart" UI button (Shopify Ajax API), `get_similar_products` webhook tool + `/similar-products` endpoint (vector similarity). All 5 agent prompts updated. Build: 381KB gzip. Run `create_feedback_table.sql` migration in Supabase before using new metrics columns.
+- **2026-06-23** — UI Overhaul (6 items): removed drag localStorage, split product layout (image above/details below), new LISTENING/THINKING/AGENT_SPEAKING orb states with volume-reactive detection (rAF loop), per-state status pill colors, first-visit nudge tooltip, "Talk to AI" label + mic icon in IDLE pill. Build: 380KB gzip. See completions.md.
 - **2026-06-19** — Full codebase audit (`docs/audit-2026-06-19.md`) + performance audit (`docs/perf-audit-2026-06-19.md`) across 3 branches. Detailed refactor plan written (`docs/refactor-plan-2026-06-19.md`). Code not yet executed — see handoff.
 - **2026-06-19** — Enforced `get_product_details → update_carousel_main_view` tool chain across all 5 model prompts (triple-lock pattern). Disabled carousel click-to-agent context in `AvatarWidget.jsx`. Build verified ✓. See `docs/agents/completions.md` for details.
 - **2026-06-18** — Fixed carousel 1-3s delay (`expects_response: True`), duplicate agent speech (single `sendUserMessage`), search service hangs (PyTorch thread limits + semaphore), inactivity timer robustness, VAD startup silence.
