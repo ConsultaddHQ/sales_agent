@@ -345,7 +345,7 @@ function OrbDock({
           /* Prevent text selection during hold */
           onDragStart={(e) => e.preventDefault()}
         >
-          <div className={`orb-core orb-${(typeof window !== "undefined" && window.__TEAM_POP_ORB_STYLE__) || new URLSearchParams(window.location.search).get("orb") || "pearl"}`} />
+          <div className="orb-core orb-pearl" />
         </button>
       </div>
 
