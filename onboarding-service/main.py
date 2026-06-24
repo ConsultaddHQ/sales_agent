@@ -182,6 +182,32 @@ async def similar_products_proxy(request: Request):
     return JSONResponse(content=content, status_code=resp.status_code)
 
 
+@app.post("/similar-products")
+async def similar_products_proxy_post(request: Request):
+    """Proxy get_similar_products webhook POST calls to the search service.
+
+    The ElevenLabs `get_similar_products` tool uses POST with a JSON body
+    (store_id, product_id, limit) — webhook tools require POST for
+    request_body_schema. Without this route a POST hits the GET-only handler
+    above and returns 405, so the agent reports the pairing tool as failing.
+    """
+    body = await request.body()
+
+    store_id_log = "?"
+    product_id_log = "?"
+    try:
+        parsed = _json.loads(body or b"{}")
+        if isinstance(parsed, dict):
+            store_id_log = str(parsed.get("store_id", "?"))
+            product_id_log = str(parsed.get("product_id", "?"))
+    except Exception:
+        pass
+
+    return await _proxy_to_search(
+        "/similar-products", body, store_id_log, product_id_log
+    )
+
+
 @app.post("/product-details")
 async def product_details_proxy(request: Request):
     """Proxy get_product_details webhook calls to the search service.
