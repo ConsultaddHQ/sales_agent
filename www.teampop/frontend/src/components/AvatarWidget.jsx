@@ -666,9 +666,16 @@ function AvatarInner({
       console.log(`[ElevenLabs] onModeChange event at ${Date.now()}:`, modeObj);
     },
     onVadScore: (score) => {
-      // Let's keep this light but log VAD activity if it's high
-      if (score > 0.8) {
-        console.log(`[ElevenLabs] onVadScore active:`, score);
+      // Under WebRTC there is no local input analyser (getInputVolume() returns 0),
+      // so the rAF loop below can't detect user speech. Drive the LISTENING state from
+      // the server's VAD score instead, so the orb still reacts to the user's voice.
+      // When the user goes quiet, the rAF loop's THINKING timer takes over.
+      if (typeof score === "number" && score > 0.5 && !agentIsSpeakingRef.current) {
+        if (thinkingTimerRef.current) { clearTimeout(thinkingTimerRef.current); thinkingTimerRef.current = null; }
+        if (vadSubStateRef.current !== "LISTENING") {
+          vadSubStateRef.current = "LISTENING";
+          setVadSubState("LISTENING");
+        }
       }
     },
     onConversationMetadata: (metadata) => {
@@ -889,7 +896,17 @@ function AvatarInner({
     const now = Date.now();
     inactivityRef.current = { startAt: now, lastMeaningfulUserAt: now };
     sessionMetricsRef.current = { startAt: now, productsShown: 0, productsClicked: 0, shopNowClicked: false, chatMessages: 0, endReason: null, conversationId: null, latencyFirstAiMs: null, latencyProductsMs: null, toolCalls: 0, interruptionCount: 0 };
-    conversation.startSession({ agentId, connectionType: "websocket" });
+    // Use WebRTC (the SDK's default for voice), NOT websocket. The websocket path
+    // dispatches each incoming audio chunk to its output listener the instant it
+    // arrives with no buffering — but that listener is only attached AFTER the audio
+    // worklet finishes loading (which happens after the socket is already open and
+    // receiving). Any first_message audio that arrives in that gap is silently dropped.
+    // Low-latency clients (e.g. US → ElevenLabs) lose this race and never hear the
+    // opening greeting; high-latency clients (e.g. India) get the audio late enough
+    // that the listener is ready. WebRTC plays audio through the browser's own media
+    // pipeline (a subscribed track on an <audio autoplay> element), which buffers the
+    // stream and is not subject to this drop.
+    conversation.startSession({ agentId, connectionType: "webrtc" });
   }, [conversation, agentId]);
 
   const endVoiceSession = useCallback(() => {
@@ -1096,26 +1113,6 @@ function AvatarInner({
     if (conversation.status === "connected") {
       endSessionAndCollapse("Ending session from orb tap.");
     } else if (conversation.status === "disconnected" || conversation.status === "error") {
-      // Unlock browser autoplay policy synchronously while still inside the user-gesture
-      // event handler. Browsers require audio to be triggered directly from a click/tap —
-      // the ElevenLabs SDK creates its AudioContext asynchronously (during WebSocket setup),
-      // so by that time the gesture token is consumed and the context starts suspended.
-      // Playing a silent 1-sample buffer here marks the origin as "allowed to autoplay",
-      // so the SDK's AudioContext starts running and the first_message audio isn't dropped.
-      // This is the fix for US users not hearing the opening greeting (low RTT = first
-      // audio arrives before the AudioContext auto-resume click handler fires).
-      try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) {
-          const tmpCtx = new AudioCtx();
-          const buf = tmpCtx.createBuffer(1, 1, 22050);
-          const src = tmpCtx.createBufferSource();
-          src.buffer = buf;
-          src.connect(tmpCtx.destination);
-          src.start(0);
-          tmpCtx.resume();
-        }
-      } catch (_) { /* non-critical — session still starts */ }
       startVoiceSession();
     }
     setTimeout(() => { isSessionTransitioningRef.current = false; }, 500);
