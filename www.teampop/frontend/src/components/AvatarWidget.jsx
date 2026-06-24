@@ -1492,7 +1492,7 @@ function AvatarInner({
             >
               {chatHistory.length === 0 ? (
                 <div className="message-bubble assistant-message self-start bg-zinc-800 text-gray-200 p-3 rounded-xl rounded-tl-sm text-sm max-w-[85%] border border-white/5 shadow-sm">
-                  Hi! I'm Wrina, your AI shopping assistant. Tap the orb to start talking, or type your question below.
+                  Hi! I'm Wrina, your AI shopping assistant. Tap the orb to start a voice conversation.
                 </div>
               ) : (
                 chatHistory.map((msg) => (
