@@ -1096,6 +1096,26 @@ function AvatarInner({
     if (conversation.status === "connected") {
       endSessionAndCollapse("Ending session from orb tap.");
     } else if (conversation.status === "disconnected" || conversation.status === "error") {
+      // Unlock browser autoplay policy synchronously while still inside the user-gesture
+      // event handler. Browsers require audio to be triggered directly from a click/tap —
+      // the ElevenLabs SDK creates its AudioContext asynchronously (during WebSocket setup),
+      // so by that time the gesture token is consumed and the context starts suspended.
+      // Playing a silent 1-sample buffer here marks the origin as "allowed to autoplay",
+      // so the SDK's AudioContext starts running and the first_message audio isn't dropped.
+      // This is the fix for US users not hearing the opening greeting (low RTT = first
+      // audio arrives before the AudioContext auto-resume click handler fires).
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          const tmpCtx = new AudioCtx();
+          const buf = tmpCtx.createBuffer(1, 1, 22050);
+          const src = tmpCtx.createBufferSource();
+          src.buffer = buf;
+          src.connect(tmpCtx.destination);
+          src.start(0);
+          tmpCtx.resume();
+        }
+      } catch (_) { /* non-critical — session still starts */ }
       startVoiceSession();
     }
     setTimeout(() => { isSessionTransitioningRef.current = false; }, 500);
