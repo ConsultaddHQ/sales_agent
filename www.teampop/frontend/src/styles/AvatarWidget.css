@@ -381,33 +381,36 @@
   position: relative;
   overflow: hidden;
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 42%, rgba(255,255,255,0.98) 0%, transparent 28%),
-    radial-gradient(circle at 50% 50%, rgba(225,238,255,0.85) 0%, transparent 52%),
-    radial-gradient(circle at 65% 72%, rgba(180,210,240,0.55) 0%, transparent 55%),
-    radial-gradient(ellipse at 50% 105%, rgba(120,160,210,0.35) 0%, transparent 50%),
-    linear-gradient(148deg, #ddeaf8 0%, #c2d8ef 45%, #9ab8d8 100%);
-  box-shadow:
-    inset 0 -4px 10px rgba(80,130,200,0.18),
-    inset 0 3px 6px rgba(255,255,255,0.6),
-    0 6px 24px rgba(180,210,255,0.25);
-  animation: pearlSheen 6s linear infinite;
   transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-/* Specular highlight — the bright white "hot spot" */
-.orb-core::before {
+/* ── orb-pearl (default) — deep glossy blue pearl ── */
+.orb-core.orb-pearl {
+  background:
+    radial-gradient(circle at 38% 28%, rgba(255,255,255,0.99) 0%, rgba(255,255,255,0.5) 14%, transparent 26%),
+    radial-gradient(circle at 50% 48%, rgba(210,232,255,0.80) 0%, transparent 50%),
+    radial-gradient(circle at 68% 75%, rgba(140,185,230,0.50) 0%, transparent 52%),
+    radial-gradient(ellipse at 50% 110%, rgba(70,120,190,0.40) 0%, transparent 48%),
+    linear-gradient(148deg, #cce0f5 0%, #8db8de 42%, #4a7db5 100%);
+  box-shadow:
+    inset 0 -5px 14px rgba(30,80,170,0.28),
+    inset 0 4px 8px rgba(255,255,255,0.65),
+    0 6px 28px rgba(100,160,240,0.30);
+}
+
+/* Specular highlight — sharper white hot-spot for wetter glossy feel */
+.orb-core.orb-pearl::before {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: radial-gradient(ellipse 46% 32% at 38% 28%, rgba(255,255,255,0.92), transparent 80%);
-  filter: blur(2px);
+  background: radial-gradient(ellipse 38% 26% at 36% 26%, rgba(255,255,255,0.97), transparent 75%);
+  filter: blur(1px);
   pointer-events: none;
 }
 
-/* Iridescent rotating sheen — replaces siriMesh, GPU-cheap */
-.orb-core::after {
+/* Iridescent rotating sheen */
+.orb-core.orb-pearl::after {
   content: "";
   position: absolute;
   inset: -25%;
@@ -415,14 +418,14 @@
   background: conic-gradient(
     from 0deg,
     transparent 0%,
-    rgba(180,220,255,0.18) 20%,
-    rgba(200,180,255,0.14) 40%,
-    rgba(150,230,220,0.12) 60%,
+    rgba(180,220,255,0.20) 20%,
+    rgba(200,180,255,0.15) 40%,
+    rgba(150,230,220,0.13) 60%,
     transparent 80%
   );
   filter: blur(8px);
   mix-blend-mode: screen;
-  opacity: 0.65;
+  opacity: 0.70;
   animation: pearlRotate 6s linear infinite;
   pointer-events: none;
 }
@@ -431,13 +434,65 @@
   to { transform: rotate(360deg); }
 }
 
+/* ── orb-cosmic — dark translucent bubble with glowing neon rim ── */
+.orb-core.orb-cosmic {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(10,15,35,0.92) 0%, rgba(5,20,55,0.85) 55%, rgba(0,40,80,0.70) 100%);
+  box-shadow:
+    inset 0 0 18px rgba(0,220,255,0.12),
+    0 0 0 2px rgba(0,210,255,0.55),
+    0 0 22px rgba(0,200,255,0.40),
+    0 0 50px rgba(0,180,255,0.18);
+}
+
+/* Refraction arc — bright curved highlight at top-left */
+.orb-core.orb-cosmic::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse 55% 35% at 30% 22%, rgba(100,220,255,0.22), transparent 70%),
+    conic-gradient(
+      from 200deg at 50% 50%,
+      transparent 0deg,
+      rgba(0,220,255,0.18) 30deg,
+      rgba(120,80,255,0.14) 80deg,
+      transparent 120deg
+    );
+  pointer-events: none;
+}
+
+/* Star-field particles + inner atmospheric glow */
+.orb-core.orb-cosmic::after {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 30% 35%, rgba(255,255,255,0.80) 0%, transparent 1.5%),
+    radial-gradient(circle at 68% 25%, rgba(255,255,255,0.65) 0%, transparent 1%),
+    radial-gradient(circle at 50% 65%, rgba(255,255,255,0.55) 0%, transparent 1.2%),
+    radial-gradient(circle at 80% 55%, rgba(200,200,255,0.60) 0%, transparent 1%),
+    radial-gradient(circle at 20% 70%, rgba(255,255,255,0.45) 0%, transparent 0.8%),
+    radial-gradient(circle at 55% 42%, rgba(255,255,255,0.35) 0%, transparent 0.7%),
+    radial-gradient(ellipse at 50% 50%, rgba(0,140,200,0.10) 0%, transparent 70%);
+  animation: cosmicDrift 12s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes cosmicDrift {
+  0%   { transform: rotate(0deg) scale(1); }
+  100% { transform: rotate(15deg) scale(1.04); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .orb-core {
-    animation: none;
-  }
-  .orb-core::after {
+  .orb-core.orb-pearl::after {
     animation: none;
     opacity: 0.3;
+  }
+  .orb-core.orb-cosmic::after {
+    animation: none;
   }
 }
 
