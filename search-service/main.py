@@ -475,6 +475,15 @@ async def similar_products(
     if not embedding:
         return {"products": [], "message": "Source product has no embedding — cannot compute similarity."}
 
+    # Supabase returns the pgvector column either as a string "[0.1,0.2,...]"
+    # or as a list[float], depending on client version. Normalize to the string
+    # form the RPC expects. (Iterating a string and formatting each char as a
+    # float is what raised "Unknown format code 'f' for object of type 'str'".)
+    if isinstance(embedding, str):
+        embedding_str = embedding if embedding.strip().startswith("[") else f"[{embedding}]"
+    else:
+        embedding_str = "[" + ",".join(f"{x:.8f}" for x in embedding) + "]"
+
     src_type = (src.get("metadata") or {}).get("product_type", "")
 
     # 2. Vector similarity search — exclude the source product itself
@@ -484,7 +493,7 @@ async def similar_products(
         sim_resp = sb.rpc("hybrid_search_products", {
             "p_store_id": store_id,
             "p_query": src.get("name", ""),
-            "p_query_embedding": "[" + ",".join(f"{x:.8f}" for x in embedding) + "]",
+            "p_query_embedding": embedding_str,
             "p_limit": fetch_limit,
             "p_min_score": 0.15,
         }).execute()
