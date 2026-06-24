@@ -39,6 +39,13 @@ def IMAGE_SERVER_URL() -> str:
     return get_env("IMAGE_SERVER_URL", "http://localhost:8000")
 
 
+def PUBLIC_SEARCH_API_URL() -> str:
+    """Publicly reachable URL of the search service, injected into the widget snippet.
+    On a live Shopify embed the widget runs cross-origin, so it needs an absolute URL
+    to reach /product-details and /search. Default falls back to SEARCH_API_URL for dev."""
+    return get_env("PUBLIC_SEARCH_API_URL", SEARCH_API_URL())
+
+
 def WIDGET_SCRIPT_URL() -> str:
     return get_env("WIDGET_SCRIPT_URL", "http://localhost:5173/widget.js")
 

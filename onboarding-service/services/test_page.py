@@ -15,7 +15,7 @@ import requests
 from bs4 import BeautifulSoup, Comment
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from shared.config import WIDGET_SCRIPT_URL
+from shared.config import WIDGET_SCRIPT_URL, PUBLIC_SEARCH_API_URL
 
 logger = logging.getLogger("onboarding-service")
 
@@ -126,9 +126,10 @@ def _process_html(
         comment.extract()
 
 
-def _inject_widget(soup: BeautifulSoup, agent_id: str) -> None:
+def _inject_widget(soup: BeautifulSoup, agent_id: str, store_id: str = "", cart_enabled: str = "false") -> None:
     """Inject TeamPop widget config and script into the page."""
     widget_script_url = WIDGET_SCRIPT_URL()
+    api_url = PUBLIC_SEARCH_API_URL()
 
     head = soup.find("head") or soup.new_tag("head")
     body = soup.find("body") or soup.new_tag("body")
@@ -143,6 +144,10 @@ def _inject_widget(soup: BeautifulSoup, agent_id: str) -> None:
       var params = new URLSearchParams(window.location.search);
       var override = params.get('agent');
       window.__TEAM_POP_AGENT_ID__ = override || "{agent_id}";
+      window.__TEAM_POP_STORE_ID__ = "{store_id}";
+      window.__TEAM_POP_CART_ENABLED__ = {cart_enabled};
+      window.__TEAM_POP_API_URL__ = "{api_url}";
+      window.__TEAM_POP_DEMO__ = true;
       console.log(
         '[TeamPop] Widget config loaded — agent:',
         window.__TEAM_POP_AGENT_ID__,
@@ -166,6 +171,7 @@ def generate_test_page(
     agent_id: str,
     use_playwright: bool = False,
     challenge_wait: int = 10,
+    store_type: str = "shopify",
 ) -> str:
     """Generate a static test page with the widget injected.
 
@@ -175,6 +181,7 @@ def generate_test_page(
         agent_id: ElevenLabs agent ID.
         use_playwright: Use Playwright (for Cloudflare/bot-protected sites).
         challenge_wait: Seconds to wait for bot challenge resolution.
+        store_type: Platform type (shopify, threadless, supermicro, etc.).
 
     Returns:
         Filename of the saved page (e.g. "test_abc12345.html").
@@ -202,7 +209,8 @@ def generate_test_page(
     base_url = f"{urlparse(store_url).scheme}://{urlparse(store_url).netloc}"
 
     _process_html(soup, base_url, strip_all_scripts=use_playwright)
-    _inject_widget(soup, agent_id)
+    cart_enabled = "true" if store_type == "shopify" else "false"
+    _inject_widget(soup, agent_id, store_id=store_id, cart_enabled=cart_enabled)
 
     filename = f"test_{store_id[:8]}.html"
     output_path = DEMO_PAGES_DIR / filename

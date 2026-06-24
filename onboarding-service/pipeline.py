@@ -17,7 +17,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parent.parent)
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from shared.config import SEARCH_API_URL, STORE_IMAGES_PATH, WIDGET_SCRIPT_URL, MAX_PRODUCTS
+from shared.config import SEARCH_API_URL, PUBLIC_SEARCH_API_URL, STORE_IMAGES_PATH, WIDGET_SCRIPT_URL, MAX_PRODUCTS
 from shared.db import get_supabase
 from error_codes import ErrorCodes, get_error_response, success_response
 from services.products import build_product_rows, store_products_in_supabase
@@ -95,6 +95,7 @@ class OnboardingPipeline:
                 agent_id,
                 use_playwright=adapter.needs_playwright,
                 challenge_wait=adapter.challenge_wait,
+                store_type=store_type,
             )
             test_url = f"/demo/{filename}"
         except Exception as e:
@@ -104,10 +105,15 @@ class OnboardingPipeline:
         # Step 6: Generate widget snippet
         logger.info("Step 6/7: Generating widget snippet...")
         widget_script_url = WIDGET_SCRIPT_URL()
+        api_url = PUBLIC_SEARCH_API_URL()
+        cart_enabled = "true" if store_type == "shopify" else "false"
         widget_snippet = (
             f'<!-- TeamPop Voice Widget -->\n'
             f'<script>\n'
             f'window.__TEAM_POP_AGENT_ID__ = "{agent_id}";\n'
+            f'window.__TEAM_POP_STORE_ID__ = "{store_id}";\n'
+            f'window.__TEAM_POP_CART_ENABLED__ = {cart_enabled};\n'
+            f'window.__TEAM_POP_API_URL__ = "{api_url}";\n'
             f'</script>\n'
             f'<script src="{widget_script_url}"></script>\n'
             f'<team-pop-agent></team-pop-agent>'

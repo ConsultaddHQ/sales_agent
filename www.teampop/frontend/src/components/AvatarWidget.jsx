@@ -369,7 +369,7 @@ function OrbDock({
 
 // ─── ProductDetails ───────────────────────────────────────────────────────────
 
-const ProductDetails = ({ product, highlightPrice, onShopNow, onAddToCart }) => {
+const ProductDetails = ({ product, highlightPrice, isCarted, onShopNow, onAddToCart }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const price = product.price
     ? `₹${Number(product.price).toLocaleString("en-IN")}`
@@ -393,7 +393,14 @@ const ProductDetails = ({ product, highlightPrice, onShopNow, onAddToCart }) => 
         >
           Shop Now
         </a>
-        {onAddToCart && (
+        {isCarted ? (
+          <button
+            disabled
+            className="shopping-cta text-center bg-green-700 text-white px-5 py-2 rounded-full font-bold text-sm opacity-80 cursor-default"
+          >
+            Added ✓
+          </button>
+        ) : onAddToCart && (
           <button
             onClick={(e) => { e.preventDefault(); onAddToCart(product); }}
             className="shopping-cta text-center bg-green-500 text-white px-5 py-2 rounded-full font-bold text-sm hover:bg-green-600 transition"
@@ -514,8 +521,11 @@ function AvatarInner({
   }, []);
   const [cartToast, setCartToast] = useState(null); // null | "adding" | "success" | "error"
   const cartToastTimerRef = useRef(null);
+  const [cartedIds, setCartedIds] = useState(() => new Set());
+  const variantCacheRef = useRef(new Map());
+  const cartEnabled = window.__TEAM_POP_CART_ENABLED__ !== false;
   // Task 3: session metrics for feedback
-  const sessionMetricsRef = useRef({ startAt: null, productsShown: 0, productsClicked: 0, shopNowClicked: false, chatMessages: 0, endReason: null });
+  const sessionMetricsRef = useRef({ startAt: null, productsShown: 0, productsClicked: 0, shopNowClicked: false, chatMessages: 0, endReason: null, toolCalls: 0, interruptionCount: 0 });
   const feedbackDismissTimerRef = useRef(null);
   const conversationIdRef = useRef(null);
 
@@ -654,7 +664,8 @@ function AvatarInner({
       );
     },
     onInterruption: (details) => {
-      console.log(`[ElevenLabs] onInterruption event at ${Date.now()}:`, details);
+      sessionMetricsRef.current.interruptionCount += 1;
+      console.log(`[ElevenLabs] onInterruption #${sessionMetricsRef.current.interruptionCount}:`, details);
     },
     onModeChange: (modeObj) => {
       console.log(`[ElevenLabs] onModeChange event at ${Date.now()}:`, modeObj);
@@ -667,6 +678,13 @@ function AvatarInner({
     },
     onConversationMetadata: (metadata) => {
       console.log("[ElevenLabs] onConversationMetadata:", metadata);
+    },
+    onAgentToolRequest: (req) => {
+      sessionMetricsRef.current.toolCalls += 1;
+      console.log(`[ElevenLabs] tool request #${sessionMetricsRef.current.toolCalls}:`, req?.tool_name ?? req);
+    },
+    onAgentToolResponse: (res) => {
+      console.log("[ElevenLabs] tool response:", res?.tool_name ?? res, "→", res?.response_type ?? "");
     },
   });
 
@@ -854,12 +872,14 @@ function AvatarInner({
     const raw = parameters?.index;
     const index = typeof raw === "string" ? parseInt(raw, 10) : raw;
     const len = latestProductsRef.current.length;
+    const safeIdx = Number.isFinite(index) && len > 0 ? Math.max(0, Math.min(index, len - 1)) : 0;
     if (Number.isFinite(index) && len > 0) {
-      setActiveIndex(Math.max(0, Math.min(index, len - 1)));
+      setActiveIndex(safeIdx);
     }
-    // No context update — avoids a feedback loop where the agent re-narrates unnecessarily.
     isToolPendingRef.current = false;
-    return "ok";
+    // Return focused product so agent can use its id for get_similar_products.
+    const focused = latestProductsRef.current[safeIdx];
+    return focused ? `Focused on product: ${focused.name} (id: ${focused.id})` : "ok";
   });
 
   const { sendUserMessage } = conversation;
@@ -869,9 +889,11 @@ function AvatarInner({
     setChatHistory([]);
     setAgentSubtitle("");
     setHighlightPrice(false);
+    setCartedIds(new Set());
+    variantCacheRef.current.clear();
     const now = Date.now();
     inactivityRef.current = { startAt: now, lastMeaningfulUserAt: now };
-    sessionMetricsRef.current = { startAt: now, productsShown: 0, productsClicked: 0, shopNowClicked: false, chatMessages: 0, endReason: null, conversationId: null, latencyFirstAiMs: null, latencyProductsMs: null };
+    sessionMetricsRef.current = { startAt: now, productsShown: 0, productsClicked: 0, shopNowClicked: false, chatMessages: 0, endReason: null, conversationId: null, latencyFirstAiMs: null, latencyProductsMs: null, toolCalls: 0, interruptionCount: 0 };
     conversation.startSession({ agentId, connectionType: "websocket" });
   }, [conversation, agentId]);
 
@@ -940,28 +962,73 @@ function AvatarInner({
     return "session_ending";
   });
 
+  // Fetch variants on-demand from /product-details; results are cached per product.
+  const fetchVariants = useCallback(async (productId) => {
+    if (variantCacheRef.current.has(String(productId))) return variantCacheRef.current.get(String(productId));
+    const storeId = window.__TEAM_POP_STORE_ID__;
+    const apiBase = window.__TEAM_POP_API_URL__ || "";
+    if (!storeId) return [];
+    try {
+      const r = await fetch(`${apiBase}/product-details`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ store_id: storeId, product_id: String(productId) }),
+      });
+      const data = r.ok ? await r.json() : {};
+      const variants = data.variants || [];
+      variantCacheRef.current.set(String(productId), variants);
+      return variants;
+    } catch { return []; }
+  }, []);
+
+  // Shared add-to-cart logic used by both the voice tool and the manual button.
+  const performAddToCart = useCallback(async (product, variantIndex = 0, quantity = 1) => {
+    if (!cartEnabled) {
+      return "This store uses Shop Now — open the product link to purchase.";
+    }
+    // On demo pages simulate success immediately — /cart/add.js doesn't exist here
+    // and variant fetch would hit the wrong origin, so skip both.
+    if (window.__TEAM_POP_DEMO__) {
+      setCartToast("success");
+      if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
+      cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
+      setCartedIds(prev => { const n = new Set(prev); n.add(String(product.id)); return n; });
+      return `Added ${product.name} to cart!`;
+    }
+    // Real store: fetch variant ID on demand (variants not included in search results).
+    const localVariants = product.metadata?.variants || product.variants || [];
+    const variants = localVariants.length > 0 ? localVariants : await fetchVariants(product.id);
+    const variant = variants[variantIndex] || variants[0];
+    if (!variant?.id) {
+      return "No variant available for this product. Please use the Shop Now link instead.";
+    }
+    try {
+      const r = await fetch('/cart/add.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: variant.id, quantity }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      await r.json();
+      setCartToast("success");
+      if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
+      cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
+      setCartedIds(prev => { const n = new Set(prev); n.add(String(product.id)); return n; });
+      return `Added ${product.name} to cart!`;
+    } catch (err) {
+      setCartToast("error");
+      if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
+      cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
+      return `Could not add to cart. Please try the Shop Now link instead.`;
+    }
+  }, [cartEnabled, fetchVariants]);
+
   useConversationClientTool("add_to_cart", (parameters) => {
+    if (!cartEnabled) return Promise.resolve("This store uses Shop Now — open the product link to purchase.");
     const { product_id, variant_index = 0, quantity = 1 } = parameters || {};
     const product = latestProductsRef.current.find(p => String(p.id) === String(product_id));
     if (!product) return Promise.resolve("Product not found in current view");
-    const variants = product.metadata?.variants || product.variants || [];
-    const variant = variants[variant_index] || variants[0];
-    if (!variant?.id) return Promise.resolve("No variant available for this product. Please use the Shop Now link instead.");
-    return fetch('/cart/add.js', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: variant.id, quantity }),
-    })
-      .then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(t)))
-      .then(() => {
-        setCartToast("success");
-        if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
-        cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
-        return `Added ${product.name} to cart!`;
-      })
-      .catch(err => {
-        return `Could not add to cart: ${err}. Please try the Shop Now link instead.`;
-      });
+    return performAddToCart(product, variant_index, quantity);
   });
 
   // ── Graceful session end (Task 1 — for timeouts) ─────────────────────────────
@@ -985,6 +1052,10 @@ function AvatarInner({
   // ── Feedback submission (Task 3) ──────────────────────────────────────────────
   const submitFeedback = useCallback((rating, tag) => {
     if (feedbackDismissTimerRef.current) { clearTimeout(feedbackDismissTimerRef.current); feedbackDismissTimerRef.current = null; }
+    // Safety net: try to capture conversation id if the connect-time useEffect missed it.
+    if (!conversationIdRef.current) {
+      try { conversationIdRef.current = conversation.getId?.() ?? null; } catch (_e) {}
+    }
     const m = sessionMetricsRef.current;
     const duration = m.startAt ? Math.round((Date.now() - m.startAt) / 1000) : null;
 
@@ -1011,6 +1082,8 @@ function AvatarInner({
         conversation_id: conversationIdRef.current,
         latency_first_ai_ms: m.latencyFirstAiMs ?? null,
         latency_products_ms: m.latencyProductsMs ?? null,
+        tool_calls: m.toolCalls ?? 0,
+        interruption_count: m.interruptionCount ?? 0,
       }),
     }).catch((e) => console.warn("[feedback] Submission failed (non-blocking):", e));
 
@@ -1267,29 +1340,12 @@ function AvatarInner({
                   <ProductDetails
                     product={latestProducts[safeIndex]}
                     highlightPrice={highlightPrice}
+                    isCarted={cartedIds.has(String(latestProducts[safeIndex]?.id))}
                     onShopNow={() => { sessionMetricsRef.current.shopNowClicked = true; }}
-                    onAddToCart={(product) => {
-                      const variants = product.metadata?.variants || product.variants || [];
-                      const variant = variants[0];
-                      if (!variant?.id) return;
+                    onAddToCart={cartEnabled ? (product) => {
                       setCartToast("adding");
-                      fetch('/cart/add.js', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: variant.id, quantity: 1 }),
-                      })
-                        .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
-                        .then(() => {
-                          setCartToast("success");
-                          if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
-                          cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
-                        })
-                        .catch(() => {
-                          setCartToast("error");
-                          if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
-                          cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
-                        });
-                    }}
+                      performAddToCart(product, 0, 1);
+                    } : undefined}
                   />
                 )}
                 {/* Thumbnails */}

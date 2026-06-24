@@ -120,6 +120,8 @@ class SessionFeedbackBody(BaseModel):
     conversation_id: Optional[str] = None
     latency_first_ai_ms: Optional[int] = None
     latency_products_ms: Optional[int] = None
+    tool_calls: int = 0
+    interruption_count: int = 0
 
 
 @router.post("/session-feedback")
@@ -142,6 +144,8 @@ def submit_session_feedback(body: SessionFeedbackBody):
             "conversation_id": body.conversation_id,
             "latency_first_ai_ms": body.latency_first_ai_ms,
             "latency_products_ms": body.latency_products_ms,
+            "tool_calls": body.tool_calls,
+            "interruption_count": body.interruption_count,
         }).execute()
         return {"success": True}
     except Exception as e:

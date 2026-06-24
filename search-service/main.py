@@ -483,7 +483,7 @@ async def similar_products(
     try:
         sim_resp = sb.rpc("hybrid_search_products", {
             "p_store_id": store_id,
-            "p_query": "",
+            "p_query": src.get("name", ""),
             "p_query_embedding": "[" + ",".join(f"{x:.8f}" for x in embedding) + "]",
             "p_limit": fetch_limit,
             "p_min_score": 0.15,
