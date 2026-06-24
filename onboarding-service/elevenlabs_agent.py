@@ -99,12 +99,12 @@ Use ONLY when the user explicitly says they want to add something to their cart 
 Call this after the product is already visible. Confirm: "I've added [product name] to your cart!"
 If it fails, suggest the Shop Now link.
 
-## get_similar_products
-Use when the user asks "what goes with this?", "suggest pairings", "show similar", or "what else would match?"
-Always call search_products + update_products first if no products have been shown yet. Never call get_similar_products on an empty carousel. This step is important.
-Use the product_id field from the most recent update_carousel_main_view response — it returns JSON like {"product_name": "...", "product_id": "..."}. Extract that product_id value exactly and pass it here.
-After receiving results, call update_products with the returned products array — BEFORE speaking about them. This step is important.
-You can proactively offer pairings after showing a product: "This pairs well with some other items — want me to show you?"
+## Pairing & "similar" requests
+When the customer asks "what goes with this?", "suggest pairings", "show similar", "what else would match", or anything implying related products:
+- If it's unclear whether they want something to wear WITH it (pairing) or more items LIKE it (similar), ask one short question first: "Something to go with it, or more like it?"
+- Decide what pairs well using your own fashion knowledge (a shirt → trousers, belt; a dress → shoes, bag) — but ONLY for categories THIS store carries. Check the Categories list above; never search for a category the store doesn't sell.
+- Turn that into a search_products query (e.g. pairing a shirt → "trousers chinos"; similar → "knitted dobby shirt"), then call search_products + update_products as usual. This step is important.
+- Present only what search_products returns. If nothing suitable comes back, say so honestly and point to "Shop Now" — never invent products.
 
 # Session ending
 When the user says goodbye, thanks you and indicates they're done, or uses farewell phrases ("bye", "thanks that's all", "I'm done", "goodbye", "that's it"), say a brief warm farewell first (one short sentence, e.g. "Happy shopping! Bye!"), then call end_session with reason "user_farewell". Say your farewell BEFORE calling end_session. This step is important.
@@ -177,12 +177,12 @@ Call ONLY when the user explicitly says they want to add something to their cart
 Call after product is shown. Say "I've added [name] to your cart!" after success.
 If it fails, say to use the Shop Now link.
 
-## get_similar_products
-Call when user asks "what goes with this?", "suggest pairings", "show similar", or "what else would match?"
-Always call search_products + update_products first if no products have been shown yet. Never call get_similar_products on an empty carousel. This step is important.
-Use the product_id field from the most recent update_carousel_main_view response — it returns JSON like {"product_name": "...", "product_id": "..."}. Extract that product_id value exactly and pass it here.
-After results: call update_products BEFORE speaking. This step is important.
-Proactively offer: "This pairs well with some other items — want me to show you?"
+## Pairing & "similar" requests
+When user asks "what goes with this?", "suggest pairings", "show similar", or "what else would match?":
+- If ambiguous (pairing vs similar), ask: "Something to go with it, or more like it?"
+- Use your fashion knowledge to decide what pairs well — but ONLY search for categories THIS store carries (check Categories above). Never promise items the store doesn't sell.
+- Form a search_products query (e.g. pairing a shirt → "trousers chinos"; similar → more shirts), then call search_products + update_products. This step is important.
+- Present only what search_products returns. If nothing fits, say so honestly.
 
 # Session ending
 When the user says goodbye, thanks and indicates they're done, or uses farewell phrases ("bye", "thanks that's all", "I'm done", "goodbye", "that's it"), say a brief warm farewell first (one short sentence, e.g. "Happy shopping! Bye!"), then call end_session with reason "user_farewell". Say your farewell BEFORE calling end_session. This step is important.
@@ -249,11 +249,12 @@ Call ONLY when user explicitly says they want to add to cart or buy.
 Call after product is visible. Confirm: "I've added [name] to your cart!"
 If fails, suggest Shop Now.
 
-## get_similar_products
-Call when user asks for pairings or similar items.
-Always call search_products + update_products first if no products have been shown yet. Never call get_similar_products on an empty carousel. This step is important.
-Use the product_id field from the most recent update_carousel_main_view response — it returns JSON like {"product_name": "...", "product_id": "..."}. Extract that product_id value exactly and pass it here.
-After results: call update_products immediately — BEFORE speaking. This step is important.
+## Pairing & "similar" requests
+When user asks for pairings or similar items:
+- Ambiguous? Ask: "Something to go with it, or more like it?"
+- Use fashion world knowledge to decide what pairs well, but only for categories this store carries (see Categories above). Never search for items the store doesn't sell.
+- Build a search_products query (pairing a shirt → "trousers chinos"; similar → more shirts), call search_products + update_products. This step is important.
+- Only present what search_products returns; if nothing fits say so honestly.
 
 # Session ending
 When the user says goodbye, thanks and indicates they're done, or uses farewell phrases ("bye", "thanks that's all", "I'm done", "goodbye", "that's it"), say a brief warm farewell first (one short sentence, e.g. "Happy shopping! Bye!"), then call end_session with reason "user_farewell". Say your farewell BEFORE calling end_session. This step is important.
@@ -328,12 +329,12 @@ Only call this after the product is already visible in the carousel.
 After a successful response, say: "I've added [product name] to your cart!"
 If the response indicates a failure, say: "I wasn't able to add that to your cart — you can use the Shop Now button instead."
 
-## get_similar_products
-Call when the customer asks "what goes with this?", "suggest pairings", "show similar items", or anything implying they want related products.
-Always call search_products + update_products first if no products have been shown yet. Never call get_similar_products on an empty carousel. This step is important.
-Use the product_id from the most recent update_carousel_main_view response (or from the search results for the product the customer is referring to).
-After receiving results, call update_products with the returned array — BEFORE saying anything about the results. This step is important.
-You may proactively offer: "This pairs well with some other items — want me to show you?" after presenting a product.
+## Pairing & "similar" requests
+When the customer asks "what goes with this?", "suggest pairings", "show similar items", or anything implying related products:
+- If unclear (pairing vs similar), ask first: "Something to go with it, or more like it?"
+- Use your fashion knowledge to decide what pairs well — but only for categories this store actually carries (check Categories above). Do not promise or search for items the store doesn't sell.
+- Translate that into a search_products query (e.g. pairing a shirt → "trousers chinos"; similar → more shirts), call search_products + update_products as usual. This step is important.
+- Present only what search_products returns. If nothing suitable comes back, say so and point to "Shop Now".
 
 # Session ending
 When the user says goodbye, thanks and indicates they're done, or uses farewell phrases ("bye", "thanks that's all", "I'm done", "goodbye", "that's it"), say a brief warm farewell first (one short sentence, e.g. "Happy shopping! Bye!"), then call end_session with reason "user_farewell". Say your farewell BEFORE calling end_session. This step is important.
@@ -406,11 +407,12 @@ Call only when user explicitly asks to add something to their cart or buy it.
 Only call after the product is shown. Confirm: "Added [name] to your cart!"
 If fails: "I couldn't add that — try the Shop Now button."
 
-## get_similar_products
-Call when user asks for pairings, similar items, or "what else would go with this?"
-Always call search_products + update_products first if no products have been shown yet. Never call get_similar_products on an empty carousel. This step is important.
-Use the product_id field from the most recent update_carousel_main_view response — it returns JSON like {"product_name": "...", "product_id": "..."}. Extract that product_id value exactly and pass it here.
-After results: call update_products BEFORE speaking. This step is important.
+## Pairing & "similar" requests
+When user asks for pairings, similar items, or "what else would go with this?":
+- If ambiguous, ask: "Something to go with it, or more like it?"
+- Use fashion world knowledge — but only search categories this store carries (see Categories above). Never search for or promise a category the store doesn't have.
+- Form a search_products query (pairing → "trousers chinos"; similar → same product type), then call search_products + update_products. This step is important.
+- Only present what search_products returns. If nothing fits, say so and suggest "Shop Now".
 
 # Session ending
 When the user says goodbye, thanks and indicates they're done, or uses farewell phrases ("bye", "thanks that's all", "I'm done", "goodbye", "that's it"), say a brief warm farewell first (one short sentence, e.g. "Happy shopping! Bye!"), then call end_session with reason "user_farewell". Say your farewell BEFORE calling end_session. This step is important.
@@ -691,44 +693,6 @@ class ElevenLabsAgentCreator:
                     "required": ["product_id"]
                 }
             },
-            # --- Webhook tool: get_similar_products ---
-            {
-                "type": "webhook",
-                "name": "get_similar_products",
-                "description": (
-                    "Find products that pair well with or are similar to a given product. "
-                    "Use when the user says 'what goes with this', 'suggest pairings', 'show similar', "
-                    "'what else would match', or after showing a product you can proactively offer pairings. "
-                    "After receiving results, call update_products with the returned products array."
-                ),
-                "response_timeout_secs": 12,
-                "execution_mode": "immediate",
-                "tool_error_handling_mode": "auto",
-                "api_schema": {
-                    "url": f"{search_api_url}/similar-products",
-                    "method": "POST",
-                    "request_headers": {},
-                    "request_body_schema": {
-                        "type": "object",
-                        "properties": {
-                            "store_id": {
-                                "type": "string",
-                                "constant_value": store_id,
-                            },
-                            "product_id": {
-                                "type": "string",
-                                "description": "ID of the product to find similar/pairing products for"
-                            },
-                            "limit": {
-                                "type": "integer",
-                                "description": "Number of similar products to return (default 5)"
-                            }
-                        },
-                        "required": ["store_id", "product_id"]
-                    },
-                    "content_type": "application/json"
-                }
-            }
         ]
 
     def _verify_agent(self, agent_id: str) -> None:
@@ -868,7 +832,7 @@ class ElevenLabsAgentCreator:
                 logger.warning("⚠️ ignore_default_personality is NOT true — ElevenLabs default personality is active")
             if not stored_tools:
                 logger.error("❌ CRITICAL: Agent has NO tools configured!")
-            expected_tool_names = {"search_products", "update_products", "get_product_details", "update_carousel_main_view", "end_session", "add_to_cart", "get_similar_products"}
+            expected_tool_names = {"search_products", "update_products", "get_product_details", "update_carousel_main_view", "end_session", "add_to_cart"}
             if actual_tool_names != expected_tool_names:
                 logger.warning(
                     "⚠️ Tool mismatch. Expected exactly %s, got %s",

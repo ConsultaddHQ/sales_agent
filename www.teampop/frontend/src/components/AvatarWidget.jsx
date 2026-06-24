@@ -511,14 +511,9 @@ function AvatarInner({
   const thinkingTimerRef = useRef(null);
   const rafVolRef = useRef(null);
   const agentIsSpeakingRef = useRef(false);
-  // First-visit nudge
-  const [showNudge, setShowNudge] = useState(() => {
-    try { return !localStorage.getItem("team-pop-nudge-seen"); } catch { return false; }
-  });
-  const dismissNudge = useCallback(() => {
-    setShowNudge(false);
-    try { localStorage.setItem("team-pop-nudge-seen", "1"); } catch {}
-  }, []);
+  // Nudge — always show on page load; dismissed within the session only
+  const [showNudge, setShowNudge] = useState(true);
+  const dismissNudge = useCallback(() => { setShowNudge(false); }, []);
   const [cartToast, setCartToast] = useState(null); // null | "adding" | "success" | "error"
   const cartToastTimerRef = useRef(null);
   const [cartedIds, setCartedIds] = useState(() => new Set());
