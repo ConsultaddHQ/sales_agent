@@ -102,7 +102,7 @@ If it fails, suggest the Shop Now link.
 ## get_similar_products
 Use when the user asks "what goes with this?", "suggest pairings", "show similar", or "what else would match?"
 Always call search_products + update_products first if no products have been shown yet. Never call get_similar_products on an empty carousel. This step is important.
-Use the product_id from the most recent update_carousel_main_view response (or from the search results for the product the user is referring to).
+Use the product_id field from the most recent update_carousel_main_view response — it returns JSON like {"product_name": "...", "product_id": "..."}. Extract that product_id value exactly and pass it here.
 After receiving results, call update_products with the returned products array — BEFORE speaking about them. This step is important.
 You can proactively offer pairings after showing a product: "This pairs well with some other items — want me to show you?"
 
@@ -180,7 +180,7 @@ If it fails, say to use the Shop Now link.
 ## get_similar_products
 Call when user asks "what goes with this?", "suggest pairings", "show similar", or "what else would match?"
 Always call search_products + update_products first if no products have been shown yet. Never call get_similar_products on an empty carousel. This step is important.
-Use the product_id from the most recent update_carousel_main_view response (or from the search results for the product the user is referring to).
+Use the product_id field from the most recent update_carousel_main_view response — it returns JSON like {"product_name": "...", "product_id": "..."}. Extract that product_id value exactly and pass it here.
 After results: call update_products BEFORE speaking. This step is important.
 Proactively offer: "This pairs well with some other items — want me to show you?"
 
@@ -252,7 +252,7 @@ If fails, suggest Shop Now.
 ## get_similar_products
 Call when user asks for pairings or similar items.
 Always call search_products + update_products first if no products have been shown yet. Never call get_similar_products on an empty carousel. This step is important.
-Use the product_id from the most recent update_carousel_main_view response (or from the search results for the product the user is referring to).
+Use the product_id field from the most recent update_carousel_main_view response — it returns JSON like {"product_name": "...", "product_id": "..."}. Extract that product_id value exactly and pass it here.
 After results: call update_products immediately — BEFORE speaking. This step is important.
 
 # Session ending
@@ -409,7 +409,7 @@ If fails: "I couldn't add that — try the Shop Now button."
 ## get_similar_products
 Call when user asks for pairings, similar items, or "what else would go with this?"
 Always call search_products + update_products first if no products have been shown yet. Never call get_similar_products on an empty carousel. This step is important.
-Use the product_id from the most recent update_carousel_main_view response (or from the search results for the product the user is referring to).
+Use the product_id field from the most recent update_carousel_main_view response — it returns JSON like {"product_name": "...", "product_id": "..."}. Extract that product_id value exactly and pass it here.
 After results: call update_products BEFORE speaking. This step is important.
 
 # Session ending
@@ -701,7 +701,7 @@ class ElevenLabsAgentCreator:
                     "'what else would match', or after showing a product you can proactively offer pairings. "
                     "After receiving results, call update_products with the returned products array."
                 ),
-                "response_timeout_secs": 5,
+                "response_timeout_secs": 12,
                 "execution_mode": "immediate",
                 "tool_error_handling_mode": "auto",
                 "api_schema": {

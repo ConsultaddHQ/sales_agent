@@ -877,9 +877,9 @@ function AvatarInner({
       setActiveIndex(safeIdx);
     }
     isToolPendingRef.current = false;
-    // Return focused product so agent can use its id for get_similar_products.
+    // Return JSON so the agent can extract product_id reliably for get_similar_products.
     const focused = latestProductsRef.current[safeIdx];
-    return focused ? `Focused on product: ${focused.name} (id: ${focused.id})` : "ok";
+    return focused ? JSON.stringify({ product_name: focused.name, product_id: String(focused.id) }) : "ok";
   });
 
   const { sendUserMessage } = conversation;
