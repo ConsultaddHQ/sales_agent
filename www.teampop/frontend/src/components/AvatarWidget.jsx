@@ -666,17 +666,10 @@ function AvatarInner({
       console.log(`[ElevenLabs] onModeChange event at ${Date.now()}:`, modeObj);
     },
     onVadScore: (score) => {
-      // Under WebRTC there is no local input analyser (getInputVolume() returns 0),
-      // so the rAF loop below can't detect user speech. Drive the LISTENING state from
-      // the server's VAD score instead, so the orb still reacts to the user's voice.
-      // When the user goes quiet, the rAF loop's THINKING timer takes over.
-      if (typeof score === "number" && score > 0.5 && !agentIsSpeakingRef.current) {
-        if (thinkingTimerRef.current) { clearTimeout(thinkingTimerRef.current); thinkingTimerRef.current = null; }
-        if (vadSubStateRef.current !== "LISTENING") {
-          vadSubStateRef.current = "LISTENING";
-          setVadSubState("LISTENING");
-        }
-      }
+      // @elevenlabs/client ≥1.13 has a native WebRTC input analyser (inputAnalyser +
+      // inputVolumeProvider); getInputVolume() works under WebRTC. LISTENING state is
+      // now driven by the rAF loop below — this callback is only kept for diagnostics.
+      console.log("[ElevenLabs] onVadScore:", score);
     },
     onConversationMetadata: (metadata) => {
       console.log("[ElevenLabs] onConversationMetadata:", metadata);
@@ -896,16 +889,12 @@ function AvatarInner({
     const now = Date.now();
     inactivityRef.current = { startAt: now, lastMeaningfulUserAt: now };
     sessionMetricsRef.current = { startAt: now, productsShown: 0, productsClicked: 0, shopNowClicked: false, chatMessages: 0, endReason: null, conversationId: null, latencyFirstAiMs: null, latencyProductsMs: null, toolCalls: 0, interruptionCount: 0 };
-    // Use WebRTC (the SDK's default for voice), NOT websocket. The websocket path
-    // dispatches each incoming audio chunk to its output listener the instant it
-    // arrives with no buffering — but that listener is only attached AFTER the audio
-    // worklet finishes loading (which happens after the socket is already open and
-    // receiving). Any first_message audio that arrives in that gap is silently dropped.
-    // Low-latency clients (e.g. US → ElevenLabs) lose this race and never hear the
-    // opening greeting; high-latency clients (e.g. India) get the audio late enough
-    // that the listener is ready. WebRTC plays audio through the browser's own media
-    // pipeline (a subscribed track on an <audio autoplay> element), which buffers the
-    // stream and is not subject to this drop.
+    // WebRTC is the deliberate production transport (ElevenLabs' recommended choice for
+    // voice). It adds echo cancellation, background noise removal, and packet-loss
+    // resilience — critical for voice shopping on mobile/noisy environments. It also
+    // fixed the first_message audio-drop race present in old WebSocket + 1.1.1. On
+    // @elevenlabs/client ≥1.13 WebRTC exposes a native input analyser so getInputVolume()
+    // works, enabling the orb to react to the user's voice without any vad_score workaround.
     conversation.startSession({ agentId, connectionType: "webrtc" });
   }, [conversation, agentId]);
 

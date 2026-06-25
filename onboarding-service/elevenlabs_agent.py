@@ -990,10 +990,6 @@ class ElevenLabsAgentCreator:
                     "client_events": [
                         "audio", "user_transcript", "interruption",
                         "agent_response", "agent_response_correction",
-                        # vad_score lets the widget drive the orb's LISTENING state from
-                        # server-side VAD. Required under WebRTC, where the client has no
-                        # local input analyser (getInputVolume() returns 0).
-                        "vad_score",
                     ],
                 },
                 "turn": {
