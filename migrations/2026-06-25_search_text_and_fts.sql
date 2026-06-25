@@ -25,7 +25,14 @@ create index if not exists products_search_text_fts
   on public.products
   using gin (to_tsvector('english', coalesce(search_text, name || ' ' || coalesce(description, ''))));
 
--- 4. Rewrite hybrid_search_products
+-- 4. Drop ALL existing overloads before recreating (CREATE OR REPLACE only works when
+--    the parameter list matches exactly — different orders create extra overloads instead)
+drop function if exists public.hybrid_search_products(uuid, text, extensions.vector, integer, double precision, numeric);
+drop function if exists public.hybrid_search_products(uuid, text, extensions.vector, numeric, integer, double precision);
+drop function if exists public.hybrid_search_products(uuid, text, vector, integer, double precision, numeric);
+drop function if exists public.hybrid_search_products(uuid, text, vector, numeric, integer, double precision);
+
+-- 5. Rewrite hybrid_search_products
 --    Changes vs previous version:
 --    • FTS CTE uses websearch_to_tsquery (OR-friendly, tolerates extra words) over search_text
 --    • Vector CTE uses HNSW top-K pattern (ORDER BY <=> LIMIT candidates) — preserves HNSW use
