@@ -120,7 +120,7 @@ When the user says goodbye, thanks you and indicates they're done, or uses farew
 When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks for visiting! Happy shopping!"), then call end_session with reason "session_wrap_up". This step is important.
 
 # Error handling
-- No results: ask for one tighter rephrase.
+- No results: the spoken word may have been mis-transcribed from voice (e.g. "flosser"/"flouser" → "trousers", "jellbottom" → "bell bottom"). Before concluding, silently re-interpret the request in context using product knowledge and the store's Categories, then call search_products ONCE more with the corrected term. Only if that retry is ALSO empty, say it's not carried and point to "Shop Now". Never reject on the first miss.
 - Tool failure: retry once, then apologize briefly and continue helping.
 """
 
@@ -207,7 +207,7 @@ When the user says goodbye, thanks and indicates they're done, or uses farewell 
 When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks for visiting! Happy shopping!"), then call end_session with reason "session_wrap_up". This step is important.
 
 # Error handling
-- No results: ask for one clearer direction.
+- No results: the spoken word may have been mis-transcribed from voice (e.g. "flosser"/"flouser" → "trousers", "jellbottom" → "bell bottom"). Before concluding, silently re-interpret the request in context using product knowledge and the store's Categories, then call search_products ONCE more with the corrected term. Only if that retry is ALSO empty, say it's not carried and point to "Shop Now". Never reject on the first miss.
 - Tool failure: retry once, then apologize and continue.
 """
 
@@ -288,7 +288,7 @@ When the user says goodbye, thanks and indicates they're done, or uses farewell 
 When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks for visiting! Happy shopping!"), then call end_session with reason "session_wrap_up". This step is important.
 
 # Error handling
-- No results: ask for one tighter rephrase.
+- No results: the spoken word may have been mis-transcribed from voice (e.g. "flosser"/"flouser" → "trousers", "jellbottom" → "bell bottom"). Before concluding, silently re-interpret the request in context using product knowledge and the store's Categories, then call search_products ONCE more with the corrected term. Only if that retry is ALSO empty, say it's not carried and point to "Shop Now". Never reject on the first miss.
 - Tool failure: retry once, then apologize.
 """
 
@@ -377,7 +377,7 @@ When the user says goodbye, thanks and indicates they're done, or uses farewell 
 When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks for visiting! Happy shopping!"), then call end_session with reason "session_wrap_up". This step is important.
 
 # Error handling
-- No results: ask for one clearer direction.
+- No results: the spoken word may have been mis-transcribed from voice (e.g. "flosser"/"flouser" → "trousers", "jellbottom" → "bell bottom"). Before concluding, silently re-interpret the request in context using product knowledge and the store's Categories, then call search_products ONCE more with the corrected term. Only if that retry is ALSO empty, say it's not carried and point to "Shop Now". Never reject on the first miss.
 - Tool failure: retry once, then apologize briefly.
 """
 
@@ -465,7 +465,7 @@ When the user says goodbye, thanks and indicates they're done, or uses farewell 
 When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks for visiting! Happy shopping!"), then call end_session with reason "session_wrap_up". This step is important.
 
 # Error handling
-- No results: ask for one clearer rephrase.
+- No results: the spoken word may have been mis-transcribed from voice (e.g. "flosser"/"flouser" → "trousers", "jellbottom" → "bell bottom"). Before concluding, silently re-interpret the request in context using product knowledge and the store's Categories, then call search_products ONCE more with the corrected term. Only if that retry is ALSO empty, say it's not carried and point to "Shop Now". Never reject on the first miss.
 - Tool failure: retry once, then apologize and continue.
 """
 
