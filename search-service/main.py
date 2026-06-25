@@ -259,7 +259,10 @@ def _execute_hybrid_search_rpc(
         "p_query": query,
         "p_query_embedding": "[" + ",".join(f"{x:.8f}" for x in query_embedding) + "]",
         "p_limit": limit,
-        "p_min_score": 0.25,          # ← start here, tune between 0.15–0.45 based on tests
+        # Stage-1 favors recall (the cross-encoder reranker recovers precision).
+        # Keyword/FTS hits are kept regardless of this threshold; this only gates
+        # vector-only matches. Keep low so good candidates reach the reranker.
+        "p_min_score": 0.15,
     }
     if max_price is not None:
         rpc_params["p_max_price"] = max_price

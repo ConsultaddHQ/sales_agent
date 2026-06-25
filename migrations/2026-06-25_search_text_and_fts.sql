@@ -96,12 +96,14 @@ begin
           @@ websearch_to_tsquery('english', p_query)
   ),
 
-  -- Reciprocal Rank Fusion (k=60)
+  -- Reciprocal Rank Fusion (k=60). Cast scores to float to match the
+  -- declared `similarity float` return column (1.0 / bigint yields numeric).
   rrf as (
     select
       coalesce(v.id, f.id) as id,
-      coalesce(1.0 / (60 + v.rn), 0) + coalesce(1.0 / (60 + f.rn), 0) as rrf_score,
-      coalesce(v.vec_score, 0) as vec_score
+      (coalesce(1.0 / (60 + v.rn), 0) + coalesce(1.0 / (60 + f.rn), 0))::float as rrf_score,
+      coalesce(v.vec_score, 0)::float as vec_score,
+      (f.id is not null) as is_fts_match
     from vector_matches v
     full outer join fts_matches f on v.id = f.id
   )
@@ -119,7 +121,9 @@ begin
     r.rrf_score as similarity
   from rrf r
   join public.products p on p.id = r.id
-  where r.vec_score >= p_min_score or r.vec_score = 0  -- keep FTS-only hits (vec_score=0 means no vector match but FTS hit)
+  -- Keep every keyword (FTS) hit, plus vector hits above the recall threshold.
+  -- Stage-1 favors recall; the cross-encoder reranker recovers precision.
+  where r.is_fts_match or r.vec_score >= p_min_score
   order by r.rrf_score desc
   limit p_limit;
 end;

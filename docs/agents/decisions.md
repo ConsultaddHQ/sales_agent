@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-06-25: Search-quality overhaul — enriched search_text + RRF hybrid RPC + cross-encoder reranker
+
+- **Decision:** Three coordinated changes to fix attribute-precision failures (e.g. "white polo shirt" returning wrong colors). (1) **Enriched `search_text`**: onboarding now embeds and indexes `name + product_type + color/size/material/style option values + tags + description` (`_build_search_text()` in `onboarding-service/services/products.py`), persisted to a new `products.search_text` column. (2) **RRF hybrid RPC**: `hybrid_search_products` rewritten (`migrations/2026-06-25_search_text_and_fts.sql`) to fuse a vector CTE (HNSW top-50) and an FTS CTE (`websearch_to_tsquery` over `search_text`) via Reciprocal Rank Fusion (k=60); keeps all keyword hits + vector hits above a low `p_min_score` (0.15) to favor recall; returns `metadata` + `local_image_path`. (3) **Cross-encoder reranker**: `shared/reranker.py` (lazy `CrossEncoder` singleton, default `cross-encoder/ms-marco-MiniLM-L-6-v2`); search-service fetches `RERANK_CANDIDATES` (30) then reranks to top-5, with graceful fallback to Stage-1 order on error/timeout and a `RERANK_ENABLED` kill-switch.
+- **Context:** Color/type/variant attributes lived only in `metadata` JSONB — invisible to both the embedding (`name + description` only) and the FTS index. all-MiniLM-L6-v2 is too coarse to separate "white" from "black" pants. The old RPC used `plainto_tsquery` (AND-ed all tokens → one stray word zeroed the text side). No reranker existed.
+- **Rationale:** Two-stage retrieve-then-rerank is the 2026 standard (+15–30% accuracy). Enriching `search_text` makes attributes retrievable at all; RRF + `websearch_to_tsquery` fixes recall; the cross-encoder reads (query, product) jointly to recover precision. Self-hosted reranker chosen over a managed API to avoid India→US latency, per-call cost, a new secret, and data leaving infra. **No embedding-model change** — stays all-MiniLM/384, honoring constraint #1.
+- **Alternatives considered:** (a) Upgrade the embedding model (BGE-M3/text-embedding-3) — deferred; triggers a 384→N dimension migration + full re-embed (constraint #1), not needed once enrichment + rerank land. (b) Managed rerank API (Cohere/Jina) — rejected for latency/cost/secret/data-egress. (c) Switch to a dedicated vector DB — rejected; pgvector is fine at ~250 products/store.
+- **Consequences:** Requires running `migrations/2026-06-25_search_text_and_fts.sql` (drops prior overloads, adds column + GIN index + new function) **and re-onboarding stores** to populate enriched `search_text`/embeddings (existing rows are backfilled with `name + description` so they keep working). The committed migration is now the **source of truth** for the RPC; the `SHOPIFY_FLOW_COMPLETE.md` block is marked superseded. RPC `similarity` is cast to `float` to match the return type. `search-service` first start downloads the ~80MB reranker; warmup loads it off the hot path. `RERANK_*` env vars documented in `search-service/.env.example`.
+- **Status:** Active
+- **Agent/Author:** Claude
+
+---
+
 ## 2026-06-19: Carousel click-to-agent context disabled by default
 
 - **Decision:** Clicking a carousel thumbnail no longer sends a `[CAROUSEL UPDATE]` message to the ElevenLabs voice agent. The visual update (`setActiveIndex`) still fires, but `syncMainProduct()` is not called. The function is kept in the codebase with a comment — re-enable by uncommenting one line in `AvatarWidget.jsx` `onClick`.

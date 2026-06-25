@@ -88,6 +88,11 @@ create index if not exists products_store_id_idx on public.products (store_id);
 create unique index if not exists products_store_handle_idx on public.products (store_id, handle);
 create index if not exists products_embedding_idx on public.products using hnsw (embedding vector_cosine_ops);
 
+-- ⚠️ SUPERSEDED — the block below is the ORIGINAL pure-vector function and is kept
+-- only for historical reference. The CURRENT, deployed hybrid_search_products
+-- (enriched search_text + RRF fusion + websearch_to_tsquery + metadata return) lives in
+-- `migrations/2026-06-25_search_text_and_fts.sql`. Run that migration, not this block.
+
 -- Full-text search index
 create index if not exists products_name_gin on public.products using gin(to_tsvector('english', name));
 
