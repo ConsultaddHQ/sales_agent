@@ -16,6 +16,22 @@ import { usePttInteraction } from "../hooks/usePttInteraction";
 const DUMMY_IMAGE = "/widget/image.png";
 const USER_INACTIVITY_TIMEOUT_MS = 30000;
 const SESSION_HARD_LIMIT_MS = 420000;
+
+// Voice transport: "websocket" | "webrtc". Single toggle for the whole widget.
+//
+// - "websocket": streams raw PCM (no lossy Opus codec, no WebRTC DSP). On a
+//   stable network this is the CLEANEST agent audio — no compression artifacts,
+//   no jitter-buffer time-stretching. Trade-off: no built-in echo cancellation /
+//   noise suppression, and less resilient to packet loss on poor mobile networks.
+//   The first_message audio-drop race that forced us off WebSocket was a bug in the
+//   OLD SDK (@elevenlabs/client 1.1.1) and is FIXED in 1.13 (pendingAudioEvents buffer),
+//   so WebSocket is safe again on the current SDK.
+// - "webrtc": Opus over a LiveKit transport with echo cancellation + noise removal +
+//   packet-loss concealment. Best for noisy/mobile, but Opus + PLC can sound grainy or
+//   "elongated" (time-stretched) when the network jitters.
+//
+// getInputVolume() (orb LISTENING driver) works under BOTH on @elevenlabs/client ≥1.13.
+const CONNECTION_TYPE = "websocket";
 const IGNORED_SILENCE_TRANSCRIPTS = new Set([
   "ah",
   "aha",
@@ -889,13 +905,11 @@ function AvatarInner({
     const now = Date.now();
     inactivityRef.current = { startAt: now, lastMeaningfulUserAt: now };
     sessionMetricsRef.current = { startAt: now, productsShown: 0, productsClicked: 0, shopNowClicked: false, chatMessages: 0, endReason: null, conversationId: null, latencyFirstAiMs: null, latencyProductsMs: null, toolCalls: 0, interruptionCount: 0 };
-    // WebRTC is the deliberate production transport (ElevenLabs' recommended choice for
-    // voice). It adds echo cancellation, background noise removal, and packet-loss
-    // resilience — critical for voice shopping on mobile/noisy environments. It also
-    // fixed the first_message audio-drop race present in old WebSocket + 1.1.1. On
-    // @elevenlabs/client ≥1.13 WebRTC exposes a native input analyser so getInputVolume()
-    // works, enabling the orb to react to the user's voice without any vad_score workaround.
-    conversation.startSession({ agentId, connectionType: "webrtc" });
+    // Transport is set once via CONNECTION_TYPE (see the constant near the top of the
+    // file for the websocket-vs-webrtc audio-quality trade-offs). Currently "websocket"
+    // for cleanest agent audio (raw PCM, no Opus/PLC artifacts) — the old first_message
+    // drop bug that forced WebRTC is fixed in @elevenlabs/client ≥1.13.
+    conversation.startSession({ agentId, connectionType: CONNECTION_TYPE });
   }, [conversation, agentId]);
 
   const endVoiceSession = useCallback(() => {
