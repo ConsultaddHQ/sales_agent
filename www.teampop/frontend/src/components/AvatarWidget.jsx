@@ -15,7 +15,7 @@ import { usePttInteraction } from "../hooks/usePttInteraction";
 // not the page root — a bare "/image.png" 404s against the host origin.
 const DUMMY_IMAGE = "/widget/image.png";
 const USER_INACTIVITY_TIMEOUT_MS = 30000;
-const SESSION_HARD_LIMIT_MS = 270000;
+const SESSION_HARD_LIMIT_MS = 420000;
 const IGNORED_SILENCE_TRANSCRIPTS = new Set([
   "ah",
   "aha",
@@ -1212,10 +1212,10 @@ function AvatarInner({
       const r = inactivityRef.current;
       const now = Date.now();
 
-      // 1. Hard session limit (270s)
+      // 1. Hard session limit (420s / 7 min)
       if (now - r.startAt > SESSION_HARD_LIMIT_MS) {
-        console.log("[session] Ending session due to 270s hard limit.");
-        gracefulEndSession("Ending session due to 270s hard limit.");
+        console.log("[session] Ending session due to 7-min hard limit.");
+        gracefulEndSession("Ending session due to 7-min hard limit.");
         return;
       }
 
