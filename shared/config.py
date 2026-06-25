@@ -7,6 +7,12 @@ from pathlib import Path
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 
+# ── Reranker (cross-encoder, runs in search-service only) ──
+RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
+RERANK_CANDIDATES = int(os.getenv("RERANK_CANDIDATES", "30"))
+RERANK_TIMEOUT = float(os.getenv("RERANK_TIMEOUT", "3.0"))
+RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() == "true"
+
 # ── Defaults ──
 MAX_PRODUCTS = 200
 IMAGE_DOWNLOAD_TIMEOUT = 15  # seconds

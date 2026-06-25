@@ -106,6 +106,8 @@ class ProductResult:
     local_image_url: Optional[str]
     product_url: Optional[str]
     score: float
+    metadata: Optional[dict] = None
+    local_image_path: Optional[str] = None
 
 
 app = FastAPI(title="search-service", version="1.0.0")
@@ -163,10 +165,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestLoggingMiddleware)
 
-from shared.config import IMAGE_SERVER_URL
+from shared.config import IMAGE_SERVER_URL, RERANK_CANDIDATES, RERANK_TIMEOUT, RERANK_ENABLED
 from shared.db import get_supabase
 from shared.embeddings import get_embedder
 from shared.parsing import strip_html
+from shared.reranker import get_reranker, rerank
 
 
 async def _encode_query_embedding(query: str) -> tuple[List[float], int, int]:
@@ -304,56 +307,76 @@ def _execute_hybrid_search_rpc(
         except Exception:
             price_val = None
 
-         # ENHANCE: Prefer our server images over CDN 
         image_url = row.get("image_url")  # CDN URL (original)
         local_path = row.get("local_image_path")
-        
-        # If we have local image, prefer our server
+
         if local_path:
             local_image_url = f"{IMAGE_SERVER_URL()}/images/{local_path}"
         else:
             local_image_url = None
-        
+
         results.append(
             ProductResult(
                 id=str(row.get("id")),
-                store_id=str(row.get("store_id")),
+                store_id=str(row.get("store_id", "")),
                 name=str(row.get("name") or ""),
                 description=row.get("description"),
                 price=price_val,
-                image_url=image_url,              # Original CDN URL (fallback)
-                local_image_url=local_image_url,  # Our server URL (preferred)
+                image_url=image_url,
+                local_image_url=local_image_url,
                 product_url=row.get("product_url"),
-                score=float(row.get("score") or 0.0),
+                score=float(row.get("similarity") or row.get("score") or 0.0),
+                metadata=row.get("metadata") or {},
+                local_image_path=local_path,
             )
         )
         
     return results
 
 
+def _build_rerank_doc(p: ProductResult) -> str:
+    """Build the text the cross-encoder sees for each product candidate.
+
+    Includes name, product_type, colors, and description so the reranker
+    can directly compare the query against all searchable attributes.
+    """
+    parts = [p.name]
+    meta = p.metadata or {}
+    if meta.get("product_type"):
+        parts.append(meta["product_type"])
+    for opt in meta.get("options", []):
+        if opt.get("name", "").lower() in ("color", "colour", "size", "material", "style"):
+            parts.extend(opt.get("values", []))
+    if p.description:
+        parts.append(p.description[:300])  # cap to keep pairs short
+    return " ".join(p for p in parts if p)
+
+
 async def _hybrid_search_products(
     sb: Client,
     store_id: str,
     query: str,
-    limit: int = 10,
+    final_limit: int = 5,
 ) -> tuple[List[ProductResult], int, int, int]:
     query_embedding, queue_wait_ms, embedding_ms = await _encode_query_embedding(query)
-    
+
+    # Stage 1: wide-net retrieval (more candidates → higher recall for reranker)
+    stage1_limit = RERANK_CANDIDATES if RERANK_ENABLED else final_limit
+
     t_rpc_start = time.perf_counter()
     try:
-        products = await asyncio.wait_for(
+        candidates = await asyncio.wait_for(
             asyncio.to_thread(
                 _execute_hybrid_search_rpc,
                 sb,
                 store_id,
                 query,
                 query_embedding,
-                limit,
+                stage1_limit,
             ),
             timeout=RPC_TIMEOUT
         )
         rpc_ms = int((time.perf_counter() - t_rpc_start) * 1000)
-        return products, queue_wait_ms, embedding_ms, rpc_ms
     except asyncio.TimeoutError as e:
         logger.error(f"Supabase RPC timeout for query: {query}")
         raise HTTPException(
@@ -361,6 +384,28 @@ async def _hybrid_search_products(
             detail="Database query timeout. Please try again later.",
             headers={"Retry-After": "2"}
         ) from e
+
+    # Stage 2: cross-encoder rerank (graceful fallback if disabled or error)
+    if RERANK_ENABLED and len(candidates) > 1:
+        try:
+            docs = [_build_rerank_doc(p) for p in candidates]
+            scores = await asyncio.wait_for(
+                asyncio.to_thread(rerank, query, docs),
+                timeout=RERANK_TIMEOUT,
+            )
+            ranked = sorted(zip(scores, candidates), key=lambda x: x[0], reverse=True)
+            products = [p for _, p in ranked[:final_limit]]
+            logger.info(
+                f"Reranked {len(candidates)} → {len(products)} for query={query!r} "
+                f"| top_score={ranked[0][0]:.3f} | rpc_ms={rpc_ms}"
+            )
+        except Exception as e:
+            logger.warning(f"Reranker failed (falling back to Stage-1 order): {e}")
+            products = candidates[:final_limit]
+    else:
+        products = candidates[:final_limit]
+
+    return products, queue_wait_ms, embedding_ms, rpc_ms
 
 
 @app.get("/health")
@@ -404,7 +449,7 @@ async def search(
     # ── Measure embed + RPC duration so callers can correlate latency ──
     t0 = time.perf_counter()
     products, queue_wait_ms, embedding_ms, rpc_ms = await _hybrid_search_products(
-        sb=sb, store_id=req.store_id, query=req.query, limit=5
+        sb=sb, store_id=req.store_id, query=req.query, final_limit=5
     )
     total_ms = int((time.perf_counter() - t0) * 1000)
     response.headers["X-Search-Duration-Ms"] = str(total_ms)
@@ -499,6 +544,17 @@ async def _warmup_on_startup() -> None:
             )
         except Exception as e:
             logger.warning(f"Warmup: embedder load failed (non-fatal): {e}")
+
+        if RERANK_ENABLED:
+            try:
+                logger.info("🔥 Warmup: loading reranker model...")
+                t1 = time.perf_counter()
+                get_reranker().predict([("warmup query", "warmup document")])
+                logger.info(
+                    f"🔥 Warmup: reranker ready in {int((time.perf_counter() - t1) * 1000)} ms"
+                )
+            except Exception as e:
+                logger.warning(f"Warmup: reranker load failed (non-fatal): {e}")
 
         try:
             t1 = time.perf_counter()

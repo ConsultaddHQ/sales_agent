@@ -39,6 +39,38 @@ class ProductRow:
     handle: str
     metadata: Dict[str, Any]
     created_at: datetime
+    search_text: str = ""
+
+
+def _build_search_text(
+    name: str,
+    description: str,
+    metadata: Dict[str, Any],
+    tags: Any,
+) -> str:
+    """Build enriched text for embedding + FTS from all searchable attributes.
+
+    Includes product_type, variant option values (color, size, material, style),
+    and tags so that attributes stored only in metadata are visible to search.
+    Degrades gracefully when metadata fields are absent (Threadless, Supermicro).
+    """
+    parts = [name, metadata.get("product_type", "")]
+
+    # Shopify options: [{name: "Color", values: ["White", "Black"]}, ...]
+    attribute_names = {"color", "colour", "size", "material", "style", "finish"}
+    for opt in metadata.get("options", []):
+        if opt.get("name", "").lower() in attribute_names:
+            parts.extend(opt.get("values", []))
+
+    # Tags: either a comma-separated string or a list
+    if tags:
+        if isinstance(tags, str):
+            parts.append(tags)
+        elif isinstance(tags, list):
+            parts.extend(tags)
+
+    parts.append(description)
+    return " ".join(p for p in parts if p).strip()
 
 
 def download_product_image(
@@ -129,9 +161,11 @@ def build_product_rows(
 
             product_url = product.get("_original_product_url") or f"https://{domain}/products/{handle}"
 
-            # Create embedding
-            text_to_embed = f"{name} {description}"
-            embedding = embedder.encode(text_to_embed, normalize_embeddings=True).tolist()
+            # Build enriched search text (name + type + colors/options + tags + description)
+            # so that attributes stored only in metadata are visible to embedding + FTS.
+            tags = product.get("tags", "")
+            search_text = _build_search_text(name, description, metadata, tags)
+            embedding = embedder.encode(search_text, normalize_embeddings=True).tolist()
 
             rows.append(ProductRow(
                 id=str(uuid.uuid4()),
@@ -146,6 +180,7 @@ def build_product_rows(
                 handle=handle,
                 metadata=metadata,
                 created_at=datetime.now(),
+                search_text=search_text,
             ))
         except Exception as e:
             logger.warning(f"Failed to process product '{product.get('title', 'unknown')}': {e}")
@@ -178,6 +213,7 @@ def store_products_in_supabase(rows: List[ProductRow]) -> None:
             "local_image_path": row.local_image_path,
             "embedding": row.embedding,
             "metadata": row.metadata,
+            "search_text": row.search_text,
             "created_at": row.created_at.isoformat(),
         })
 
