@@ -986,7 +986,7 @@ class ElevenLabsAgentCreator:
                     "speed": 1.08,
                 },
                 "conversation": {
-                    "max_duration_seconds": 600,
+                    "max_duration_seconds": 420,
                     "client_events": [
                         "audio", "user_transcript", "interruption",
                         "agent_response", "agent_response_correction",
