@@ -5,14 +5,6 @@ import os
 from threading import Lock
 from typing import Optional
 
-# Match the CPU-thread caps used by the embedder to prevent thrashing
-os.environ.setdefault("OMP_NUM_THREADS", "1")
-os.environ.setdefault("MKL_NUM_THREADS", "1")
-
-import torch
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
-
 from sentence_transformers import CrossEncoder
 
 from shared.config import RERANK_MODEL
