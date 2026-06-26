@@ -6,6 +6,21 @@
 
 ---
 
+## 2026-06-26 — False "we don't carry X" refusal fix + category extraction overhaul
+
+- **Status:** Complete. Re-onboard stores to apply.
+- **Owner:** Claude (Sonnet 4.6)
+- **Root cause:** Two bugs compounded. (1) `adapters/shopify.py:extract_store_context` only scanned `products[:50]` and capped at 10 categories — so bottoms/pants never appeared in the Categories hint for stores where those products fell after index 50. (2) All 5 prompts had a hard guardrail "never search for a category the store doesn't sell" — the agent trusted an incomplete list and refused without searching, bypassing the "never reject on first miss" rule entirely.
+- **Fix:**
+  - All 5 prompts (`PROMPT_GEMINI/QWEN/GLM/CLAUDE/GPT`, lines ~114/201/282/371/459): changed guardrail from hard wall → search-first: "Categories is only a HINT — ALWAYS call search_products first; only say not carried if search returns nothing."
+  - `adapters/shopify.py`: scan ALL products; priority: `product_type` → tags (parsed from Shopify comma-string; matched against clothing taxonomy) → title-word nouns. Cap raised to 20 (from 10). Fallback activates when <3 distinct types.
+  - `adapters/universal.py`: same pattern — scan ALL products; prefer `product_type`, fall back to title nouns; cap raised to 20.
+- **Tradeoff:** Prompt now allows the agent to search for anything plausibly related before saying "not carried" — this is correct because the Categories hint was always advisory, not exhaustive. Anti-hallucination is preserved: agent still can't describe or promise a product before `search_products` confirms it.
+- **Also:** Created GitHub issue #41 (ConsultaddHQ/sales_agent) to park the multi-product cart feature design.
+- **Action required:** Re-onboard stores (`POST /onboard`) after this deploy. Categories baked into the ElevenLabs agent prompt at creation time — won't update until re-onboard.
+
+---
+
 ## 2026-06-19 — N/A — Codebase + Performance Audit; Refactor Plan (A + B)
 
 - **Status:** Audits complete. Refactor code pending execution.

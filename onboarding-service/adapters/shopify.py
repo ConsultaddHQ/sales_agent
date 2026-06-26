@@ -81,14 +81,34 @@ class ShopifyAdapter(StoreAdapter):
     def extract_store_context(
         self, products: List[Dict[str, Any]], domain: str
     ) -> Dict[str, Any]:
-        categories = set()
+        from collections import Counter
+        type_counter: Counter = Counter()
         min_price = None
         max_price = None
 
-        for product in products[:50]:
-            product_type = product.get("product_type")
+        # Scan ALL products — [:50] missed categories past the first page.
+        # Priority: product_type (structured) > tags (merchant-applied) > title words (fallback).
+        tag_counter: Counter = Counter()
+        _clothing_tags = {
+            "tops", "bottoms", "shirts", "tshirts", "t-shirts", "pants", "trousers",
+            "jeans", "shorts", "dresses", "skirts", "jackets", "coats", "hoodies",
+            "sweatshirts", "sweaters", "polos", "knitwear", "outerwear", "activewear",
+            "loungewear", "swimwear", "accessories", "bags", "shoes", "sneakers",
+            "sandals", "boots", "belts", "hats", "caps", "scarves", "socks",
+        }
+        for product in products:
+            product_type = (product.get("product_type") or "").strip()
             if product_type:
-                categories.add(product_type)
+                type_counter[product_type] += 1
+            # Shopify tags: comma-separated string or list
+            raw_tags = product.get("tags", "") or ""
+            if isinstance(raw_tags, str):
+                tag_list = [t.strip().lower() for t in raw_tags.split(",") if t.strip()]
+            else:
+                tag_list = [str(t).strip().lower() for t in raw_tags]
+            for tag in tag_list:
+                if tag in _clothing_tags or len(tag) > 3:
+                    tag_counter[tag] += 1
             for variant in product.get("variants", []):
                 price_str = variant.get("price")
                 if price_str:
@@ -101,11 +121,39 @@ class ShopifyAdapter(StoreAdapter):
                     except (ValueError, TypeError):
                         pass
 
+        # Use up to 20 most common product_types; supplement from tags if sparse;
+        # fall back to title nouns as last resort so the agent has real signal.
+        top_types = [t for t, _ in type_counter.most_common(20)]
+        if len(top_types) < 3:
+            # Supplement with clothing-relevant tags
+            existing_lower = {t.lower() for t in top_types}
+            for tag, _ in tag_counter.most_common(20):
+                if tag not in existing_lower:
+                    top_types.append(tag.title())
+                    existing_lower.add(tag)
+                if len(top_types) >= 15:
+                    break
+        if len(top_types) < 3:
+            # Title-word fallback: collect meaningful nouns (>3 chars) from all titles
+            title_words: Counter = Counter()
+            _skip = {"with", "and", "for", "the", "set", "new", "best", "our"}
+            for p in products:
+                for word in p.get("title", "").split():
+                    w = word.strip("(),.-").lower()
+                    if len(w) > 3 and w not in _skip:
+                        title_words[w] += 1
+            existing_lower = {t.lower() for t in top_types}
+            for word, _ in title_words.most_common(20):
+                if word not in existing_lower:
+                    top_types.append(word.title())
+                if len(top_types) >= 10:
+                    break
+
         store_name = domain.replace(".myshopify.com", "").replace(".com", "").replace(".in", "").title()
 
         return {
             "store_name": store_name,
             "description": "online store",
-            "categories": ", ".join(list(categories)[:10]) if categories else "various products",
+            "categories": ", ".join(top_types) if top_types else "various products",
             "price_range": f"${min_price:.0f} to ${max_price:.0f}" if min_price and max_price else "affordable pricing",
         }

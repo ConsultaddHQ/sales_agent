@@ -179,11 +179,13 @@ class UniversalAdapter(StoreAdapter):
         self, products: List[Dict[str, Any]], domain: str
     ) -> Dict[str, Any]:
         """Build generic store context from scraped products."""
+        from collections import Counter
         store_name = domain.replace("www.", "").split(".")[0].title()
 
         min_price = None
         max_price = None
-        for product in products[:50]:
+        # Scan ALL products for price range
+        for product in products:
             variants = product.get("variants", [])
             if variants:
                 price_str = variants[0].get("price")
@@ -197,13 +199,34 @@ class UniversalAdapter(StoreAdapter):
                     except (ValueError, TypeError):
                         pass
 
-        # Collect unique words from product titles as crude categories
-        words = set()
-        for p in products[:20]:
-            for word in p.get("title", "").split():
-                if len(word) > 3:
-                    words.add(word.lower())
-        categories = ", ".join(list(words)[:8]) if words else "various products"
+        # Prefer explicit product_type when present; fall back to title nouns.
+        # Scan ALL products so categories from tail of catalog aren't silently dropped.
+        type_counter: Counter = Counter()
+        title_counter: Counter = Counter()
+        _skip = {"with", "and", "for", "the", "set", "new", "best", "our"}
+        for p in products:
+            pt = (p.get("product_type") or "").strip()
+            if pt:
+                type_counter[pt] += 1
+            else:
+                for word in p.get("title", "").split():
+                    w = word.strip("(),.-").lower()
+                    if len(w) > 3 and w not in _skip:
+                        title_counter[w] += 1
+
+        if type_counter:
+            # Prefer structured product_type; supplement with title words if few
+            top = [t for t, _ in type_counter.most_common(20)]
+            if len(top) < 3:
+                for word, _ in title_counter.most_common(10):
+                    if word not in [t.lower() for t in top]:
+                        top.append(word.title())
+                    if len(top) >= 10:
+                        break
+        else:
+            top = [w.title() for w, _ in title_counter.most_common(20)]
+
+        categories = ", ".join(top) if top else "various products"
 
         price_range = (
             f"${min_price:.0f} to ${max_price:.0f}"

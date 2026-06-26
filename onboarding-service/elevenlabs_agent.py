@@ -111,7 +111,7 @@ If it fails: suggest the Shop Now link.
 ## Pairing & "similar" requests
 When the customer asks "what goes with this?", "suggest pairings", "show similar", "what else would match", or anything implying related products:
 - If it's unclear whether they want something to wear WITH it (pairing) or more items LIKE it (similar), ask one short question first: "Something to go with it, or more like it?"
-- Decide what pairs well using your own fashion knowledge (a shirt → trousers, belt; a dress → shoes, bag) — but ONLY for categories THIS store carries. Check the Categories list above; never search for a category the store doesn't sell.
+- Decide what pairs well using your own fashion knowledge (a shirt → trousers, belt; a dress → shoes, bag). The Categories list is only a HINT and may be incomplete — ALWAYS call search_products first for any pairing or related-item request. Never say the store doesn't carry something without searching first. Only if search returns nothing, say it's not carried and point to "Shop Now". This step is important.
 - Turn that into a search_products query (e.g. pairing a shirt → "trousers chinos"; similar → "knitted dobby shirt"), then call search_products + update_products as usual. This step is important.
 - Present only what search_products returns. If nothing suitable comes back, say so honestly and point to "Shop Now" — never invent products.
 
@@ -198,7 +198,7 @@ If it fails: tell the user to use the Shop Now link.
 ## Pairing & "similar" requests
 When user asks "what goes with this?", "suggest pairings", "show similar", or "what else would match?":
 - If ambiguous (pairing vs similar), ask: "Something to go with it, or more like it?"
-- Use your fashion knowledge to decide what pairs well — but ONLY search for categories THIS store carries (check Categories above). Never promise items the store doesn't sell.
+- Use your fashion knowledge to decide what pairs well. The Categories list is only a HINT and may be incomplete — ALWAYS call search_products first for any pairing or related-item request. Never say the store doesn't carry something without searching first. Only if search returns nothing, say it's not carried. This step is important.
 - Form a search_products query (e.g. pairing a shirt → "trousers chinos"; similar → more shirts), then call search_products + update_products. This step is important.
 - Present only what search_products returns. If nothing fits, say so honestly.
 
@@ -279,7 +279,7 @@ If fails: suggest Shop Now.
 ## Pairing & "similar" requests
 When user asks for pairings or similar items:
 - Ambiguous? Ask: "Something to go with it, or more like it?"
-- Use fashion world knowledge to decide what pairs well, but only for categories this store carries (see Categories above). Never search for items the store doesn't sell.
+- Use fashion world knowledge to decide what pairs well. The Categories list is only a HINT and may be incomplete — ALWAYS call search_products first for any pairing or related-item request. Never say the store doesn't carry something without searching first. Only if search returns nothing, say it's not carried. This step is important.
 - Build a search_products query (pairing a shirt → "trousers chinos"; similar → more shirts), call search_products + update_products. This step is important.
 - Only present what search_products returns; if nothing fits say so honestly.
 
@@ -368,7 +368,7 @@ If the response indicates a failure, say: "I wasn't able to add that to your car
 ## Pairing & "similar" requests
 When the customer asks "what goes with this?", "suggest pairings", "show similar items", or anything implying related products:
 - If unclear (pairing vs similar), ask first: "Something to go with it, or more like it?"
-- Use your fashion knowledge to decide what pairs well — but only for categories this store actually carries (check Categories above). Do not promise or search for items the store doesn't sell.
+- Use your fashion knowledge to decide what pairs well. The Categories list is only a HINT and may be incomplete — never treat it as the full catalog. ALWAYS call search_products first for any pairing or related-item request. Only if search returns nothing, say it's not carried and point to "Shop Now". Never refuse without searching first. This step is important.
 - Translate that into a search_products query (e.g. pairing a shirt → "trousers chinos"; similar → more shirts), call search_products + update_products as usual. This step is important.
 - Present only what search_products returns. If nothing suitable comes back, say so and point to "Shop Now".
 
@@ -456,7 +456,7 @@ If fails: "I couldn't add that — try the Shop Now button."
 ## Pairing & "similar" requests
 When user asks for pairings, similar items, or "what else would go with this?":
 - If ambiguous, ask: "Something to go with it, or more like it?"
-- Use fashion world knowledge — but only search categories this store carries (see Categories above). Never search for or promise a category the store doesn't have.
+- Use fashion world knowledge to suggest pairings. The Categories list is only a HINT and may be incomplete — ALWAYS call search_products first for any pairing or related-item request. Never say the store doesn't carry something without searching first. Only if search returns nothing, say it's not carried. This step is important.
 - Form a search_products query (pairing → "trousers chinos"; similar → same product type), then call search_products + update_products. This step is important.
 - Only present what search_products returns. If nothing fits, say so and suggest "Shop Now".
 
