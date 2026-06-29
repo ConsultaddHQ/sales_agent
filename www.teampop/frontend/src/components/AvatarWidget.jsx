@@ -294,6 +294,7 @@ function OrbDock({
   onKeyUp,
   onEndSession,
   onRightAction,
+  rightLabel = "Chat",
   scale = "",
   style = {},
   inactive = false,
@@ -376,7 +377,7 @@ function OrbDock({
           className="dock-action text-[11px] font-bold text-gray-300 hover:text-white uppercase tracking-wider"
           onClick={onRightAction}
         >
-          Chat
+          {rightLabel}
         </button>
       </div>
     </div>
@@ -1286,7 +1287,20 @@ function AvatarInner({
     onKeyDown: handleOrbKeyDown,
     onKeyUp: ptt.handleKeyUp,
     onEndSession: endVoiceSession,
-    onRightAction: () => setActiveView("CHAT"),
+    onRightAction: activeView === "PRODUCTS"
+      ? () => setActiveView("CHAT")
+      : activeView === "CHAT" && latestProducts.length > 0
+        ? () => setActiveView("PRODUCTS")
+        : latestProducts.length > 0
+          ? () => setActiveView("PRODUCTS")
+          : () => setActiveView("CHAT"),
+    rightLabel: activeView === "PRODUCTS"
+      ? "Chat"
+      : activeView === "CHAT" && latestProducts.length > 0
+        ? "← Products"
+        : latestProducts.length > 0
+          ? "← Products"
+          : "Chat",
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
