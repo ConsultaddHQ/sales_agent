@@ -1,0 +1,25 @@
+# TeamPop pilot reverse proxy — Xfused (goxfused.com)
+#
+# Replace api.teampop.<TLD> with the real subdomain (must match the DNS
+# A-record and the SEARCH_API_URL/PUBLIC_SEARCH_API_URL/WIDGET_SCRIPT_URL/
+# IMAGE_SERVER_URL baked at onboarding time).
+#
+# Single upstream = the proven topology: everything goes to onboarding-service
+# (:8005), which serves /widget + /images and proxies /search + /product-details
+# to search-service (:8006) internally. This mirrors the working single-tunnel
+# dev setup, so it's the least-surprise choice for launch.
+#
+# OPTIONAL post-pilot optimization (isolates the hot search path from the
+# heavier onboarding process, one less hop) — NOT enabled for launch:
+#   handle /search*          { reverse_proxy localhost:8006 }
+#   handle /product-details* { reverse_proxy localhost:8006 }
+#   handle                   { reverse_proxy localhost:8005 }
+
+# (optional) get Let's Encrypt expiry notices:
+# {
+#     email you@teampop.<TLD>
+# }
+
+api.teampop.<TLD> {
+	reverse_proxy localhost:8005
+}
