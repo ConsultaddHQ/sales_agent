@@ -16,10 +16,10 @@
 #   handle                   { reverse_proxy localhost:8005 }
 
 # (optional) get Let's Encrypt expiry notices:
-# {
-#     email you@teampop.<TLD>
-# }
+ {
+     email gautam.c@consultadd.com
+ }
 
-api.teampop.<TLD> {
+api.teampop.com {
 	reverse_proxy localhost:8005
 }
