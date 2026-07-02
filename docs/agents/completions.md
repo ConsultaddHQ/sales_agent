@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-06-29 — N/A — Context-aware dock button: carousel ↔ chat navigation
+
+- **Status:** Completed
+- **Owner:** Claude Sonnet 4.6
+- **Summary:** The OrbDock's right-side button now reads "Chat" when in PRODUCTS view, and "← Products" when products exist in CHAT or NONE view, letting users navigate back to the carousel without losing session state.
+- **Why:** Previously, closing the carousel or switching to chat had no way back — both X buttons dropped to NONE. Users needed a way to re-open the carousel after dismissing it or after reading the chat transcript.
+- **Files:** `www.teampop/frontend/src/components/AvatarWidget.jsx` — `OrbDock` component (added `rightLabel` prop, line ~296) and `sharedDockProps` block (dynamic action/label based on `activeView` + `latestProducts.length`, line ~1289)
+- **Tradeoffs:** Kept change minimal — no new components, no CSS, no new state. Label changes are derived entirely from existing `activeView` and `latestProducts` values already in scope. The `←` arrow gives directional cue without adding a separate back button.
+- **Verification:** `npm run build` passed (1,286 kB). Manual flow: products appear → dock says "Chat" → click → chat opens → dock says "← Products" → click → carousel reopens. Closing carousel from NONE → dock shows "← Products" to reopen.
+- **Related Decisions:** None
+- **Notes:** Research confirmed contextual toggle beats a dedicated back button for occasional view switching in overlay widgets (Baymard, Entropik/Decode). The `←` prefix follows Smashing Magazine back-button UX guidance: users need to know *what* they're returning to.
+
+---
+
 ## 2026-06-26 — False "we don't carry X" refusal fix + category extraction overhaul
 
 - **Status:** Complete. Re-onboard stores to apply.
