@@ -1,0 +1,22 @@
+[Unit]
+Description=TeamPop search-service (hybrid search API — live shopper hot path)
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/sales_agent/search-service
+EnvironmentFile=/home/ubuntu/sales_agent/search-service/.env
+# --workers 1: on a 2 GB box each worker loads its own copy of both models
+#   (~500-700 MB); more than 1 risks OOM. One async worker already serves
+#   concurrent bursty voice searches. Raise to 2 only on a 4 GB box.
+# --proxy-headers / --forwarded-allow-ips: trust Caddy's X-Forwarded-For so
+#   logs and any IP-keyed limits reflect the real caller, not 127.0.0.1.
+ExecStart=/home/ubuntu/sales_agent/search-service/.venv/bin/uvicorn main:app \
+    --host 0.0.0.0 --port 8006 \
+    --workers 1 \
+    --proxy-headers --forwarded-allow-ips="*"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
