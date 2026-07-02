@@ -35,10 +35,13 @@ logger = logging.getLogger("onboarding-service")
 # FastAPI app
 app = FastAPI(title="TeamPop Onboarding Service", version="3.0.0")
 
-# CORS
+# CORS allowlist: comma-separated origins via ALLOWED_ORIGINS; defaults to "*" for dev.
+# Set to the client's storefront domain(s) in production (e.g. https://goxfused.com).
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
