@@ -456,7 +456,7 @@ async def search(
     # ── Measure embed + RPC duration so callers can correlate latency ──
     t0 = time.perf_counter()
     products, queue_wait_ms, embedding_ms, rpc_ms = await _hybrid_search_products(
-        sb=sb, store_id=req.store_id, query=req.query, final_limit=5
+        sb=sb, store_id=req.store_id, query=req.query, final_limit=12
     )
     total_ms = int((time.perf_counter() - t0) * 1000)
     response.headers["X-Search-Duration-Ms"] = str(total_ms)
