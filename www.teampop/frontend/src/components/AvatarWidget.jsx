@@ -386,8 +386,10 @@ function OrbDock({
 
 // ─── ProductDetails ───────────────────────────────────────────────────────────
 
-const ProductDetails = ({ product, highlightPrice, isCarted, onShopNow, onAddToCart }) => {
+const ProductDetails = ({ product, highlightPrice, cartedCount = 0, onShopNow, onAddToCart }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [qty, setQty] = useState(1);
+
   const price = product.price
     ? `₹${Number(product.price).toLocaleString("en-IN")}`
     : "Check Price";
@@ -410,22 +412,37 @@ const ProductDetails = ({ product, highlightPrice, isCarted, onShopNow, onAddToC
         >
           Shop Now
         </a>
-        {isCarted ? (
-          <button
-            disabled
-            className="shopping-cta text-center bg-green-700 text-white px-5 py-2 rounded-full font-bold text-sm opacity-80 cursor-default"
-          >
-            Added ✓
-          </button>
-        ) : onAddToCart && (
-          <button
-            onClick={(e) => { e.preventDefault(); onAddToCart(product); }}
-            className="shopping-cta text-center bg-green-500 text-white px-5 py-2 rounded-full font-bold text-sm hover:bg-green-600 transition"
-          >
-            Add to Cart
-          </button>
+        {onAddToCart && (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center border border-white/25 rounded-full overflow-hidden">
+              <button
+                onClick={(e) => { e.preventDefault(); setQty((q) => Math.max(1, q - 1)); }}
+                className="w-7 h-7 flex items-center justify-center text-white text-sm hover:bg-white/10 transition"
+                aria-label="Decrease quantity"
+              >
+                −
+              </button>
+              <span className="w-6 text-center text-sm font-semibold">{qty}</span>
+              <button
+                onClick={(e) => { e.preventDefault(); setQty((q) => Math.min(10, q + 1)); }}
+                className="w-7 h-7 flex items-center justify-center text-white text-sm hover:bg-white/10 transition"
+                aria-label="Increase quantity"
+              >
+                +
+              </button>
+            </div>
+            <button
+              onClick={(e) => { e.preventDefault(); onAddToCart(product, qty); }}
+              className="shopping-cta text-center bg-green-500 text-white px-5 py-2 rounded-full font-bold text-sm hover:bg-green-600 transition"
+            >
+              {cartedCount > 0 ? "Add more" : "Add to Cart"}
+            </button>
+          </div>
         )}
       </div>
+      {cartedCount > 0 && (
+        <div className="text-xs text-green-400 font-semibold">In cart: {cartedCount}</div>
+      )}
       {product.description && (
         <div className="flex flex-col gap-1">
           <div
@@ -533,7 +550,13 @@ function AvatarInner({
   const dismissNudge = useCallback(() => { setShowNudge(false); }, []);
   const [cartToast, setCartToast] = useState(null); // null | "adding" | "success" | "error"
   const cartToastTimerRef = useRef(null);
-  const [cartedIds, setCartedIds] = useState(() => new Set());
+  // Map<productId, qty added this session> — drives the per-product "In cart: N" /
+  // "Add N more" wording. The authoritative cart badge (cartCount/cartSubtotalCents)
+  // comes from Shopify's own /cart.js, not from this map.
+  const [cartedQty, setCartedQty] = useState(() => new Map());
+  const [cartCount, setCartCount] = useState(0);
+  const [cartSubtotalCents, setCartSubtotalCents] = useState(0);
+  const demoCartCountRef = useRef(0); // simulated cart count on off-store demo/test pages
   const variantCacheRef = useRef(new Map());
   const cartEnabled = window.__TEAM_POP_CART_ENABLED__ !== false;
   // Task 3: session metrics for feedback
@@ -901,7 +924,8 @@ function AvatarInner({
     setChatHistory([]);
     setAgentSubtitle("");
     setHighlightPrice(false);
-    setCartedIds(new Set());
+    setCartedQty(new Map());
+    refreshCartState(); // pick up any pre-existing cart contents (e.g. added before opening the widget)
     variantCacheRef.current.clear();
     const now = Date.now();
     inactivityRef.current = { startAt: now, lastMeaningfulUserAt: now };
@@ -911,7 +935,7 @@ function AvatarInner({
     // for cleanest agent audio (raw PCM, no Opus/PLC artifacts) — the old first_message
     // drop bug that forced WebRTC is fixed in @elevenlabs/client ≥1.13.
     conversation.startSession({ agentId, connectionType: CONNECTION_TYPE });
-  }, [conversation, agentId]);
+  }, [conversation, agentId, refreshCartState]);
 
   const endVoiceSession = useCallback(() => {
     console.log("[session] endVoiceSession called manually by user.");
@@ -997,19 +1021,54 @@ function AvatarInner({
     } catch { return []; }
   }, []);
 
+  // Refresh the cart badge from Shopify's own cart (source of truth — also picks up
+  // items added before the widget opened, or via the product page's own Add to Cart).
+  // On demo/test pages /cart.js doesn't exist, so mirror the locally-simulated count.
+  const refreshCartState = useCallback(async () => {
+    if (window.__TEAM_POP_DEMO__) {
+      setCartCount(demoCartCountRef.current);
+      return;
+    }
+    try {
+      const r = await fetch('/cart.js');
+      if (!r.ok) return;
+      const data = await r.json();
+      setCartCount(data.item_count ?? 0);
+      setCartSubtotalCents(data.total_price ?? 0);
+    } catch (_e) { /* ignore — cart bar just stays hidden/stale */ }
+  }, []);
+
+  // Navigate to the Shopify cart page — NOT /checkout. The cart page hosts both
+  // native checkout AND the merchant's Shiprocket express (UPI/GPay/PhonePe) button;
+  // going straight to /checkout would bypass Shiprocket entirely.
+  const goToCart = useCallback(() => {
+    if (window.__TEAM_POP_DEMO__) {
+      console.log("[cart] Demo mode — would navigate to /cart here.");
+      return;
+    }
+    window.location.href = '/cart';
+  }, []);
+
+  // Load the shopper's existing cart on widget mount (before any voice session starts) —
+  // covers the case where they already added items via the store's own UI (case 9).
+  useEffect(() => { refreshCartState(); }, [refreshCartState]);
+
   // Shared add-to-cart logic used by both the voice tool and the manual button.
   const performAddToCart = useCallback(async (product, variantIndex = 0, quantity = 1) => {
     if (!cartEnabled) {
       return "This store uses Shop Now — open the product link to purchase.";
     }
+    const qty = Math.max(1, Number(quantity) || 1);
     // On demo pages simulate success immediately — /cart/add.js doesn't exist here
     // and variant fetch would hit the wrong origin, so skip both.
     if (window.__TEAM_POP_DEMO__) {
       setCartToast("success");
       if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
       cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
-      setCartedIds(prev => { const n = new Set(prev); n.add(String(product.id)); return n; });
-      return `Added ${product.name} to cart!`;
+      setCartedQty(prev => { const n = new Map(prev); n.set(String(product.id), (n.get(String(product.id)) || 0) + qty); return n; });
+      demoCartCountRef.current += qty;
+      refreshCartState();
+      return `Added ${qty > 1 ? `${qty} ` : ""}${product.name} to cart!`;
     }
     // Real store: fetch variant ID on demand (variants not included in search results).
     const localVariants = product.metadata?.variants || product.variants || [];
@@ -1022,22 +1081,23 @@ function AvatarInner({
       const r = await fetch('/cart/add.js', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: variant.id, quantity }),
+        body: JSON.stringify({ id: variant.id, quantity: qty }),
       });
       if (!r.ok) throw new Error(await r.text());
       await r.json();
       setCartToast("success");
       if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
       cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
-      setCartedIds(prev => { const n = new Set(prev); n.add(String(product.id)); return n; });
-      return `Added ${product.name} to cart!`;
+      setCartedQty(prev => { const n = new Map(prev); n.set(String(product.id), (n.get(String(product.id)) || 0) + qty); return n; });
+      refreshCartState(); // pick up the real Shopify-side count/subtotal
+      return `Added ${qty > 1 ? `${qty} ` : ""}${product.name} to cart!`;
     } catch (err) {
       setCartToast("error");
       if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
       cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
       return `Could not add to cart. Please try the Shop Now link instead.`;
     }
-  }, [cartEnabled, fetchVariants]);
+  }, [cartEnabled, fetchVariants, refreshCartState]);
 
   useConversationClientTool("add_to_cart", (parameters) => {
     if (!cartEnabled) return Promise.resolve("This store uses Shop Now — open the product link to purchase.");
@@ -1045,6 +1105,15 @@ function AvatarInner({
     const product = latestProductsRef.current.find(p => String(p.id) === String(product_id));
     if (!product) return Promise.resolve("Product not found in current view");
     return performAddToCart(product, variant_index, quantity);
+  });
+
+  // Voice-driven cart navigation — routes to /cart (not /checkout) so both native
+  // checkout and the merchant's Shiprocket express option stay available.
+  useConversationClientTool("go_to_cart", () => {
+    if (!cartEnabled) return Promise.resolve("This store uses Shop Now — there's no cart to show.");
+    if (window.__TEAM_POP_DEMO__) return Promise.resolve("This is a demo page — cart navigation is disabled here.");
+    goToCart();
+    return Promise.resolve("Navigating to the cart now.");
   });
 
   // ── Graceful session end (Task 1 — for timeouts) ─────────────────────────────
@@ -1342,6 +1411,23 @@ function AvatarInner({
             </div>
           )}
 
+          {/* Cart bar — appears once the cart is non-empty. Routes to /cart, never
+              /checkout, so the merchant's Shiprocket express option stays reachable. */}
+          {cartEnabled && cartCount > 0 && (
+            <div className="flex-none flex items-center justify-between gap-2 px-4 pt-14 pb-2 bg-black relative z-20">
+              <span className="text-white text-xs font-semibold">
+                🛒 {cartCount} item{cartCount !== 1 ? "s" : ""}
+                {cartSubtotalCents > 0 ? ` · ₹${(cartSubtotalCents / 100).toLocaleString("en-IN")}` : ""}
+              </span>
+              <button
+                onClick={() => { sessionMetricsRef.current.shopNowClicked = true; goToCart(); }}
+                className="text-xs font-bold text-black bg-white px-3 py-1.5 rounded-full hover:bg-gray-200 transition flex-shrink-0"
+              >
+                Go to Cart
+              </button>
+            </div>
+          )}
+
           {latestProducts.length > 0 ? (
             <>
               {/* Image — top 48%, object-contain so full product is visible */}
@@ -1367,13 +1453,14 @@ function AvatarInner({
               <div className="flex-1 w-full overflow-y-auto bg-black px-4 pt-3 pb-2 min-h-0 pointer-events-auto">
                 {latestProducts[safeIndex] && (
                   <ProductDetails
+                    key={latestProducts[safeIndex]?.id}
                     product={latestProducts[safeIndex]}
                     highlightPrice={highlightPrice}
-                    isCarted={cartedIds.has(String(latestProducts[safeIndex]?.id))}
+                    cartedCount={cartedQty.get(String(latestProducts[safeIndex]?.id)) || 0}
                     onShopNow={() => { sessionMetricsRef.current.shopNowClicked = true; }}
-                    onAddToCart={cartEnabled ? (product) => {
+                    onAddToCart={cartEnabled ? (product, qty) => {
                       setCartToast("adding");
-                      performAddToCart(product, 0, 1);
+                      performAddToCart(product, 0, qty);
                     } : undefined}
                   />
                 )}

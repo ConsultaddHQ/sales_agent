@@ -351,7 +351,7 @@ Use when: customer references a product by position (e.g. "the second one"). Als
 - Clarify, don't guess: if a request is vague or could mean several things, ask ONE short clarifying question grounded in the store's Categories before searching — never invent an answer or refuse for lack of clarity. This step is important.
 - When first showing products, say ONLY name/type and price — never recite detailed specifications unprompted. This step is important.
 - For specifics (variants, options, availability, price by variant, detailed specifications, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. usage instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
-- For checkout, shipping, returns, or store-policy questions, route to "Shop Now".
+- For checkout or "I'm ready to pay" / "take me to my cart" requests, give a brief closing line then call go_to_cart (see below). For shipping, returns, or store-policy questions, route to "Shop Now" instead.
 
 ## add_to_cart
 Call only when the customer explicitly asks to add an item to their cart or buy it.
@@ -363,9 +363,15 @@ Before calling add_to_cart:
 3. Wait for their answer. Find the zero-based index of their chosen option in the variants list and pass it as variant_index.
    If the customer says "any" or "doesn't matter", use variant_index 0.
 Skip the option step if the product has a single variant (as most do) or get_product_details already confirmed a single variant.
+4. Quantity: if the customer mentions a number ("add two", "I'll take three"), pass it as quantity. Otherwise default to quantity 1 — do not ask unless they imply more than one.
 
-After a successful response, say: "I've added [product name] to your cart!"
+After a successful response, say: "I've added [quantity, if more than one] [product name] to your cart!" Then offer a next step: "Want to keep browsing, or head to your cart to check out?"
 If the response indicates a failure, say: "I wasn't able to add that to your cart — you can use the Shop Now button instead."
+
+## go_to_cart
+Use when the customer wants to check out, pay, or see their cart — e.g. "take me to checkout", "I'm ready to pay", "show me my cart" — or when they answer "checkout" to your post-add-to-cart offer.
+Say a brief warm closing line FIRST (e.g. "Great choice — taking you to your cart now!"), THEN call go_to_cart. This step is important: calling this tool navigates away and ends the conversation, so the closing line must come first.
+Do not call this for shipping, returns, or store-policy questions — route those to "Shop Now" instead.
 
 ## Pairing & "similar" requests
 When the customer asks "what goes with this?", "suggest pairings", "show similar items", or anything implying related products:
@@ -741,6 +747,27 @@ class ElevenLabsAgentCreator:
                     "required": ["product_id"]
                 }
             },
+            # --- Client tool: go_to_cart ---
+            {
+                "type": "client",
+                "name": "go_to_cart",
+                "description": (
+                    "Navigate the customer to their shopping cart page, where they can review "
+                    "items and check out (native checkout or the store's express payment option). "
+                    "Call this when the customer wants to check out, pay, or see their cart — e.g. "
+                    "'take me to checkout', 'I'm ready to pay', 'show me my cart'. Speak a brief "
+                    "closing line BEFORE calling this tool — the page will navigate away and end "
+                    "this conversation. Do NOT call this for shipping, returns, or store-policy "
+                    "questions; use the Shop Now link for those instead."
+                ),
+                "expects_response": False,
+                "execution_mode": "immediate",
+                "tool_error_handling_mode": "auto",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            },
         ]
 
     def _verify_agent(self, agent_id: str) -> None:
@@ -880,7 +907,7 @@ class ElevenLabsAgentCreator:
                 logger.warning("⚠️ ignore_default_personality is NOT true — ElevenLabs default personality is active")
             if not stored_tools:
                 logger.error("❌ CRITICAL: Agent has NO tools configured!")
-            expected_tool_names = {"search_products", "update_products", "get_product_details", "update_carousel_main_view", "end_session", "add_to_cart"}
+            expected_tool_names = {"search_products", "update_products", "get_product_details", "update_carousel_main_view", "end_session", "add_to_cart", "go_to_cart"}
             if actual_tool_names != expected_tool_names:
                 logger.warning(
                     "⚠️ Tool mismatch. Expected exactly %s, got %s",
