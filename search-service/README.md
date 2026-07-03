@@ -40,6 +40,7 @@ Create a `.env` from `.env.example` with the following vars:
 - `OPENROUTER_MODEL` – model name for completions (default `xai/grok-beta`).
 - `SEARCH_RATE_LIMIT` – per-client limit for `POST /search` (default `30/minute`).
 - `SEARCH_EMBEDDING_CONCURRENCY` – concurrency semaphore limit for model encoding (default `2`).
+- `RERANK_SCORE_MARGIN` – relevance cutoff (default `4.0`). After reranking, `/search` keeps only results within this cross-encoder score margin of the top hit, so specific queries ("moisturizer") drop the irrelevant tail. Browse/broad queries (browse phrase, or a very low top score) bypass the cutoff and return the full catalog. Tune from the `Reranked … kept_scores=[…]` log line; set very high (~`999`) to disable.
 - `EMBEDDING_TIMEOUT` – timeout in seconds for embedding generation (default `5.0`).
 - `RPC_TIMEOUT` – timeout in seconds for Supabase RPC search queries (default `5.0`).
 - `UVICORN_WORKERS` – worker count for non-reload runs (default `4`).

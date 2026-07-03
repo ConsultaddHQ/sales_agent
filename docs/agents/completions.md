@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-07-03 — N/A — Xfused pilot launch: search relevance UX + domain-neutral agent
+
+- **Status:** Completed
+- **Owner:** Claude Opus 4.8
+- **Summary:** Launched the first real client (Xfused — goxfused.com, 6-product skincare) on an isolated `release/xfused-pilot` branch deployed to AWS Lightsail Mumbai. Fixed a chain of search/agent issues so the demo behaves: full small catalog surfaced, agent talks like a skincare (not clothing) advisor, and the carousel matches what the agent narrates.
+- **Why:** The generic prompt was apparel-specific ("size/fabric/fashion pairing"), search truncated a 6-product catalog to 5, then over-corrected — a relevance cutoff hid products on "show me everything." Each broke the pilot demo.
+- **Files:** `onboarding-service/elevenlabs_agent.py` (`PROMPT_CLAUDE` → domain-neutral + search-first/clarify guardrails), `search-service/main.py` (`final_limit` 5→12 at call site; rerank relevance cutoff + browse-intent bypass), `shared/config.py` (`RERANK_SCORE_MARGIN`), `testing/load/loadtest.py` + `latency_report.sh`, `testing/monitoring/monitor_agent_cost.py`, `deploy/` (Caddyfile + systemd units).
+- **Tradeoffs:** Prompt neutralized only for `PROMPT_CLAUDE` (the model in use); other 4 templates deferred. Currency (₹) fixed via UI-pasted prompt + the widget's hardcoded ₹, not yet detected from the store — deferred. Onboarding run on the box (Shopify needs no Chromium) after a laptop `.env` `STORE_IMAGES_PATH` pointed at a non-existent path, nulling images.
+- **Verification:** `curl /search` — "moisturizer"→2, "lip balm"→2, "show me everything"→6 (verified via `Reranked … browse=… kept N` logs); load test (~5.6 req/s CPU-bound ceiling on 2 vCPU); voice conversation on the test page confirmed skincare-appropriate narration matching the carousel.
+- **Related Decisions:** 2026-07-03 relevance cutoff + browse bypass (see decisions.md); builds on 2026-06-25 search-quality overhaul.
+- **Notes:** `RERANK_SCORE_MARGIN` (default 4.0) is env-tunable from the `kept_scores` logs; set high (~999) to disable. Post-pilot fast-follows tracked in roadmap: search cache (#1), currency-awareness, neutralize other 4 prompt templates, full production-hardening merge.
+
 ## 2026-06-29 — N/A — Context-aware dock button: carousel ↔ chat navigation
 
 - **Status:** Completed

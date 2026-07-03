@@ -71,6 +71,7 @@ These cannot be done by an agent — they require account access, credentials, o
 | Multi-language support | Agent | ⬜ Pending | 4 hrs | i18n for the marketing website |
 | Webhook retry logic for failed notifications | Agent | ⬜ Pending | 1 hr | Currently fire-and-forget, no retry on failure |
 | Admin dashboard: search/filter requests | Agent | ⬜ Pending | 1 hr | Currently shows all requests in a flat list |
+| Explicit agent-passed "browse all" flag | Agent | ⬜ Pending | 1 hr | Durable fix for the rerank browse-bypass edge (2026-07-03 decision): the agent reformulates "show me everything" freely, so phrase/low-score detection can miss. Add a `browse`/`limit` param to `search_products` the agent sets for full-catalog intent, and skip the relevance cutoff when set — more reliable than inferring from query text. |
 
 ---
 
