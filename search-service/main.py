@@ -363,7 +363,7 @@ async def _hybrid_search_products(
     sb: Client,
     store_id: str,
     query: str,
-    final_limit: int = 5,
+    final_limit: int = 12,
 ) -> tuple[List[ProductResult], int, int, int]:
     query_embedding, queue_wait_ms, embedding_ms = await _encode_query_embedding(query)
 
