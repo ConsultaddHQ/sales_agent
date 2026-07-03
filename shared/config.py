@@ -12,6 +12,11 @@ RERANK_MODEL = os.getenv("RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 RERANK_CANDIDATES = int(os.getenv("RERANK_CANDIDATES", "30"))
 RERANK_TIMEOUT = float(os.getenv("RERANK_TIMEOUT", "3.0"))
 RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() == "true"
+# Relevance cutoff: after reranking, keep only results whose cross-encoder score is
+# within this margin of the top score. Trims the irrelevant tail on specific queries
+# ("moisturizer" -> just moisturizers) while keeping broad queries full (clustered
+# scores all fall within the margin). Set very high (e.g. 999) to disable.
+RERANK_SCORE_MARGIN = float(os.getenv("RERANK_SCORE_MARGIN", "4.0"))
 
 # ── Defaults ──
 MAX_PRODUCTS = 200

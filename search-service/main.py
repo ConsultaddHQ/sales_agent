@@ -169,7 +169,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestLoggingMiddleware)
 
-from shared.config import IMAGE_SERVER_URL, RERANK_CANDIDATES, RERANK_TIMEOUT, RERANK_ENABLED
+from shared.config import IMAGE_SERVER_URL, RERANK_CANDIDATES, RERANK_TIMEOUT, RERANK_ENABLED, RERANK_SCORE_MARGIN
 from shared.db import get_supabase
 from shared.embeddings import get_embedder
 from shared.parsing import strip_html
@@ -401,10 +401,16 @@ async def _hybrid_search_products(
                 timeout=RERANK_TIMEOUT,
             )
             ranked = sorted(zip(scores, candidates), key=lambda x: x[0], reverse=True)
-            products = [p for _, p in ranked[:final_limit]]
+            # Relevance cutoff: keep only results within RERANK_SCORE_MARGIN of the top
+            # score, so specific queries ("moisturizer") drop the irrelevant tail while
+            # broad queries (clustered scores) stay full. Always keep at least the top 1.
+            top_score = ranked[0][0]
+            kept = [(s, p) for s, p in ranked if s >= top_score - RERANK_SCORE_MARGIN] or [ranked[0]]
+            products = [p for _, p in kept[:final_limit]]
             logger.info(
-                f"Reranked {len(candidates)} → {len(products)} for query={query!r} "
-                f"| top_score={ranked[0][0]:.3f} | rpc_ms={rpc_ms}"
+                f"Reranked {len(candidates)} → kept {len(products)} for query={query!r} "
+                f"| top_score={top_score:.3f} | cutoff={top_score - RERANK_SCORE_MARGIN:.3f} "
+                f"| kept_scores={[round(s, 2) for s, _ in kept[:final_limit]]} | rpc_ms={rpc_ms}"
             )
         except Exception as e:
             logger.warning(f"Reranker failed (falling back to Stage-1 order): {e}")
