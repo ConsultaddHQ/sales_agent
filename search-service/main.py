@@ -359,6 +359,22 @@ def _build_rerank_doc(p: ProductResult) -> str:
     return " ".join(p for p in parts if p)
 
 
+# Browse/broad intent — the shopper wants the whole catalog, so the relevance
+# cutoff must NOT trim results (the agent expands "show me everything" into queries
+# like "all products facewash moisturiser lip balm", which otherwise score middling
+# and lose the tail). Detected by phrase; a very low top score is a second signal.
+_BROWSE_TERMS = (
+    "everything", "all product", "all your", "all of them", "all items",
+    "full range", "full catalog", "entire", "whole range",
+    "show me all", "show all", "what do you have", "what do you sell", "what products",
+)
+
+
+def _is_browse_query(query: str) -> bool:
+    q = query.lower()
+    return any(term in q for term in _BROWSE_TERMS)
+
+
 async def _hybrid_search_products(
     sb: Client,
     store_id: str,
@@ -401,15 +417,19 @@ async def _hybrid_search_products(
                 timeout=RERANK_TIMEOUT,
             )
             ranked = sorted(zip(scores, candidates), key=lambda x: x[0], reverse=True)
-            # Relevance cutoff: keep only results within RERANK_SCORE_MARGIN of the top
-            # score, so specific queries ("moisturizer") drop the irrelevant tail while
-            # broad queries (clustered scores) stay full. Always keep at least the top 1.
             top_score = ranked[0][0]
-            kept = [(s, p) for s, p in ranked if s >= top_score - RERANK_SCORE_MARGIN] or [ranked[0]]
+            # Browse/broad intent → return the full ranked set (no trim). Specific
+            # queries → keep only results within RERANK_SCORE_MARGIN of the top score,
+            # so "moisturizer" drops the irrelevant tail. Always keep at least the top 1.
+            browse = _is_browse_query(query) or top_score < 0
+            if browse:
+                kept = ranked
+            else:
+                kept = [(s, p) for s, p in ranked if s >= top_score - RERANK_SCORE_MARGIN] or [ranked[0]]
             products = [p for _, p in kept[:final_limit]]
             logger.info(
                 f"Reranked {len(candidates)} → kept {len(products)} for query={query!r} "
-                f"| top_score={top_score:.3f} | cutoff={top_score - RERANK_SCORE_MARGIN:.3f} "
+                f"| browse={browse} | top_score={top_score:.3f} "
                 f"| kept_scores={[round(s, 2) for s, _ in kept[:final_limit]]} | rpc_ms={rpc_ms}"
             )
         except Exception as e:
