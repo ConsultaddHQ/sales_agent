@@ -1,7 +1,7 @@
 # Roadmap — Tasks, Improvements & Pending Work
 
 > **Purpose:** Single source of truth for what needs to be done, by whom, and priority.
-> **Updated:** 2026-06-19
+> **Updated:** 2026-07-03
 > **Rule:** Agents update this after completing work or discovering new tasks. Remove done items, add new ones.
 
 ---
@@ -53,6 +53,8 @@ These cannot be done by an agent — they require account access, credentials, o
 | Widget integration/docs page for merchants | Agent | ⬜ Pending | 3 hrs | Show how to embed `<team-pop-agent>` |
 | Mobile responsive polish on admin dashboard | Agent | ⬜ Pending | 1 hr | Admin page works but not optimized for mobile |
 | Error toast notifications on website forms | Agent | ⬜ Pending | 30 min | Better UX for form validation errors |
+| **[Post-pilot] Currency-awareness (stop hardcoding symbols)** | Agent | ⬜ Pending | 2–3 hrs | Currency is assumed, not detected. `shopify.py:158` / `threadless.py:97` / `universal.py:232` hardcode `$` in `price_range` (feeds the agent prompt); the widget hardcodes `₹` (`AvatarWidget.jsx:96,392`). Wrong for any non-matching store (INR store shows `$` in prompt; USD store shows `₹` in widget). Fix: detect store currency (Shopify exposes it), add `currency` to `store_context` + a `{currency}` placeholder in all prompt templates, make the widget symbol dynamic. Xfused pilot mitigated by manually pasting `Rs`/`₹` into the agent prompt. |
+| **[Post-pilot] Neutralize apparel language in the other 4 prompt templates** | Agent | ⬜ Pending | 30 min | `PROMPT_CLAUDE` was made domain-neutral (colors/fabric/size/fashion-pairing → options/variants/specs) for the Xfused pilot. GPT/Gemini/Qwen/GLM templates in `elevenlabs_agent.py` still carry the same apparel wording — apply the identical edits so non-apparel stores (skincare, GPUs) work on any model. |
 
 ---
 
@@ -93,8 +95,8 @@ Move items here when done (keep last 5 for reference, then delete oldest).
 
 | Date | Task | Who |
 |------|------|-----|
+| 2026-07-03 | Xfused skincare pilot: domain-neutral `PROMPT_CLAUDE` (apparel→neutral wording), `final_limit 5→12` in search-service (surface small catalogs fully), and strict search-first + clarify guardrails for unfamiliar product names. On `release/xfused-pilot`. | Claude |
 | 2026-06-19 | Enforced `get_product_details` → `update_carousel_main_view` tool chain at three levels (tool description, `## Tools`, `# Guardrails`) across all 5 model prompts; disabled carousel click-to-agent context (visual-only now). | Antigravity |
 | 2026-06-18 | Fixed carousel update delay (1-3s) by setting `expects_response: True` on client tools; fixed duplicate agent speech by consolidating thumbnail click into a single `sendUserMessage`. | Antigravity |
 | 2026-06-18 | Resolved search service hangs (PyTorch CPU thread limits + semaphore gate); implemented smart inactivity timer (pauses during agent speech, grace windows); fixed VAD startup silence. | Antigravity |
 | 2026-04-17 | Voice-agent latency STEP 3: A/B test picked Claude Haiku 4.5; code defaults flipped, harness moved to `testing/latency/` with new `upgrade_agent_model.py`. | Claude |
-| 2026-04-17 | Voice-agent latency STEP 1+2+4: search warmup, timing headers, proxy client reuse, HNSW/GIN database search indices, tool-first prompt rule. | Claude |
