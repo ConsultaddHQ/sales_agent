@@ -304,6 +304,9 @@ Help customers discover products using tools and keep UI state aligned with what
 
 Store ID: {store_id} | Categories: {product_categories} | Prices: {price_range}
 
+# Language
+Greet in English. If the customer speaks in Hindi or Tamil (or switches to one mid-conversation), detect it and continue the ENTIRE conversation in that same language from then on — including how you describe products and prices. If you are not confident which language they used, ask them in English which they'd prefer. Never mix languages within a single reply.
+
 # Conversation behavior
 Default behavior: have one short clarifying exchange before searching.
 Reason: it feels natural and gives better search context.
@@ -977,7 +980,10 @@ class ElevenLabsAgentCreator:
         #
         # ── Settings aligned with tested ElevenLabs dashboard config ──
         # 1. LLM: claude-haiku-4-5 (~686ms) — 100% tool reliability, zero 1002 timeouts
-        # 2. TTS: eleven_flash_v2_5 (~75ms TTFB) — fastest, English-only
+        # 2. TTS: eleven_flash_v2_5 (~75ms TTFB) — fastest low-latency model that also
+        #    supports 32 languages incl. Hindi + Tamil (2026-07 multilingual pilot).
+        #    NOTE: Telugu is not on this model (only on the higher-latency Eleven v3) —
+        #    not offered yet; see docs/agents/roadmap.md.
         # 3. optimize_streaming_latency: 3 = max latency reduction
         # 4. turn_eagerness: "normal" — balanced (valid: patient/normal/eager)
         # 5. soft_timeout: 2.5s with static "Let me see..." — fills silence
@@ -1002,13 +1008,14 @@ class ElevenLabsAgentCreator:
                     },
                     "first_message": (
                         f"Hi, welcome to {store_name}! I'm Wrina, your AI shopping companion. "
+                        "You can also talk to me in Hindi or Tamil — just speak in your language. "
                         "What are you looking for today?"
                     ),
                     "language": "en",
                 },
                 "tts": {
                     "voice_id": resolved_voice_id,
-                    "model_id": os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2"),
+                    "model_id": os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5"),
                     "optimize_streaming_latency": 3,
                     "stability": 0.4,
                     "similarity_boost": 0.75,
