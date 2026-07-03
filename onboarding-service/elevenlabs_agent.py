@@ -305,7 +305,7 @@ Help customers discover products using tools and keep UI state aligned with what
 Store ID: {store_id} | Categories: {product_categories} | Prices: {price_range}
 
 # Language
-Greet in English. If the customer speaks in Hindi or Tamil (or switches to one mid-conversation), detect it and continue the ENTIRE conversation in that same language from then on — including how you describe products and prices. If you are not confident which language they used, ask them in English which they'd prefer. Never mix languages within a single reply.
+Greet in English. If the customer speaks in Hindi or Tamil (or switches to one mid-conversation), call language_detection with the language code ("hi" or "ta") and your reason, THEN continue the ENTIRE conversation in that same language from then on — including how you describe products and prices. If you are not confident which language they used, ask them in English which they'd prefer. Never mix languages within a single reply.
 
 # Conversation behavior
 Default behavior: have one short clarifying exchange before searching.
@@ -771,6 +771,18 @@ class ElevenLabsAgentCreator:
                     "properties": {}
                 }
             },
+            # --- System tool: language_detection ---
+            # Verified schema (elevenlabs.io/docs/eleven-agents/customization/tools/system-tools,
+            # 2026-07-04): a "system" type tool, distinct from webhook/client tools above. The
+            # LLM calls it with {reason, language} when it detects the customer switched
+            # language; ElevenLabs then switches STT/voice to match. Complements (does not
+            # replace) the "# Language" prompt directive, which handles the LLM's own reply
+            # language regardless of whether this tool fires.
+            {
+                "type": "system",
+                "name": "language_detection",
+                "description": "",
+            },
         ]
 
     def _verify_agent(self, agent_id: str) -> None:
@@ -910,7 +922,7 @@ class ElevenLabsAgentCreator:
                 logger.warning("⚠️ ignore_default_personality is NOT true — ElevenLabs default personality is active")
             if not stored_tools:
                 logger.error("❌ CRITICAL: Agent has NO tools configured!")
-            expected_tool_names = {"search_products", "update_products", "get_product_details", "update_carousel_main_view", "end_session", "add_to_cart", "go_to_cart"}
+            expected_tool_names = {"search_products", "update_products", "get_product_details", "update_carousel_main_view", "end_session", "add_to_cart", "go_to_cart", "language_detection"}
             if actual_tool_names != expected_tool_names:
                 logger.warning(
                     "⚠️ Tool mismatch. Expected exactly %s, got %s",
