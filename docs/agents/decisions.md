@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-07-04: Multilingual agents use language_presets + language_detection, not a multilingual base TTS model
+
+- **Decision:** English-primary agents keep `tts.model_id = eleven_flash_v2` (never `eleven_flash_v2_5` or `eleven_multilingual_v2`). Hindi/Tamil support is added via two confirmed-API-settable fields on `create_agent()`: `additional_languages` (populates `conversation_config.language_presets`, a sibling of `agent`, each with a translated `first_message` override) and `hinglish_mode` (boolean on `conversation_config.agent`, blends Hindi-English when the active language is Hindi). Both also proved safe to send at `create_agent()` time without touching `update_agent()`.
+- **Context:** The 2026-04-17 latency A/B test picked `eleven_flash_v2_5` as the TTS default and a comment claimed it was needed for "32 languages incl. Hindi + Tamil" — this was never actually validated against a live English-primary agent. Attempting to PATCH an English agent's `tts.model_id` to `eleven_flash_v2_5` got a hard 400: `"English Agents must use turbo or flash v2"`. Also corrected a prior wrong assumption (roadmap 2026-07-03 entry) that `language_presets` was UI-only — it is API-settable on both create and update, per ElevenLabs docs (`docs/eleven-agents/customization/tools/system-tools/language-detection`, `.../voice/customization/language`).
+- **Rationale:** The base TTS model choice and the multilingual capability are orthogonal — language switching is handled by `language_presets` + the `language_detection` system tool at the conversation level, not by picking a "multilingual" base model (which the platform disallows for English-primary agents anyway).
+- **Alternatives considered:** (a) Set agent's primary `language` to something other than `en` — rejected, the store's default customer is English-speaking. (b) Per-language TTS override via `tts.supported_voices[].model_family` — plausible per the multi-voice-support docs but unverified schema; not attempted, flagged for a future pass if Hindi/Tamil pronunciation quality on `eleven_flash_v2` turns out to be poor in live testing.
+- **Consequences:** `.env.example`, `ELEVENLABS_TTS_MODEL` default, and the `elevenlabs_agent.py` comment block were all corrected to `eleven_flash_v2`. Telugu remains unsupported by any of ElevenLabs' real-time conversational models (`eleven_flash_v2`, `eleven_flash_v2_5`, `eleven_multilingual_v2` all exclude it; only the non-realtime "Eleven v3" lists it) — not offered until the user provides contrary evidence they mentioned having (an ElevenLabs "v3 conversation" claim) or ElevenLabs ships real-time Telugu support.
+- **Status:** Active
+- **Agent/Author:** Claude
+
+---
+
 ## 2026-07-03: Rerank relevance cutoff with browse-intent bypass
 
 - **Decision:** After the cross-encoder rerank in `search-service/main.py`, `/search` no longer returns a fixed top-N; it applies a **relevance cutoff** — keep only results whose score is within `RERANK_SCORE_MARGIN` (default 4.0, env-tunable) of the top score — **except for browse/broad queries**, which bypass the cutoff and return the full ranked set. Browse intent is detected by phrase (`_BROWSE_TERMS`: "everything", "all product", "full range", …) or a very low top score (`< 0`). Always keeps ≥1; the reranker-disabled/error fallback paths are unchanged.

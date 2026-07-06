@@ -305,7 +305,10 @@ Help customers discover products using tools and keep UI state aligned with what
 Store ID: {store_id} | Categories: {product_categories} | Prices: {price_range}
 
 # Language
-Greet in English. If the customer speaks in Hindi or Tamil (or switches to one mid-conversation), call language_detection with the language code ("hi" or "ta") and your reason, THEN continue the ENTIRE conversation in that same language from then on — including how you describe products and prices. If you are not confident which language they used, ask them in English which they'd prefer. Never mix languages within a single reply.
+Greet in English. Then match the customer:
+- If they speak Hindi or Hinglish (Hindi-English mix), call language_detection with "hi" and your reason, THEN continue in natural Hinglish — the way people actually talk in urban India, blending Hindi and English fluidly (e.g. "Ye moisturizer aapki dry skin ke liye perfect hai — sirf Rs 349."). Do NOT reply in pure/formal Devanagari Hindi; keep it casual and mixed. Product names, and English words customers already use, stay in English.
+- If they speak Tamil, call language_detection with "ta" and your reason, THEN continue the whole conversation in Tamil, including how you describe products and prices.
+If you are not confident which language they used, ask them in English which they'd prefer.
 
 # Conversation behavior
 Default behavior: have one short clarifying exchange before searching.
@@ -505,6 +508,27 @@ MODEL_PROMPT_MAP = {
     "gpt-oss": PROMPT_GPT,       # ElevenLabs-hosted OpenAI OS model
     "claude": PROMPT_CLAUDE,
     "gpt": PROMPT_GPT,           # all OpenAI models (must be after gpt-oss)
+}
+
+
+# Per-language `first_message` for `conversation_config.language_presets`
+# (create_agent's `additional_languages` param). Telugu deliberately excluded:
+# no ElevenLabs real-time conversational voice model (eleven_flash_v2_5,
+# eleven_multilingual_v2) supports it as of 2026-07 — only "Eleven v3", which
+# is not a low-latency agents-platform model. See docs/agents/roadmap.md.
+_LANGUAGE_FIRST_MESSAGES = {
+    # Hindi entry is intentionally Hinglish (romanized Hindi-English mix), paired with
+    # hinglish_mode=True — urban Indian shoppers find this far more natural than formal
+    # Devanagari Hindi. hinglish_mode only activates when the active language is "hi",
+    # so we keep the "hi" preset as the trigger but make all its output Hinglish.
+    "hi": (
+        "Hi! {store_name} mein aapka swagat hai. Main hoon Wrina, aapki AI shopping companion. "
+        "Aap mujhse Hinglish ya Tamil mein baat kar sakte hain. Aaj aapko kya chahiye?"
+    ),
+    "ta": (
+        "வணக்கம்! {store_name} க்கு வரவேற்கிறோம். நான் Wrina, உங்கள் AI ஷாப்பிங் துணை. "
+        "நீங்கள் என்னிடம் தமிழிலும் இந்தியிலும் பேசலாம். இன்று உங்களுக்கு என்ன தேவை?"
+    ),
 }
 
 
@@ -949,6 +973,8 @@ class ElevenLabsAgentCreator:
         agent_name: Optional[str] = None,
         tags: Optional[List[str]] = None,
         llm_model: Optional[str] = None,
+        additional_languages: Optional[List[str]] = None,
+        hinglish_mode: bool = False,
     ) -> Dict:
         """Create a new conversational agent for a store.
 
@@ -957,6 +983,18 @@ class ElevenLabsAgentCreator:
             (e.g. "claude-haiku-4-5"). If None, falls back to the
             ELEVENLABS_LLM_MODEL env var (default "claude-haiku-4-5").
             Used by scripts/create_test_agents.py for the latency A/B matrix.
+        additional_languages:
+            Language codes (e.g. ["hi", "ta"]) to register as
+            `conversation_config.language_presets` — each gets a translated
+            `first_message` override. Must have an entry in
+            `_LANGUAGE_FIRST_MESSAGES` below. Paired with the
+            `language_detection` system tool (see `_get_tool_config`), which
+            needs these presets defined to have anything to switch into.
+        hinglish_mode:
+            Sets `conversation_config.agent.hinglish_mode`. Per ElevenLabs
+            (2025-12-15 changelog): when true and the active language is
+            Hindi, responses blend Hindi-English (Hinglish) instead of pure
+            Hindi.
         """
         # Validate store_id is a proper UUID before baking it into the webhook
         try:
@@ -992,10 +1030,14 @@ class ElevenLabsAgentCreator:
         #
         # ── Settings aligned with tested ElevenLabs dashboard config ──
         # 1. LLM: claude-haiku-4-5 (~686ms) — 100% tool reliability, zero 1002 timeouts
-        # 2. TTS: eleven_flash_v2_5 (~75ms TTFB) — fastest low-latency model that also
-        #    supports 32 languages incl. Hindi + Tamil (2026-07 multilingual pilot).
-        #    NOTE: Telugu is not on this model (only on the higher-latency Eleven v3) —
-        #    not offered yet; see docs/agents/roadmap.md.
+        # 2. TTS: eleven_flash_v2 — CORRECTED 2026-07-04: eleven_flash_v2_5 was assumed
+        #    to be the right multilingual choice, but ElevenLabs rejects it outright for
+        #    an English-primary agent ("English Agents must use turbo or flash v2" — a
+        #    live 400 on PATCH with model_id=eleven_flash_v2_5 while agent.language="en").
+        #    Hindi/Tamil switching runs through language_presets + the language_detection
+        #    system tool instead (see additional_languages/hinglish_mode params below),
+        #    not through the base TTS model. Telugu has no supported real-time model at
+        #    all (only the higher-latency Eleven v3) — not offered yet; see roadmap.md.
         # 3. optimize_streaming_latency: 3 = max latency reduction
         # 4. turn_eagerness: "normal" — balanced (valid: patient/normal/eager)
         # 5. soft_timeout: 2.5s with static "Let me see..." — fills silence
@@ -1020,18 +1062,25 @@ class ElevenLabsAgentCreator:
                     },
                     "first_message": (
                         f"Hi, welcome to {store_name}! I'm Wrina, your AI shopping companion. "
-                        "You can also talk to me in Hindi or Tamil — just speak in your language. "
+                        "You can also talk to me in Hinglish or Tamil — just speak in your language. "
                         "What are you looking for today?"
                     ),
                     "language": "en",
+                    "hinglish_mode": hinglish_mode,
                 },
                 "tts": {
                     "voice_id": resolved_voice_id,
-                    "model_id": os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5"),
-                    "optimize_streaming_latency": 3,
-                    "stability": 0.4,
+                    "model_id": os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2"),
+                    # optimize_streaming_latency 0 (best quality) — CORRECTED 2026-07-04:
+                    # 3 (aggressive chunking) caused audible dropouts/artifacts in live
+                    # testing. flash's TTFB is already low, so the quality win is worth it.
+                    "optimize_streaming_latency": 0,
+                    # stability 0.6 (steadier) — CORRECTED 2026-07-04: 0.4 made volume
+                    # and tone swing noticeably. A shopping agent needs to be heard
+                    # clearly over expressive range.
+                    "stability": 0.6,
                     "similarity_boost": 0.75,
-                    "speed": 1.08,
+                    "speed": 1.0,
                 },
                 "conversation": {
                     "max_duration_seconds": 420,
@@ -1054,6 +1103,29 @@ class ElevenLabsAgentCreator:
             "name": agent_name or f"Agent for Store {store_id[:8]}",
             "tags": tags or ["teampop", store_id],
         }
+
+        # language_presets lives at conversation_config.language_presets — a
+        # SIBLING of `agent`, not nested inside it (confirmed via ElevenLabs
+        # docs; a prior attempt assumed agent.language_presets and found it
+        # always empty on a live agent). Each preset's `overrides.agent.
+        # first_message` is the only override field ElevenLabs' docs show a
+        # worked example for, so that's the only one we set — the "# Language"
+        # prompt directive (see PROMPT_CLAUDE) handles reply-language
+        # switching for everything after the greeting.
+        if additional_languages:
+            presets = {}
+            for lang in additional_languages:
+                template = _LANGUAGE_FIRST_MESSAGES.get(lang)
+                if not template:
+                    logger.warning(f"No first_message translation for language '{lang}' — skipping preset")
+                    continue
+                presets[lang] = {
+                    "overrides": {
+                        "agent": {"first_message": template.format(store_name=store_name)}
+                    }
+                }
+            if presets:
+                payload["conversation_config"]["language_presets"] = presets
 
         # Log the payload structure (not the full prompt) for debugging
         agent_cfg = payload["conversation_config"]["agent"]
