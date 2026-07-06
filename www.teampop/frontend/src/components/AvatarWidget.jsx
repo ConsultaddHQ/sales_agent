@@ -537,6 +537,7 @@ function AvatarInner({
   const gracefulEndTimerRef = useRef(null);
   const pendingFarewellEndRef = useRef(null); // set when agent calls end_session, cleared on disconnect
   const farewellFallbackTimerRef = useRef(null); // 5s hard fallback if speech never finishes
+  const navigateAfterFarewellRef = useRef(false); // go_to_cart: navigate to /cart once the farewell-end fires
   // Task 2: drag vs tap discrimination
   const isDraggingRef = useRef(false);
   // VAD sub-states for connected mode: LISTENING | THINKING | AGENT_SPEAKING
@@ -919,6 +920,25 @@ function AvatarInner({
 
   const { sendUserMessage } = conversation;
 
+  // Refresh the cart badge from Shopify's own cart (source of truth — also picks up
+  // items added before the widget opened, or via the product page's own Add to Cart).
+  // On demo/test pages /cart.js doesn't exist, so mirror the locally-simulated count.
+  // Declared here (before startVoiceSession) so it's initialized by the time
+  // startVoiceSession's body/deps reference it — a TDZ crash when it lived below.
+  const refreshCartState = useCallback(async () => {
+    if (window.__TEAM_POP_DEMO__) {
+      setCartCount(demoCartCountRef.current);
+      return;
+    }
+    try {
+      const r = await fetch('/cart.js');
+      if (!r.ok) return;
+      const data = await r.json();
+      setCartCount(data.item_count ?? 0);
+      setCartSubtotalCents(data.total_price ?? 0);
+    } catch (_e) { /* ignore — cart bar just stays hidden/stale */ }
+  }, []);
+
   // ── VAD session helpers ───────────────────────────────────────────────────
   const startVoiceSession = useCallback(() => {
     setChatHistory([]);
@@ -969,16 +989,35 @@ function AvatarInner({
     }
   }, [conversation, setActiveView]);
 
+  // Navigate to the Shopify cart page — NOT /checkout. The cart page hosts both
+  // native checkout AND the merchant's Shiprocket express (UPI/GPay/PhonePe) button;
+  // going straight to /checkout would bypass Shiprocket entirely. Defined here (above
+  // the farewell watcher) so the watcher can call it without a TDZ crash.
+  const goToCart = useCallback(() => {
+    if (window.__TEAM_POP_DEMO__) {
+      console.log("[cart] Demo mode — would navigate to /cart here.");
+      return;
+    }
+    window.location.href = '/cart';
+  }, []);
+
   // ── Watch agentIsSpeaking to fire farewell-end after speech finishes ─────────
   // Placed here so endSessionAndCollapse is already in scope (avoids TDZ crash).
+  // Handles both end_session and go_to_cart: once the agent's closing line finishes,
+  // tear the session down, then (for go_to_cart) navigate to the cart page.
   useEffect(() => {
     if (!agentIsSpeaking && pendingFarewellEndRef.current) {
       const reason = pendingFarewellEndRef.current;
       pendingFarewellEndRef.current = null;
       if (farewellFallbackTimerRef.current) { clearTimeout(farewellFallbackTimerRef.current); farewellFallbackTimerRef.current = null; }
-      setTimeout(() => endSessionAndCollapse(reason), 500);
+      const navAfter = navigateAfterFarewellRef.current;
+      navigateAfterFarewellRef.current = false;
+      setTimeout(() => {
+        endSessionAndCollapse(reason);
+        if (navAfter) goToCart();
+      }, 500);
     }
-  }, [agentIsSpeaking, endSessionAndCollapse]);
+  }, [agentIsSpeaking, endSessionAndCollapse, goToCart]);
 
   // ── Tool: end_session (Task 1 — agent-initiated farewell) ────────────────────
   // Wait for agentIsSpeaking → false (watched in useEffect below), then disconnect.
@@ -1019,34 +1058,6 @@ function AvatarInner({
       variantCacheRef.current.set(String(productId), variants);
       return variants;
     } catch { return []; }
-  }, []);
-
-  // Refresh the cart badge from Shopify's own cart (source of truth — also picks up
-  // items added before the widget opened, or via the product page's own Add to Cart).
-  // On demo/test pages /cart.js doesn't exist, so mirror the locally-simulated count.
-  const refreshCartState = useCallback(async () => {
-    if (window.__TEAM_POP_DEMO__) {
-      setCartCount(demoCartCountRef.current);
-      return;
-    }
-    try {
-      const r = await fetch('/cart.js');
-      if (!r.ok) return;
-      const data = await r.json();
-      setCartCount(data.item_count ?? 0);
-      setCartSubtotalCents(data.total_price ?? 0);
-    } catch (_e) { /* ignore — cart bar just stays hidden/stale */ }
-  }, []);
-
-  // Navigate to the Shopify cart page — NOT /checkout. The cart page hosts both
-  // native checkout AND the merchant's Shiprocket express (UPI/GPay/PhonePe) button;
-  // going straight to /checkout would bypass Shiprocket entirely.
-  const goToCart = useCallback(() => {
-    if (window.__TEAM_POP_DEMO__) {
-      console.log("[cart] Demo mode — would navigate to /cart here.");
-      return;
-    }
-    window.location.href = '/cart';
   }, []);
 
   // Load the shopper's existing cart on widget mount (before any voice session starts) —
@@ -1108,12 +1119,33 @@ function AvatarInner({
   });
 
   // Voice-driven cart navigation — routes to /cart (not /checkout) so both native
-  // checkout and the merchant's Shiprocket express option stay available.
+  // checkout and the merchant's Shiprocket express option stay available. Going to the
+  // cart means the shopper is done browsing by voice, so this ENDS the session (after
+  // the agent's closing line finishes speaking, watched via agentIsSpeaking) and THEN
+  // navigates. On a real store the navigation itself also tears the session down;
+  // ending it explicitly is what makes the demo page (nav disabled) close the orb too
+  // instead of leaving the mic open — the bug this fixes.
   useConversationClientTool("go_to_cart", () => {
     if (!cartEnabled) return Promise.resolve("This store uses Shop Now — there's no cart to show.");
-    if (window.__TEAM_POP_DEMO__) return Promise.resolve("This is a demo page — cart navigation is disabled here.");
-    goToCart();
-    return Promise.resolve("Navigating to the cart now.");
+    navigateAfterFarewellRef.current = true;
+    pendingFarewellEndRef.current = "go_to_cart";
+    if (farewellFallbackTimerRef.current) clearTimeout(farewellFallbackTimerRef.current);
+    // Hard fallback: if the speech-end event never fires, end + navigate after 5s.
+    farewellFallbackTimerRef.current = setTimeout(() => {
+      farewellFallbackTimerRef.current = null;
+      if (pendingFarewellEndRef.current) {
+        pendingFarewellEndRef.current = null;
+        const navAfter = navigateAfterFarewellRef.current;
+        navigateAfterFarewellRef.current = false;
+        endSessionAndCollapse("go_to_cart");
+        if (navAfter) goToCart();
+      }
+    }, 5000);
+    return Promise.resolve(
+      window.__TEAM_POP_DEMO__
+        ? "Opening your cart now — on the live store this takes you to checkout. (Demo: navigation is disabled here.)"
+        : "Taking you to your cart now."
+    );
   });
 
   // ── Graceful session end (Task 1 — for timeouts) ─────────────────────────────
@@ -1420,7 +1452,13 @@ function AvatarInner({
                 {cartSubtotalCents > 0 ? ` · ₹${(cartSubtotalCents / 100).toLocaleString("en-IN")}` : ""}
               </span>
               <button
-                onClick={() => { sessionMetricsRef.current.shopNowClicked = true; goToCart(); }}
+                onClick={() => {
+                  sessionMetricsRef.current.shopNowClicked = true;
+                  // Tapping through to the cart ends the voice session too, so the
+                  // orb doesn't keep listening after the shopper has moved on.
+                  if (conversation.status === "connected") endSessionAndCollapse("go_to_cart_button");
+                  goToCart();
+                }}
                 className="text-xs font-bold text-black bg-white px-3 py-1.5 rounded-full hover:bg-gray-200 transition flex-shrink-0"
               >
                 Go to Cart
