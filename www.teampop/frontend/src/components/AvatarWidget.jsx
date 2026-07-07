@@ -32,14 +32,24 @@ const SESSION_HARD_LIMIT_MS = 420000;
 //
 // getInputVolume() (orb LISTENING driver) works under BOTH on @elevenlabs/client ≥1.13.
 //
-// SWITCHED websocket → webrtc 2026-07-07 after live Xfused testing: with raw-PCM
-// websocket playback (treated as ordinary media, no AEC), opening the mic made the
-// OS/browser voice-processing duck the agent's voice — "good in intro, then barely
-// audible". WebRTC audio is a call-class stream (native echo cancellation, no
-// ducking) — it's also what the ElevenLabs dashboard uses, where volume is steady.
-// Bonus: better congestion handling (a 9s update_products stall was observed under
-// websocket backpressure). Accepted trade-off: possible Opus graininess on jitter.
-const CONNECTION_TYPE = "webrtc";
+// DEFAULT webrtc (2026-07-07). The mid-conversation volume collapse initially blamed
+// on websocket ducking turned out to be the VOICE (Anya: -36dB collapse on descriptive
+// text, proven by RMS A/B — see decisions.md); webrtc is kept as default for its
+// native echo cancellation (websocket raw-PCM playback has none — echo risk on
+// speaker+mic setups) and congestion handling (a 9s update_products stall was
+// observed under websocket backpressure). Overridable at runtime for A/B testing:
+//   ?transport=websocket|webrtc  (URL param, wins)
+//   window.__TEAM_POP_TRANSPORT__ = "websocket"|"webrtc"  (embed global)
+// websocket trades AEC for cleaner raw-PCM audio on stable wired networks.
+const CONNECTION_TYPE = (() => {
+  try {
+    const p = new URLSearchParams(window.location.search).get("transport");
+    if (p === "websocket" || p === "webrtc") return p;
+  } catch { /* SSR/no-window: fall through */ }
+  const g = typeof window !== "undefined" ? window.__TEAM_POP_TRANSPORT__ : null;
+  if (g === "websocket" || g === "webrtc") return g;
+  return "webrtc";
+})();
 const IGNORED_SILENCE_TRANSCRIPTS = new Set([
   "ah",
   "aha",
