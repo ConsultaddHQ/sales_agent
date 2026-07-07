@@ -21,5 +21,9 @@
  }
 
 api.teampop.com {
+	# Compress responses (widget.js is 1.29MB raw → ~370KB gzipped; found
+	# being served uncompressed on 2026-07-07 — a real page-speed hit on
+	# Indian mobile connections). zstd preferred, gzip fallback.
+	encode zstd gzip
 	reverse_proxy localhost:8005
 }
