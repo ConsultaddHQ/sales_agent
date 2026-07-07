@@ -556,6 +556,8 @@ function AvatarInner({
   const pendingFarewellEndRef = useRef(null); // set when agent calls end_session, cleared on disconnect
   const farewellFallbackTimerRef = useRef(null); // 5s hard fallback if speech never finishes
   const navigateAfterFarewellRef = useRef(false); // go_to_cart: navigate to /cart once the farewell-end fires
+  const pendingFarewellAtRef = useRef(0); // when the farewell was requested — enforce a min speak window
+  const farewellSettleTimerRef = useRef(null); // settle-and-recheck timer (TTS chunk gaps flicker isSpeaking)
   // Task 2: drag vs tap discrimination
   const isDraggingRef = useRef(false);
   // VAD sub-states for connected mode: LISTENING | THINKING | AGENT_SPEAKING
@@ -1023,17 +1025,35 @@ function AvatarInner({
   // Placed here so endSessionAndCollapse is already in scope (avoids TDZ crash).
   // Handles both end_session and go_to_cart: once the agent's closing line finishes,
   // tear the session down, then (for go_to_cart) navigate to the cart page.
+  //
+  // Settle-and-recheck: isSpeaking flickers false in TTS chunk gaps, and the tool
+  // call often lands BEFORE the closing line's audio starts. Ending on the first
+  // falling edge cut the goodbye mid-word (live transcripts showed "taking you to
+  // your..." marked interrupted). So on each falling edge we wait 900ms, then only
+  // end if (a) speech hasn't resumed and (b) ≥2.2s have passed since the tool call
+  // (a not-yet-started closing line gets time to begin; once it begins, resumed
+  // speech aborts the attempt and the NEXT falling edge retries).
   useEffect(() => {
     if (!agentIsSpeaking && pendingFarewellEndRef.current) {
-      const reason = pendingFarewellEndRef.current;
-      pendingFarewellEndRef.current = null;
-      if (farewellFallbackTimerRef.current) { clearTimeout(farewellFallbackTimerRef.current); farewellFallbackTimerRef.current = null; }
-      const navAfter = navigateAfterFarewellRef.current;
-      navigateAfterFarewellRef.current = false;
-      setTimeout(() => {
+      const attempt = () => {
+        farewellSettleTimerRef.current = null;
+        if (!pendingFarewellEndRef.current) return; // already ended elsewhere
+        if (agentIsSpeakingRef.current) return; // speech (re)started — next falling edge retries
+        const sinceRequest = Date.now() - (pendingFarewellAtRef.current || 0);
+        if (sinceRequest < 2200) {
+          farewellSettleTimerRef.current = setTimeout(attempt, 2200 - sinceRequest + 200);
+          return;
+        }
+        const reason = pendingFarewellEndRef.current;
+        pendingFarewellEndRef.current = null;
+        if (farewellFallbackTimerRef.current) { clearTimeout(farewellFallbackTimerRef.current); farewellFallbackTimerRef.current = null; }
+        const navAfter = navigateAfterFarewellRef.current;
+        navigateAfterFarewellRef.current = false;
         endSessionAndCollapse(reason);
         if (navAfter) goToCart();
-      }, 500);
+      };
+      if (farewellSettleTimerRef.current) clearTimeout(farewellSettleTimerRef.current);
+      farewellSettleTimerRef.current = setTimeout(attempt, 900);
     }
   }, [agentIsSpeaking, endSessionAndCollapse, goToCart]);
 
@@ -1046,7 +1066,8 @@ function AvatarInner({
     // Cancel any pending graceful-end timer so it doesn't race
     if (gracefulEndTimerRef.current) { clearTimeout(gracefulEndTimerRef.current); gracefulEndTimerRef.current = null; }
     pendingFarewellEndRef.current = reason;
-    // Hard fallback: disconnect after 5s even if speech event never fires
+    pendingFarewellAtRef.current = Date.now();
+    // Hard fallback: disconnect after 6s even if speech event never fires
     if (farewellFallbackTimerRef.current) clearTimeout(farewellFallbackTimerRef.current);
     farewellFallbackTimerRef.current = setTimeout(() => {
       farewellFallbackTimerRef.current = null;
@@ -1055,7 +1076,7 @@ function AvatarInner({
         pendingFarewellEndRef.current = null;
         endSessionAndCollapse(reason);
       }
-    }, 5000);
+    }, 6000);
     return "session_ending";
   });
 
@@ -1147,8 +1168,9 @@ function AvatarInner({
     if (!cartEnabled) return Promise.resolve("This store uses Shop Now — there's no cart to show.");
     navigateAfterFarewellRef.current = true;
     pendingFarewellEndRef.current = "go_to_cart";
+    pendingFarewellAtRef.current = Date.now();
     if (farewellFallbackTimerRef.current) clearTimeout(farewellFallbackTimerRef.current);
-    // Hard fallback: if the speech-end event never fires, end + navigate after 5s.
+    // Hard fallback: if the speech-end event never fires, end + navigate after 6s.
     farewellFallbackTimerRef.current = setTimeout(() => {
       farewellFallbackTimerRef.current = null;
       if (pendingFarewellEndRef.current) {
@@ -1158,7 +1180,7 @@ function AvatarInner({
         endSessionAndCollapse("go_to_cart");
         if (navAfter) goToCart();
       }
-    }, 5000);
+    }, 6000);
     return Promise.resolve(
       window.__TEAM_POP_DEMO__
         ? "Opening your cart now — on the live store this takes you to checkout. (Demo: navigation is disabled here.)"
@@ -1323,6 +1345,7 @@ function AvatarInner({
       clearTimeout(syncDebounceRef.current);
       if (muteDelayTimerRef.current) clearTimeout(muteDelayTimerRef.current);
       if (farewellFallbackTimerRef.current) clearTimeout(farewellFallbackTimerRef.current);
+      if (farewellSettleTimerRef.current) clearTimeout(farewellSettleTimerRef.current);
       if (feedbackDismissTimerRef.current) clearTimeout(feedbackDismissTimerRef.current);
       if (rafVolRef.current) cancelAnimationFrame(rafVolRef.current);
       if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);

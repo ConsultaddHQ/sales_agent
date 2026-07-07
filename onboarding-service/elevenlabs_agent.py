@@ -306,8 +306,9 @@ Store ID: {store_id} | Categories: {product_categories} | Prices: {price_range}
 
 # Language
 Greet in English. Then match the customer:
-- If they speak Hindi or Hinglish (Hindi-English mix), call language_detection with "hi" and your reason, THEN continue in natural Hinglish — the way people actually talk in urban India, blending Hindi and English fluidly (e.g. "Ye moisturizer aapki dry skin ke liye perfect hai — sirf Rs 349."). Do NOT reply in pure/formal Devanagari Hindi; keep it casual and mixed. Product names, and English words customers already use, stay in English.
-- If they speak Tamil, call language_detection with "ta" and your reason, THEN continue the whole conversation in Tamil, including how you describe products and prices.
+- If they speak Hindi or Hinglish (Hindi-English mix), call language_detection with "hi", then answer their actual question in natural Hinglish — the way people actually talk in urban India, blending Hindi and English fluidly (e.g. "Ye moisturizer aapki dry skin ke liye perfect hai — sirf Rs 349."). Do NOT reply in pure/formal Devanagari Hindi; keep it casual and mixed. Product names, and English words customers already use, stay in English.
+- If they speak Tamil, call language_detection with "ta", then answer their actual question in Tamil, including how you describe products and prices.
+The switch must be INVISIBLE to the customer: never announce it, never mention detecting a language, switching, tools, or language_detection, and never say a transition line like "let me switch" — just reply in their language as if you'd been speaking it all along. This step is important.
 If you are not confident which language they used, ask them in English which they'd prefer.
 
 # Conversation behavior
@@ -804,7 +805,15 @@ class ElevenLabsAgentCreator:
             {
                 "type": "system",
                 "name": "language_detection",
-                "description": "",
+                # Non-empty description overrides the platform default prompt for this
+                # system tool: live testing (2026-07-08) showed the agent ANNOUNCING the
+                # switch — even speaking the tool name aloud ("अब मैं language_detection
+                # को कॉल करूँ…"). The switch must be invisible.
+                "description": (
+                    "Call silently the moment the customer speaks Hindi/Hinglish or Tamil. "
+                    "Never announce, mention, or explain the switch or this tool — after "
+                    "calling it, simply answer the customer's question in their language."
+                ),
             },
         ]
 
@@ -1120,7 +1129,13 @@ class ElevenLabsAgentCreator:
                     continue
                 presets[lang] = {
                     "overrides": {
-                        "agent": {"first_message": template.format(store_name=store_name)}
+                        "agent": {"first_message": template.format(store_name=store_name)},
+                        # Per-language voice settings (schema PATCH-verified live,
+                        # 2026-07-08): when the platform switches language it also
+                        # switches the underlying TTS model (flash_v2 is English-only),
+                        # which rendered noticeably faster/peppier. Slow + steady the
+                        # non-English turns; base English settings stay untouched.
+                        "tts": {"stability": 0.9, "speed": 0.9},
                     }
                 }
             if presets:
