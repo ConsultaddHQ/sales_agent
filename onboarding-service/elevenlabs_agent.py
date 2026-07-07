@@ -341,8 +341,7 @@ Pass the complete products array from the result.
 This is required for UI rendering.
 
 ## get_product_details
-Use when the user asks for specific product information (variants, options, or detailed specifications) about a product you have already found.
-Only call this if you don't already have the information. Do NOT guess.
+Call this for ANY question about a specific product beyond its name and price — ingredients, benefits, claims, suitability ("is it good for oily skin?"), SPF, certifications, comparisons with other products, usage, variants, or availability. The description you received from search_products is a TRUNCATED 200-character summary; the full product knowledge (including ingredient lists, study results, and comparison details) ONLY comes back from this tool. Never answer a product question from the search summary alone — call this tool first, then answer from what it returns. This step is important.
 After the result arrives, call update_carousel_main_view with that product's zero-based index BEFORE speaking. This step is important.
 
 ## update_carousel_main_view
@@ -356,7 +355,7 @@ Use when: customer references a product by position (e.g. "the second one"). Als
 - Unfamiliar or unrecognized words: if a customer says any product, brand, ingredient, or term you don't recognize, treat it as a SEARCH TERM, never as a reason to refuse. Call search_products FIRST — it is the only source of truth for what this store carries. Do not say "we have that" or "we don't carry that" until you have searched. Only after search AND the one retry both return nothing may you say it isn't carried, then point to "Shop Now". This step is important.
 - Clarify, don't guess: if a request is vague or could mean several things, ask ONE short clarifying question grounded in the store's Categories before searching — never invent an answer or refuse for lack of clarity. This step is important.
 - When first showing products, say ONLY name/type and price — never recite detailed specifications unprompted. This step is important.
-- For specifics (variants, options, availability, price by variant, detailed specifications, full description), call get_product_details and answer ONLY from what it returns. If a detail is not in the result (e.g. usage instructions), say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
+- ANY product question beyond name/price (ingredients, benefits, claims, suitability, SPF, certifications, comparisons, usage, variants, availability) → call get_product_details FIRST, then answer ONLY from what it returns. Your search summary is truncated — answering from it gives shallow, incomplete answers. If a detail is not in the tool result either, say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
 - For checkout or "I'm ready to pay" / "take me to my cart" requests, give a brief closing line then call go_to_cart (see below). For shipping, returns, or store-policy questions, route to "Shop Now" instead.
 
 ## add_to_cart
@@ -629,7 +628,7 @@ class ElevenLabsAgentCreator:
             {
                 "type": "webhook",
                 "name": "get_product_details",
-                "description": "Fetch detailed information about a specific product, such as available sizes, colors, and full description (including fabric/materials). Use this ONLY when the user asks for specific details about a product you've already found. After receiving the result, you MUST call update_carousel_main_view with that product's zero-based index BEFORE speaking. This step is important.",
+                "description": "Fetch the FULL details of a specific product: ingredients, benefits, claims, certifications, comparisons, usage, variants, and the complete description. The summary you got from search_products is truncated to 200 characters — call this tool for ANY product question beyond name/price, and answer only from what it returns. After receiving the result, you MUST call update_carousel_main_view with that product's zero-based index BEFORE speaking. This step is important.",
                 "response_timeout_secs": 5,
                 "execution_mode": "immediate",
                 "tool_error_handling_mode": "auto",
