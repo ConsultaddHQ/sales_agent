@@ -31,7 +31,15 @@ const SESSION_HARD_LIMIT_MS = 420000;
 //   "elongated" (time-stretched) when the network jitters.
 //
 // getInputVolume() (orb LISTENING driver) works under BOTH on @elevenlabs/client ≥1.13.
-const CONNECTION_TYPE = "websocket";
+//
+// SWITCHED websocket → webrtc 2026-07-07 after live Xfused testing: with raw-PCM
+// websocket playback (treated as ordinary media, no AEC), opening the mic made the
+// OS/browser voice-processing duck the agent's voice — "good in intro, then barely
+// audible". WebRTC audio is a call-class stream (native echo cancellation, no
+// ducking) — it's also what the ElevenLabs dashboard uses, where volume is steady.
+// Bonus: better congestion handling (a 9s update_products stall was observed under
+// websocket backpressure). Accepted trade-off: possible Opus graininess on jitter.
+const CONNECTION_TYPE = "webrtc";
 const IGNORED_SILENCE_TRANSCRIPTS = new Set([
   "ah",
   "aha",
