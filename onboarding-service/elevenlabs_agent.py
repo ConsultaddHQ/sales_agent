@@ -1138,9 +1138,13 @@ class ElevenLabsAgentCreator:
                         # Per-language voice settings (schema PATCH-verified live,
                         # 2026-07-08): when the platform switches language it also
                         # switches the underlying TTS model (flash_v2 is English-only),
-                        # which rendered noticeably faster/peppier. Slow + steady the
-                        # non-English turns; base English settings stay untouched.
-                        "tts": {"stability": 0.9, "speed": 0.9},
+                        # which rendered noticeably faster/peppier. Values tuned by ear
+                        # on the live pilot: stability 0.9 flattened Hindi's natural
+                        # pitch movement — client heard it as a FOREIGN accent. 0.55
+                        # keeps native prosody; speed 0.95 calms pace slightly; always
+                        # send similarity_boost explicitly — omitting it stores null
+                        # (platform default), loosening the voice's native timbre.
+                        "tts": {"stability": 0.55, "speed": 0.95, "similarity_boost": 0.75},
                     }
                 }
             if presets:
