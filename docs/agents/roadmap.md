@@ -37,6 +37,7 @@ These cannot be done by an agent — they require account access, credentials, o
 | CORS restriction from `*` to actual domains | Agent | ⬜ Pending | 30 min | Covered in Refactor A (ALLOWED_ORIGINS env var). Both services currently use wildcard. |
 | Production deployment + custom domain + SSL | Human + Agent | ⬜ Pending | 1 day | Needed before sharing with real clients |
 | Request deduplication (same email/URL) | Agent | ⬜ Pending | 30 min | Prevent duplicate submissions |
+| Store original CDN URL in products.image_url at onboarding | Agent | ⬜ Pending | 30 min | `services/products.py` (~line 158) writes the *served* URL (`IMAGE_SERVER_URL`-based) into `image_url`, discarding the original CDN src. This breaks the widget's local→CDN image fallback and re-onboarding sensesindia would undo the 2026-07-10 backfill. Fix: keep `images[0].src` in `image_url`; `local_image_path` already covers the served copy. |
 | Fix send_delivery_email not fire-and-forget (H3) | Agent | ⬜ Pending | 30 min | `routes/client.py:send_agent()` calls `send_delivery_email()` synchronously in request thread — blocks response. Move to executor submit. |
 | Add index on agent_requests.agent_id (H4) | Human | ⬜ Pending | 15 min | `admin.py:switch_agent_model()` filters by unindexed `agent_id` field → full table scan. Add Supabase index. |
 | Add LIMIT to admin list query (H5) | Agent | ⬜ Pending | 15 min | `admin.py:list_requests()` does unbounded `select("*")` — will OOM/timeout as table grows. Add `.limit(200)` or pagination. |

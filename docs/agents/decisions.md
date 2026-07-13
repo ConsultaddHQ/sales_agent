@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-07-10: /search returns both image_url and local_image_url
+
+- **Decision:** The `/search` response's `ProductOut` now carries two image fields: `image_url` (the original store-CDN URL from the DB) and `local_image_url` (the locally-served copy built from `IMAGE_SERVER_URL + local_image_path`). Previously it flattened both into a single `image_url` preferring the local copy.
+- **Context:** The widget (`AvatarWidget.jsx`) was already built for the two-field shape: `src = local_image_url || image_url` with an `onError` fallback to `image_url`. Flattening destroyed the fallback — when the local URL failed (ngrok free-tier interstitial serving HTML with status 200 to browsers), the widget had nothing to fall back to and the carousel showed blank images.
+- **Rationale:** Restores the fallback contract the widget was designed for. Local images stay preferred (fast, same-tunnel), original CDN acts as safety net. Additive schema change — safe for existing consumers.
+- **Alternatives considered:** (a) Prefer CDN over local in the flattened field — loses local-image benefits for all stores; (b) empty `IMAGE_SERVER_URL` to disable local URLs — config default is `localhost:8000`, and it degrades every store to punish one tunnel; (c) paid ngrok / cloudflared to remove the interstitial — valid infra fix but doesn't repair the broken fallback contract.
+- **Consequences:** ElevenLabs agents that relay `/search` products to the widget's `update_products` tool now pass both fields (slightly larger payload). If the LLM drops one field, the widget still renders via the other. **Caveat:** `image_url` is only a useful fallback if onboarding stores the original CDN URL there — today `onboarding-service/services/products.py` overwrites it with the served URL (roadmap item). The sensesindia store (151 products) was backfilled with CDN URLs on 2026-07-10.
+- **Status:** Active
+- **Agent/Author:** Claude (Fable 5)
+
+---
+
 ## 2026-06-25: Search-quality overhaul — enriched search_text + RRF hybrid RPC + cross-encoder reranker
 
 - **Decision:** Three coordinated changes to fix attribute-precision failures (e.g. "white polo shirt" returning wrong colors). (1) **Enriched `search_text`**: onboarding now embeds and indexes `name + product_type + color/size/material/style option values + tags + description` (`_build_search_text()` in `onboarding-service/services/products.py`), persisted to a new `products.search_text` column. (2) **RRF hybrid RPC**: `hybrid_search_products` rewritten (`migrations/2026-06-25_search_text_and_fts.sql`) to fuse a vector CTE (HNSW top-50) and an FTS CTE (`websearch_to_tsquery` over `search_text`) via Reciprocal Rank Fusion (k=60); keeps all keyword hits + vector hits above a low `p_min_score` (0.15) to favor recall; returns `metadata` + `local_image_path`. (3) **Cross-encoder reranker**: `shared/reranker.py` (lazy `CrossEncoder` singleton, default `cross-encoder/ms-marco-MiniLM-L-6-v2`); search-service fetches `RERANK_CANDIDATES` (30) then reranks to top-5, with graceful fallback to Stage-1 order on error/timeout and a `RERANK_ENABLED` kill-switch.

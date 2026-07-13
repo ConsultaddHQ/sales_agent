@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-07-10 — N/A — Sensesindia demo: widget carousel images broken by ngrok interstitial
+
+- **Status:** Completed
+- **Owner:** Claude (Fable 5)
+- **Summary:** Widget carousel images showed blank on the sensesindia demo page despite HTTP 200s — ngrok's free-tier browser interstitial returned its HTML warning page (status 200, `text/html`) instead of the JPEG for browser-originated image requests. Fixed by (1) backfilling `products.image_url` for all 151 sensesindia products with original `cdn.shopify.com` URLs (via each product's public `/products/<handle>.json`), and (2) changing `/search` to return `image_url` (original CDN) and `local_image_url` (served copy) as separate fields instead of flattening to one field that preferred the served URL.
+- **Why:** The widget was designed for a two-URL shape — try `local_image_url`, fall back to `image_url` on load error (`AvatarWidget.jsx` ~1350) — but the flattened `/search` response made the fallback a no-op, and onboarding had stored the served (ngrok) URL in `image_url` anyway, so both attempts hit the interstitial.
+- **Files:** `search-service/main.py` (`ProductOut` + serialization), DB backfill (scratchpad script, one-off), `onboarding-service/services/test_page.py` (added missing `_fix_srcset` helper for a manually-applied srcset/reveal-on-scroll patch that referenced it)
+- **Tradeoffs:** Widget still attempts the local URL first, so each image has one failed request + flash before the CDN copy loads while serving through free ngrok. Acceptable for pilot testing; disappears on domains without an interstitial (e.g. `api.teampop.com`) or a cloudflared tunnel.
+- **Verification:** `curl` with browser headers reproduced `content-type=text/html` through ngrok; after fix, `/search` returns both fields (CDN `image_url` verified); user confirmed carousel images render on the live demo page.
+- **Related Decisions:** 2026-07-10 — /search returns both image_url and local_image_url
+- **Notes:** Root cause persists in onboarding: `services/products.py` writes the *served* URL into `products.image_url` and discards the original CDN URL — re-onboarding sensesindia will overwrite the backfill. Tracked in roadmap.
+
+---
+
 ## 2026-06-26 — False "we don't carry X" refusal fix + category extraction overhaul
 
 - **Status:** Complete. Re-onboard stores to apply.

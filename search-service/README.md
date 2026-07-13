@@ -34,7 +34,7 @@ Create a `.env` from `.env.example` with the following vars:
 
 - `SUPABASE_URL` – your Supabase project URL.
 - `SUPABASE_KEY` – service-role API key.
-- `IMAGE_SERVER_URL` – base URL that serves product images (the tunnel/host pointing at onboarding-service `:8005`, which mounts `/images`). Search composes each result's `image_url` as `{IMAGE_SERVER_URL}/images/{local_image_path}` at query time, so this must be the **current** host. Defaults to `http://localhost:8000` (the legacy standalone image server) — set it explicitly in the single-tunnel setup or product images 404. Re-point it whenever a free ngrok tunnel restarts.
+- `IMAGE_SERVER_URL` – base URL that serves product images (the tunnel/host pointing at onboarding-service `:8005`, which mounts `/images`). Search composes each result's `local_image_url` as `{IMAGE_SERVER_URL}/images/{local_image_path}` at query time, so this must be the **current** host. Defaults to `http://localhost:8000` (the legacy standalone image server) — set it explicitly in the single-tunnel setup or product images 404. Re-point it whenever a free ngrok tunnel restarts. Since 2026-07-10, `/search` also returns `image_url` (the original store-CDN URL from the DB) alongside `local_image_url`; the widget prefers the local copy and falls back to the CDN URL if it fails to load (e.g. ngrok free-tier browser interstitial).
 - `OPENROUTER_API_KEY` – legacy key for optional price parsing experiments.
 - `OPENROUTER_BASE_URL` – optional custom endpoint.
 - `OPENROUTER_MODEL` – model name for completions (default `xai/grok-beta`).

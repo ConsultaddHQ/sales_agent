@@ -72,6 +72,19 @@ def _fetch_via_playwright(url: str, challenge_wait: int = 10) -> Optional[str]:
         return None
 
 
+def _fix_srcset(base_url: str, srcset: str) -> str:
+    """Resolve relative URLs inside a srcset attribute against base_url."""
+    parts = []
+    for candidate in srcset.split(","):
+        candidate = candidate.strip()
+        if not candidate:
+            continue
+        tokens = candidate.split(None, 1)
+        url = urljoin(base_url, tokens[0])
+        parts.append(f"{url} {tokens[1]}" if len(tokens) > 1 else url)
+    return ", ".join(parts)
+
+
 def _process_html(
     soup: BeautifulSoup,
     base_url: str,
@@ -81,12 +94,29 @@ def _process_html(
     # Fix relative URLs -> absolute
     for tag in soup.find_all(["img", "source"], src=True):
         tag["src"] = urljoin(base_url, tag["src"])
+    for tag in soup.find_all(["img", "source"], srcset=True):
+        tag["srcset"] = _fix_srcset(base_url, tag["srcset"])
+    for tag in soup.find_all("script", src=True):
+        tag["src"] = urljoin(base_url, tag["src"])
     for tag in soup.find_all("link", href=True):
         tag["href"] = urljoin(base_url, tag["href"])
     for tag in soup.find_all("a", href=True):
         href = tag["href"]
         if not href.startswith(("http", "https", "mailto", "tel", "#", "javascript")):
             tag["href"] = urljoin(base_url, href)
+
+    # Force visibility for JS-dependent reveal animations that won't fire
+    # on scraped pages (Shopify themes hide sections until theme.js runs).
+    for tag in soup.find_all(attrs={"reveal-on-scroll": True}):
+        del tag["reveal-on-scroll"]
+    override_style = soup.new_tag("style")
+    override_style.string = (
+        "[reveal-on-scroll] { opacity: 1 !important; }"
+        " img { opacity: 1 !important; visibility: visible !important; }"
+    )
+    head = soup.find("head")
+    if head:
+        head.append(override_style)
 
     if strip_all_scripts:
         # Playwright pages: strip ALL scripts (they break when served from localhost)

@@ -68,6 +68,7 @@ class ProductOut(BaseModel):
     price: Optional[float] = None
     description: Optional[str] = None  # Changed from desc to description
     image_url: Optional[str] = None
+    local_image_url: Optional[str] = None
     product_url: Optional[str] = None
 
 
@@ -472,7 +473,10 @@ async def search(
                 name=p.name,
                 price=float(p.price) if p.price is not None else None,
                 description=_truncate_for_voice(p.description, 200),
-                image_url=p.local_image_url or p.image_url,
+                # Widget prefers local_image_url and falls back to image_url
+                # (original CDN) when the local image fails to load.
+                image_url=p.image_url,
+                local_image_url=p.local_image_url,
                 product_url=p.product_url,
             )
         )
