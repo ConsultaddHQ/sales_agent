@@ -323,6 +323,9 @@ CRITICAL — filler sounds are NOT Hindi: transcription often renders "uh"/"umm"
 - If their actual words are Hindi or Hinglish (Hindi-English mix), call language_detection with "hi", then answer their question in natural Hinglish — the way people actually talk in urban India, blending Hindi and English fluidly (e.g. "Ye moisturizer aapki dry skin ke liye perfect hai — sirf Rs 349."). Do NOT reply in pure/formal Devanagari Hindi; keep it casual and mixed. Product names, and English words customers already use, stay in English. You are female — always use feminine Hindi verb forms ("main add kar deti hoon", never "kar deta hoon"). Do NOT insert filler words like "are" into your own Hindi replies — keep your Hindi speech clean and natural, without extra interjections.
 - If their actual words are Tamil, call language_detection with "ta", then answer their question in Tamil, including how you describe products and prices.
 - If they switch back to English mid-conversation, follow them back to English the same way.
+
+CRITICAL — the switch happens in the SAME turn, not the next one: the moment you decide to call language_detection, your reply for THIS turn must already be written in the new language. Never reply in the old language first and only switch starting the next response — that reads as broken/delayed to the customer. Call the tool and speak the new language together, in one turn.
+
 The switch must be INVISIBLE to the customer: never announce it, never mention detecting a language, switching, tools, or language_detection, and never say a transition line like "let me switch" — just reply in their language as if you'd been speaking it all along. This step is important.
 If you are not confident which language they used, ask them in English which they'd prefer.
 
@@ -1246,11 +1249,15 @@ class ElevenLabsAgentCreator:
         store_context: Optional[Dict] = None,
         search_api_url: Optional[str] = None,
         llm_model: Optional[str] = None,
+        voice_id: Optional[str] = None,
+        tts_overrides: Optional[Dict] = None,
     ) -> Dict:
-        """Update an existing agent's prompt, model, and tools without re-scraping.
+        """Update an existing agent's prompt, model, tools — and optionally voice —
+        without re-scraping.
 
-        Uses PATCH /v1/convai/agents/{agent_id} — only touches prompt config,
-        leaves voice, TTS, turn settings, and product data untouched.
+        Uses PATCH /v1/convai/agents/{agent_id}. By default only touches prompt
+        config (leaves voice/TTS/turn settings untouched); pass voice_id and/or
+        tts_overrides to A/B a different voice on a live agent without recreating it.
 
         Usage:
             creator = ElevenLabsAgentCreator()
@@ -1258,6 +1265,8 @@ class ElevenLabsAgentCreator:
                 agent_id="abc123",
                 store_id="c5a0c8a1-...",
                 llm_model="claude-haiku-4-5",
+                voice_id="dVTC43Yewy5fAIcmsISI",  # e.g. testing "Anvi" vs Muskaan
+                tts_overrides={"similarity_boost": 0.68, "speed": 0.97},
             )
         """
         # Default mirrors create_agent (Claude Haiku 4.5 — 2026-04-17 decision).
@@ -1281,8 +1290,16 @@ class ElevenLabsAgentCreator:
             },
         }
 
+        if voice_id or tts_overrides:
+            tts_config = {}
+            if voice_id:
+                tts_config["voice_id"] = voice_id
+            if tts_overrides:
+                tts_config.update(tts_overrides)
+            payload["conversation_config"]["tts"] = tts_config
+
         logger.info(
-            f"PATCHing agent {agent_id}: model={model}, "
+            f"PATCHing agent {agent_id}: model={model}, voice={voice_id or '(unchanged)'}, "
             f"prompt={len(system_prompt)} chars, tools={len(tools)}"
         )
 

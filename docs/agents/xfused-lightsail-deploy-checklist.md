@@ -70,6 +70,9 @@ the onboarding-service venv) to update xfused's live agent in place:
 ```bash
 cd /home/ubuntu/sales_agent/onboarding-service && source .venv/bin/activate
 python3 -c "
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path('.env'))   # main.py does this automatically; a standalone script must do it explicitly
 from elevenlabs_agent import ElevenLabsAgentCreator
 creator = ElevenLabsAgentCreator()
 creator.update_agent(
@@ -92,6 +95,41 @@ text from this session's WebFetch of goxfused.com actually gets pushed live —
 until this runs, the agent is still on its old prompt regardless of what's in
 `elevenlabs_agent.py`.
 
+## 6b. A/B test the two new voice candidates
+Client flagged the current voice (Muskaan) as too high-pitched even after the
+2026-07-14 TTS tuning pass. Two candidates from the ElevenLabs shared library,
+already added to the account this session:
+- `dVTC43Yewy5fAIcmsISI` — "Anvi - Warm, Emotional Girlfriend": soft, young,
+  hi-IN native, conversational/companion use-case
+- `o6qTxWUeRyzRYZyUNDVJ` — "Irina - Energetic E-commerce Girl": young, hi-IN
+  native, explicitly tuned for e-commerce/product-guidance conversations
+
+`update_agent()` now accepts `voice_id` and `tts_overrides` to PATCH just the
+voice on the live agent without touching the prompt logic — swap between them
+by re-running with a different `voice_id`:
+```bash
+cd /home/ubuntu/sales_agent/onboarding-service && source .venv/bin/activate
+python3 -c "
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path('.env'))
+from elevenlabs_agent import ElevenLabsAgentCreator
+creator = ElevenLabsAgentCreator()
+creator.update_agent(
+    agent_id='agent_4901kwna71tve5nbyy85c8v20yre',
+    store_id='9cec7cd0-9252-4aa2-985b-71c2a42018cb',
+    voice_id='o6qTxWUeRyzRYZyUNDVJ',  # swap to 'dVTC43Yewy5fAIcmsISI' to compare
+    tts_overrides={'stability': 0.6, 'similarity_boost': 0.68, 'speed': 0.97},
+)
+"
+deactivate
+```
+Listen on both English and Hinglish turns each time — accent/pitch character
+can shift noticeably between languages for the same voice. Once you pick one,
+update `ELEVENLABS_VOICE_ID` in `onboarding-service/.env` too, so the NEXT full
+`create_agent`/`update_agent` run (e.g. after any prompt change) doesn't
+silently fall back to Muskaan.
+
 ## 7. Point the duplicate theme's widget embed at the right agent
 Confirm the duplicate theme's embed snippet (`<script>` block with
 `window.__TEAM_POP_*` globals) has:
@@ -103,11 +141,16 @@ Confirm the duplicate theme's embed snippet (`<script>` block with
 ## 8. Smoke test
 - Load the duplicate theme, open the widget, confirm it connects (rotating
   "Connecting... / Setting up your assistant..." messages should show)
-- Add a product to cart by voice → confirm it lands in the real Shopify cart
-  (`/cart.js` count updates, theme's own cart icon updates)
+- Add a product to cart by voice → confirm the header cart icon/badge updates
+  IMMEDIATELY (not just after navigating to /cart) — this is the
+  `syncThemeCartBadge` fix; if the theme's badge still doesn't move but `/cart`
+  shows the right items, the theme isn't Dawn-based and doesn't match any of
+  the generic selectors tried — inspect the real badge element's class/id and
+  add it to the `selectors` list in `syncThemeCartBadge` (AvatarWidget.jsx)
 - Say "checkout" → confirm it navigates to `/cart` within ~2-6s, and does NOT
   just end the session silently
-- Speak a Hindi sentence → confirm it switches without extraneous "are" fillers
+- Speak a Hindi sentence → confirm it switches WITHIN THAT SAME reply (not one
+  turn late), and without extraneous "are" fillers
 - Ask about discounts → confirm the agent mentions the real xfused offers
 - Disconnect mid-conversation (close tab) and reopen within 10 min → confirm
   cart badge + a brief "picking up where we left off" acknowledgment

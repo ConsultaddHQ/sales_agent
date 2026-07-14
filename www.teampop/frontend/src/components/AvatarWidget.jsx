@@ -45,6 +45,36 @@ function clearSessionContext() {
   try { sessionStorage.removeItem(SESSION_CONTEXT_STORAGE_KEY); } catch (_e) { /* ignore */ }
 }
 
+// Best-effort: keep the THEME's own header cart icon/badge in sync immediately after
+// an add-to-cart driven by voice/the carousel button. Shopify themes normally only
+// refresh their cart icon in response to THEIR OWN JS calling /cart/add.js — an
+// external caller like this widget leaves it stale until the shopper navigates to
+// /cart (a full page load, which is server-rendered and always correct). Two layers,
+// each a no-op if it doesn't apply to the live theme:
+//  1. Dawn (Shopify's default OS2.0 theme, and most themes forked from it) exposes a
+//     dedicated #cart-icon-bubble section — refetch + swap its HTML via the Section
+//     Rendering API (`?sections=`), the same mechanism Dawn's own cart.js uses.
+//  2. Generic fallback: patch common cart-count selectors' text directly so
+//     non-Dawn themes at least show the right number without a full re-render.
+async function syncThemeCartBadge(cart) {
+  if (!cart) return;
+  try {
+    const r = await fetch('/?sections=cart-icon-bubble');
+    if (r.ok) {
+      const data = await r.json();
+      const html = data?.['cart-icon-bubble'];
+      const el = html && document.getElementById('cart-icon-bubble');
+      if (el) { el.innerHTML = html; return; }
+    }
+  } catch (_e) { /* theme has no cart-icon-bubble section — fall through to generic patch */ }
+
+  const count = cart.item_count ?? 0;
+  const selectors = ['.cart-count-bubble', '[data-cart-count]', '.cart-count', '#CartCount', '.cart-link__bubble'];
+  selectors.forEach((sel) => {
+    document.querySelectorAll(sel).forEach((el) => { el.textContent = String(count); });
+  });
+}
+
 // Voice transport: "websocket" | "webrtc". Single toggle for the whole widget.
 //
 // - "websocket": streams raw PCM (no lossy Opus codec, no WebRTC DSP). On a
@@ -1031,15 +1061,16 @@ function AvatarInner({
   const refreshCartState = useCallback(async () => {
     if (window.__TEAM_POP_DEMO__) {
       setCartCount(demoCartCountRef.current);
-      return;
+      return null;
     }
     try {
       const r = await fetch('/cart.js');
-      if (!r.ok) return;
+      if (!r.ok) return null;
       const data = await r.json();
       setCartCount(data.item_count ?? 0);
       setCartSubtotalCents(data.total_price ?? 0);
-    } catch (_e) { /* ignore — cart bar just stays hidden/stale */ }
+      return data;
+    } catch (_e) { return null; /* ignore — cart bar just stays hidden/stale */ }
   }, []);
 
   // ── VAD session helpers ───────────────────────────────────────────────────
@@ -1241,22 +1272,13 @@ function AvatarInner({
         body: JSON.stringify({ id: variant.id, quantity: qty }),
       });
       if (!r.ok) throw new Error(await r.text());
-      const addedItem = await r.json();
+      await r.json();
       setCartToast("success");
       if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
       cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
       setCartedQty(prev => { const n = new Map(prev); n.set(String(product.id), (n.get(String(product.id)) || 0) + qty); return n; });
-      refreshCartState(); // pick up the real Shopify-side count/subtotal
-      // Many Shopify themes (incl. Dawn) only update their own cart icon/drawer in
-      // response to their own JS calling /cart/add.js — an external fetch like ours
-      // never triggers it, so the header cart badge can look stale even though the
-      // Shopify cart itself is correct. Broadcast the common theme event names so any
-      // listening theme script picks up the change; harmless no-op if none listen.
-      try {
-        document.dispatchEvent(new CustomEvent('cart:refresh', { detail: { item: addedItem } }));
-        document.dispatchEvent(new CustomEvent('cart:updated', { detail: { item: addedItem } }));
-        document.dispatchEvent(new CustomEvent('cart:build', { detail: { item: addedItem } }));
-      } catch (_e) { /* non-critical */ }
+      const freshCart = await refreshCartState(); // pick up the real Shopify-side count/subtotal
+      syncThemeCartBadge(freshCart);
       return `Added ${qty > 1 ? `${qty} ` : ""}${product.name} to cart!`;
     } catch (err) {
       console.warn("[cart] /cart/add.js failed:", err);
