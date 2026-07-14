@@ -495,6 +495,33 @@
   to   { filter: drop-shadow(0 0 24px rgba(168,85,247,0.9)); transform: scale(1.06); }
 }
 
+/* CONNECTING status pill — the default 9px pill reads as inert against the dark
+   dock background (client feedback: hard to notice, doesn't signal "in progress").
+   Bigger text + a breathing glow on the pill itself (independent of the orb's own
+   pulse) so the connecting state visibly draws the eye. */
+.status-pill-connecting {
+  animation: connectingPillPulse 1.2s ease-in-out infinite;
+}
+@keyframes connectingPillPulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(245,158,11,0.35); border-color: rgba(245,158,11,0.4); }
+  50%       { box-shadow: 0 0 20px rgba(245,158,11,0.7); border-color: rgba(245,158,11,0.85); }
+}
+
+/* Small rotating ring shown next to the connecting message — an explicit
+   "working on it" cue distinct from the orb's own ambient pulse. */
+.connecting-spinner {
+  animation: connectingSpin 0.8s linear infinite;
+  transform-origin: center;
+}
+@keyframes connectingSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-pill-connecting { animation: none; box-shadow: 0 0 12px rgba(245,158,11,0.5); }
+  .connecting-spinner { animation: none; }
+}
+
 /* prefers-reduced-motion: static per-state color glow, no animation */
 @media (prefers-reduced-motion: reduce) {
   .orb-wrapper.IDLE .orb-core           { animation: none; }

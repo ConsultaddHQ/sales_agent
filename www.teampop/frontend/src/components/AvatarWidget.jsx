@@ -411,10 +411,14 @@ function OrbDock({
     LISTENING:     "bg-green-500/20 text-green-400 border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.2)]",
     THINKING:      "bg-cyan-500/20 text-cyan-400 border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)]",
     AGENT_SPEAKING:"bg-purple-500/20 text-purple-400 border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.2)]",
-    CONNECTING:    "bg-amber-500/20 text-amber-400 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]",
+    // Bolder than the other states — client feedback: the connecting pill wasn't
+    // noticeable enough to signal "actively working on it". Higher opacity fill,
+    // brighter border, plus the status-pill-connecting breathing glow (CSS).
+    CONNECTING:    "bg-amber-500/30 text-amber-300 border-amber-400/70 shadow-[0_0_14px_rgba(245,158,11,0.4)] status-pill-connecting",
     PTT_HOLDING:   "bg-green-500/20 text-green-400 border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.2)]",
   };
   const pillStyle = PILL_STYLES[visualState] || "bg-zinc-800/80 text-gray-400 border-white/5";
+  const isConnecting = visualState === "CONNECTING";
 
   return (
     <div className={`orb-dock ${inactive ? "inactive" : ""}`} style={style}>
@@ -441,11 +445,19 @@ function OrbDock({
       {/* Center — orb */}
       <div className="relative flex-shrink-0 flex flex-col items-center justify-center">
         <span
-          className={`absolute -top-7 text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full whitespace-nowrap transition-all duration-300 border flex items-center gap-1 ${pillStyle}`}
+          className={`absolute uppercase font-bold tracking-widest rounded-full whitespace-nowrap transition-all duration-300 border flex items-center gap-1.5 ${
+            isConnecting ? "-top-8 text-[11px] px-3 py-1" : "-top-7 text-[9px] px-2 py-0.5"
+          } ${pillStyle}`}
         >
           {visualState === "IDLE" && (
             <svg className="w-2.5 h-2.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V20H9v2h6v-2h-2v-2.08A7 7 0 0 0 19 11h-2z"/>
+            </svg>
+          )}
+          {isConnecting && (
+            <svg className="w-3 h-3 flex-shrink-0 connecting-spinner" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.25" />
+              <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
             </svg>
           )}
           {statusLabel}
