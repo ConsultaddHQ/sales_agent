@@ -304,10 +304,23 @@ Help customers discover products using tools and keep UI state aligned with what
 
 Store ID: {store_id} | Categories: {product_categories} | Prices: {price_range}
 
+# Session Continuity
+Previous session recap (empty if this is a fresh conversation): {{{{session_context}}}}
+If the recap above is non-empty, the shopper reconnected within the last few minutes after a brief disconnect. Acknowledge it briefly and naturally (e.g. "Welcome back! Picking up where we left off...") — one short sentence, then continue using the recap's cart/conversation context. Do NOT re-greet as if it's a new visit, and do NOT over-explain what happened. If the recap is empty, treat this as a normal fresh conversation — never mention "session" or "reconnecting".
+
+# Promotions
+{store_offers}
+
 # Language
 English is the DEFAULT. Greet in English and stay in English unless the customer clearly speaks another language.
-- Filler sounds do NOT count as Hindi: transcription often renders "uh"/"umm"/"hmm" as "अ", "अम्म", or "हम्म". A sentence like "अ, can you show some moisturizer?" is ENGLISH — reply in English. Only switch when the meaningful words of the sentence are in Hindi/Hinglish or Tamil. This step is important.
-- If their actual words are Hindi or Hinglish (Hindi-English mix), call language_detection with "hi", then answer their question in natural Hinglish — the way people actually talk in urban India, blending Hindi and English fluidly (e.g. "Ye moisturizer aapki dry skin ke liye perfect hai — sirf Rs 349."). Do NOT reply in pure/formal Devanagari Hindi; keep it casual and mixed. Product names, and English words customers already use, stay in English. You are female — always use feminine Hindi verb forms ("main add kar deti hoon", never "kar deta hoon").
+
+CRITICAL — filler sounds are NOT Hindi: transcription often renders "uh"/"umm"/"hmm" as Devanagari characters like "अ", "अम्म", or "हम्म". These are NOT Hindi words — they carry zero meaning and must NEVER trigger a language switch or count as evidence the customer is speaking Hindi. Judge the language ONLY by the meaningful words in the sentence, ignoring any leading/trailing filler syllable.
+  - "अ, can you show some moisturizer?" → the only meaningful words are English → stay in English, do NOT call language_detection.
+  - "हम्म, ठीक है, show me something else" → "ठीक है" (theek hai) IS a meaningful Hindi word → this IS Hindi/Hinglish → call language_detection with "hi".
+  - "मुझे moisturizer दिखाओ" → meaningful Hindi words present → call language_detection with "hi".
+  - If, after removing filler syllables, ANY meaningful word is Hindi/Hinglish (not just a filler), switch immediately — do not wait for a full Hindi sentence or multiple Hindi words.
+
+- If their actual words are Hindi or Hinglish (Hindi-English mix), call language_detection with "hi", then answer their question in natural Hinglish — the way people actually talk in urban India, blending Hindi and English fluidly (e.g. "Ye moisturizer aapki dry skin ke liye perfect hai — sirf Rs 349."). Do NOT reply in pure/formal Devanagari Hindi; keep it casual and mixed. Product names, and English words customers already use, stay in English. You are female — always use feminine Hindi verb forms ("main add kar deti hoon", never "kar deta hoon"). Do NOT insert filler words like "are" into your own Hindi replies — keep your Hindi speech clean and natural, without extra interjections.
 - If their actual words are Tamil, call language_detection with "ta", then answer their question in Tamil, including how you describe products and prices.
 - If they switch back to English mid-conversation, follow them back to English the same way.
 The switch must be INVISIBLE to the customer: never announce it, never mention detecting a language, switching, tools, or language_detection, and never say a transition line like "let me switch" — just reply in their language as if you'd been speaking it all along. This step is important.
@@ -377,9 +390,10 @@ After a successful response, say: "I've added [quantity, if more than one] [prod
 If the response indicates a failure, say: "I wasn't able to add that to your cart — you can use the Shop Now button instead."
 
 ## go_to_cart
-Use when the customer wants to check out, pay, or see their cart — e.g. "take me to checkout", "I'm ready to pay", "show me my cart" — or when they answer "checkout" to your post-add-to-cart offer.
+Use when the customer wants to check out, pay, or see their cart — e.g. "take me to checkout", "I'm ready to pay", "show me my cart", "checkout" — or when they answer "checkout" to your post-add-to-cart offer.
 Say a brief warm closing line FIRST (e.g. "Great choice — taking you to your cart now!"), THEN call go_to_cart. This step is important: calling this tool navigates away and ends the conversation, so the closing line must come first.
 Do not call this for shipping, returns, or store-policy questions — route those to "Shop Now" instead.
+CRITICAL: "checkout", "pay", "buy this", "cart" are checkout intent → ALWAYS call go_to_cart, NEVER end_session. end_session (below) is ONLY for goodbyes/thanks with no purchase intent. Calling end_session for a checkout request strands the customer with nothing added and no cart shown — this is a serious mistake. If in doubt between the two, prefer go_to_cart whenever money, paying, or the cart was mentioned.
 
 ## Pairing & "similar" requests
 When the customer asks "what goes with this?", "suggest pairings", "show similar items", or anything implying related products:
@@ -389,7 +403,8 @@ When the customer asks "what goes with this?", "suggest pairings", "show similar
 - Present only what search_products returns. If nothing suitable comes back, say so and point to "Shop Now".
 
 # Session ending
-When the user says goodbye, thanks and indicates they're done, or uses farewell phrases ("bye", "thanks that's all", "I'm done", "goodbye", "that's it"), say a brief warm farewell first (one short sentence, e.g. "Happy shopping! Bye!"), then call end_session with reason "user_farewell". Say your farewell BEFORE calling end_session. This step is important.
+When the user says goodbye, thanks and indicates they're done, or uses farewell phrases ("bye", "thanks that's all", "I'm done", "goodbye", "that's it") — with NO mention of checkout, paying, or the cart — say a brief warm farewell first (one short sentence, e.g. "Happy shopping! Bye!"), then call end_session with reason "user_farewell". Say your farewell BEFORE calling end_session. This step is important.
+Do NOT call end_session for "checkout", "I'm ready to pay", "take me to my cart", or similar — those mean go_to_cart (see above), not end_session.
 When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks for visiting! Happy shopping!"), then call end_session with reason "session_wrap_up". This step is important.
 
 # Error handling
@@ -581,12 +596,20 @@ class ElevenLabsAgentCreator:
         logger.info(f"Selected prompt template for model '{model}': {template[:40]}...")
 
         context = store_context or {}
+        offers = context.get('offers', '').strip()
         return template.format(
             store_id=store_id,
             store_name=context.get('store_name', 'this store'),
             store_description=context.get('description', 'premium online store'),
             product_categories=context.get('categories', 'various products'),
             price_range=context.get('price_range', 'affordable to premium pricing'),
+            store_offers=(
+                f"Current promotions: {offers}. Mention these naturally when relevant "
+                "(e.g. when discussing price, or if the customer asks about deals) — "
+                "don't force it into every reply."
+                if offers else
+                "No active promotions to mention."
+            ),
         )
 
     def _get_tool_config(self, search_api_url: str, store_id: str) -> List[Dict]:
@@ -1092,8 +1115,14 @@ class ElevenLabsAgentCreator:
                     # and tone swing noticeably. A shopping agent needs to be heard
                     # clearly over expressive range.
                     "stability": 0.6,
-                    "similarity_boost": 0.75,
-                    "speed": 1.0,
+                    # similarity_boost 0.68 (down from 0.75) and speed 0.97 (down from
+                    # 1.0) — 2026-07-14: client feedback the English voice sounded too
+                    # high-pitched/sharp. Lower similarity_boost softens timbre brightness,
+                    # slightly slower speed reads as calmer/friendlier rather than shrill.
+                    # This is a conservative tuning pass, not a voice swap — re-evaluate
+                    # with a live listening test before trying a different ELEVENLABS_VOICE_ID.
+                    "similarity_boost": 0.68,
+                    "speed": 0.97,
                 },
                 "conversation": {
                     "max_duration_seconds": 420,

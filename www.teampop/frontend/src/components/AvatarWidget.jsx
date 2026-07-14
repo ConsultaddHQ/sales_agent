@@ -17,6 +17,34 @@ const DUMMY_IMAGE = "/widget/image.png";
 const USER_INACTIVITY_TIMEOUT_MS = 30000;
 const SESSION_HARD_LIMIT_MS = 420000;
 
+// Session continuity — client ask: if the agent or shopper closes the session
+// (accidentally, or via the hard/inactivity limit), a reconnect within this
+// window should pick up where it left off instead of starting cold. Scoped to
+// sessionStorage (tab-lifetime, not persisted across browser restarts) and
+// consumed once on restore so a later, unrelated session doesn't inherit stale
+// context.
+const SESSION_CONTEXT_STORAGE_KEY = "team-pop-session-context";
+const SESSION_CONTEXT_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function loadSessionContext() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_CONTEXT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.savedAt || Date.now() - parsed.savedAt > SESSION_CONTEXT_TTL_MS) {
+      sessionStorage.removeItem(SESSION_CONTEXT_STORAGE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch (_e) {
+    return null;
+  }
+}
+
+function clearSessionContext() {
+  try { sessionStorage.removeItem(SESSION_CONTEXT_STORAGE_KEY); } catch (_e) { /* ignore */ }
+}
+
 // Voice transport: "websocket" | "webrtc". Single toggle for the whole widget.
 //
 // - "websocket": streams raw PCM (no lossy Opus codec, no WebRTC DSP). On a
@@ -259,13 +287,24 @@ function getVisualState({ status, interactionMode, isPressActive, vadSubState })
   return interactionMode === "ptt" ? "PTT_READY" : "IDLE";
 }
 
+// Rotated while visualState === "CONNECTING" so the handshake (a few seconds,
+// like a phone call connecting) reads as active progress rather than a stalled
+// spinner. See CONNECTING_MESSAGE_INTERVAL_MS for the rotation cadence.
+const CONNECTING_MESSAGES = [
+  "Connecting...",
+  "Setting up your assistant...",
+  "Almost ready...",
+];
+const CONNECTING_MESSAGE_INTERVAL_MS = 1500;
+
 /**
  * Map visual state to shopper-facing status pill text.
+ * connectingMessageIndex only matters for the CONNECTING state (see OrbDock).
  */
-function getStatusLabel(visualState) {
+function getStatusLabel(visualState, connectingMessageIndex = 0) {
   switch (visualState) {
     case "IDLE":                return "Talk to AI";
-    case "CONNECTING":          return "Connecting...";
+    case "CONNECTING":          return CONNECTING_MESSAGES[connectingMessageIndex % CONNECTING_MESSAGES.length];
     case "LISTENING":           return "Listening...";
     case "THINKING":            return "Thinking...";
     case "AGENT_SPEAKING":      return "Speaking...";
@@ -317,7 +356,18 @@ function OrbDock({
   style = {},
   inactive = false,
 }) {
-  const statusLabel = getStatusLabel(visualState);
+  const [connectingMessageIndex, setConnectingMessageIndex] = useState(0);
+  useEffect(() => {
+    if (visualState !== "CONNECTING") {
+      setConnectingMessageIndex(0);
+      return;
+    }
+    const id = setInterval(() => {
+      setConnectingMessageIndex((i) => i + 1);
+    }, CONNECTING_MESSAGE_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [visualState]);
+  const statusLabel = getStatusLabel(visualState, connectingMessageIndex);
   const isPtt = interactionMode === "ptt";
 
   const PILL_STYLES = {
@@ -577,6 +627,13 @@ function AvatarInner({
   const [cartedQty, setCartedQty] = useState(() => new Map());
   const [cartCount, setCartCount] = useState(0);
   const [cartSubtotalCents, setCartSubtotalCents] = useState(0);
+  // Mirror chatHistory/cartedQty into refs so onDisconnect (captured once inside
+  // the useConversation config below) can read the LATEST values instead of
+  // whatever was in scope when the callback closed over them.
+  const chatHistoryRef = useRef([]);
+  useEffect(() => { chatHistoryRef.current = chatHistory; }, [chatHistory]);
+  const cartedQtyRef = useRef(new Map());
+  useEffect(() => { cartedQtyRef.current = cartedQty; }, [cartedQty]);
   const demoCartCountRef = useRef(0); // simulated cart count on off-store demo/test pages
   const variantCacheRef = useRef(new Map());
   const cartEnabled = window.__TEAM_POP_CART_ENABLED__ !== false;
@@ -641,6 +698,31 @@ function AvatarInner({
       );
       sessionMetricsRef.current.latencyProductsMs = totalMs;
     }
+  }
+
+  // Persist a short session summary (recent messages + cart) so a reconnect within
+  // SESSION_CONTEXT_TTL_MS can resume instead of starting cold (client ask: survive
+  // an accidental close or the agent's own hard/inactivity limit). Reads from refs,
+  // not state, so it always sees the latest values regardless of when this closure
+  // (captured once by useConversation's onDisconnect) last re-rendered.
+  function saveSessionContext() {
+    try {
+      const recentMessages = chatHistoryRef.current.slice(-10).map((m) => ({ source: m.source, text: m.text }));
+      const cartItems = Array.from(cartedQtyRef.current.entries()).map(([productId, qty]) => {
+        const product = latestProductsRef.current.find((p) => String(p.id) === String(productId));
+        return { productId, qty, name: product?.name || null };
+      });
+      if (recentMessages.length === 0 && cartItems.length === 0) {
+        clearSessionContext();
+        return;
+      }
+      sessionStorage.setItem(SESSION_CONTEXT_STORAGE_KEY, JSON.stringify({
+        savedAt: Date.now(),
+        messages: recentMessages,
+        cartItems,
+      }));
+      console.log("[session] Saved session context for possible reconnect within 10min.");
+    } catch (_e) { /* sessionStorage unavailable — skip persistence */ }
   }
 
   // ── ElevenLabs conversation ───────────────────────────────────────────────
@@ -718,6 +800,7 @@ function AvatarInner({
         "message=", details?.message,
         "context=", details?.context,
       );
+      saveSessionContext();
     },
     onInterruption: (details) => {
       sessionMetricsRef.current.interruptionCount += 1;
@@ -961,12 +1044,31 @@ function AvatarInner({
 
   // ── VAD session helpers ───────────────────────────────────────────────────
   const startVoiceSession = useCallback(() => {
-    setChatHistory([]);
     setAgentSubtitle("");
     setHighlightPrice(false);
-    setCartedQty(new Map());
     refreshCartState(); // pick up any pre-existing cart contents (e.g. added before opening the widget)
     variantCacheRef.current.clear();
+
+    // Reconnect-within-10min: restore chat + cart-badge state and hand the agent a
+    // short recap via dynamicVariables (see "# Session Continuity" in PROMPT_CLAUDE).
+    // Consumed once so a later, unrelated session doesn't inherit stale context.
+    const saved = loadSessionContext();
+    let sessionContextText = "";
+    if (saved) {
+      console.log("[session] Restoring session context from a reconnect within 10min.");
+      setChatHistory((saved.messages || []).map((m, i) => ({ id: `restored-${i}`, source: m.source, text: m.text })));
+      setCartedQty(new Map((saved.cartItems || []).map((ci) => [String(ci.productId), ci.qty])));
+      const cartSummary = saved.cartItems?.length
+        ? saved.cartItems.map((ci) => `${ci.qty}x ${ci.name || "an item"}`).join(", ")
+        : "nothing yet";
+      const recentTurns = (saved.messages || []).slice(-4).map((m) => `${m.source}: ${m.text}`).join(" | ");
+      sessionContextText = `Shopper reconnected after a brief disconnect. Cart so far: ${cartSummary}. Recent conversation: ${recentTurns}`;
+      clearSessionContext();
+    } else {
+      setChatHistory([]);
+      setCartedQty(new Map());
+    }
+
     const now = Date.now();
     inactivityRef.current = { startAt: now, lastMeaningfulUserAt: now };
     sessionMetricsRef.current = { startAt: now, productsShown: 0, productsClicked: 0, shopNowClicked: false, chatMessages: 0, endReason: null, conversationId: null, latencyFirstAiMs: null, latencyProductsMs: null, toolCalls: 0, interruptionCount: 0 };
@@ -974,7 +1076,11 @@ function AvatarInner({
     // file for the websocket-vs-webrtc audio-quality trade-offs). Currently "websocket"
     // for cleanest agent audio (raw PCM, no Opus/PLC artifacts) — the old first_message
     // drop bug that forced WebRTC is fixed in @elevenlabs/client ≥1.13.
-    conversation.startSession({ agentId, connectionType: CONNECTION_TYPE });
+    conversation.startSession({
+      agentId,
+      connectionType: CONNECTION_TYPE,
+      dynamicVariables: { session_context: sessionContextText },
+    });
   }, [conversation, agentId, refreshCartState]);
 
   const endVoiceSession = useCallback(() => {
@@ -1014,6 +1120,7 @@ function AvatarInner({
   // going straight to /checkout would bypass Shiprocket entirely. Defined here (above
   // the farewell watcher) so the watcher can call it without a TDZ crash.
   const goToCart = useCallback(() => {
+    console.log("[cart] goToCart() firing — navigating to /cart now.");
     if (window.__TEAM_POP_DEMO__) {
       console.log("[cart] Demo mode — would navigate to /cart here.");
       return;
@@ -1134,14 +1241,25 @@ function AvatarInner({
         body: JSON.stringify({ id: variant.id, quantity: qty }),
       });
       if (!r.ok) throw new Error(await r.text());
-      await r.json();
+      const addedItem = await r.json();
       setCartToast("success");
       if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
       cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
       setCartedQty(prev => { const n = new Map(prev); n.set(String(product.id), (n.get(String(product.id)) || 0) + qty); return n; });
       refreshCartState(); // pick up the real Shopify-side count/subtotal
+      // Many Shopify themes (incl. Dawn) only update their own cart icon/drawer in
+      // response to their own JS calling /cart/add.js — an external fetch like ours
+      // never triggers it, so the header cart badge can look stale even though the
+      // Shopify cart itself is correct. Broadcast the common theme event names so any
+      // listening theme script picks up the change; harmless no-op if none listen.
+      try {
+        document.dispatchEvent(new CustomEvent('cart:refresh', { detail: { item: addedItem } }));
+        document.dispatchEvent(new CustomEvent('cart:updated', { detail: { item: addedItem } }));
+        document.dispatchEvent(new CustomEvent('cart:build', { detail: { item: addedItem } }));
+      } catch (_e) { /* non-critical */ }
       return `Added ${qty > 1 ? `${qty} ` : ""}${product.name} to cart!`;
     } catch (err) {
+      console.warn("[cart] /cart/add.js failed:", err);
       setCartToast("error");
       if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
       cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
@@ -1165,6 +1283,7 @@ function AvatarInner({
   // ending it explicitly is what makes the demo page (nav disabled) close the orb too
   // instead of leaving the mic open — the bug this fixes.
   useConversationClientTool("go_to_cart", () => {
+    console.log("[session] Agent called go_to_cart.");
     if (!cartEnabled) return Promise.resolve("This store uses Shop Now — there's no cart to show.");
     navigateAfterFarewellRef.current = true;
     pendingFarewellEndRef.current = "go_to_cart";
@@ -1174,6 +1293,7 @@ function AvatarInner({
     farewellFallbackTimerRef.current = setTimeout(() => {
       farewellFallbackTimerRef.current = null;
       if (pendingFarewellEndRef.current) {
+        console.log("[session] go_to_cart fallback timer fired — ending + navigating now");
         pendingFarewellEndRef.current = null;
         const navAfter = navigateAfterFarewellRef.current;
         navigateAfterFarewellRef.current = false;
