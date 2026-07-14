@@ -69,9 +69,16 @@ async function syncThemeCartBadge(cart) {
   } catch (_e) { /* theme has no cart-icon-bubble section — fall through to generic patch */ }
 
   const count = cart.item_count ?? 0;
-  const selectors = ['.cart-count-bubble', '[data-cart-count]', '.cart-count', '#CartCount', '.cart-link__bubble'];
+  // .js-cart-count confirmed live on goxfused.com (2026-07-14) — renders as "(0)" in
+  // the header and plain "0" in the mini-cart drawer, so preserve whatever non-digit
+  // wrapper (parens, etc.) is already there instead of blindly overwriting textContent.
+  const selectors = ['.js-cart-count', '.cart-count-bubble', '[data-cart-count]', '.cart-count', '#CartCount', '.cart-link__bubble'];
   selectors.forEach((sel) => {
-    document.querySelectorAll(sel).forEach((el) => { el.textContent = String(count); });
+    document.querySelectorAll(sel).forEach((el) => {
+      el.textContent = /\d/.test(el.textContent)
+        ? el.textContent.replace(/\d+/, String(count))
+        : String(count);
+    });
   });
 }
 
