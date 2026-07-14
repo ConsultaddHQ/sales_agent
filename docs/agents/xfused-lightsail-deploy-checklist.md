@@ -95,14 +95,21 @@ text from this session's WebFetch of goxfused.com actually gets pushed live —
 until this runs, the agent is still on its old prompt regardless of what's in
 `elevenlabs_agent.py`.
 
-## 6b. A/B test the two new voice candidates
+## 6b. A/B test the voice candidates
 Client flagged the current voice (Muskaan) as too high-pitched even after the
-2026-07-14 TTS tuning pass. Two candidates from the ElevenLabs shared library,
-already added to the account this session:
+2026-07-14 TTS tuning pass. Four candidates from the ElevenLabs shared library,
+all already added to the account this session:
 - `dVTC43Yewy5fAIcmsISI` — "Anvi - Warm, Emotional Girlfriend": soft, young,
   hi-IN native, conversational/companion use-case
 - `o6qTxWUeRyzRYZyUNDVJ` — "Irina - Energetic E-commerce Girl": young, hi-IN
   native, explicitly tuned for e-commerce/product-guidance conversations
+- `1Z7Y8o9cvUeWq8oLKgMY` — "Tripti - Calm and Clear": middle-aged, hi-IN
+  native, built specifically for Hindi customer-support/IVR/virtual-agent bots
+  — closest persona fit to Wrina's role of the four
+- `uYqzKDmOqxa1GrgoORxz` — "Pooja - Soft, Empathetic Therapy Voice": young,
+  hi-IN native, built for mental-health/therapy companions — softest/calmest
+  tone of the four, but check it doesn't read as too slow/gentle for a
+  shopping context
 
 `update_agent()` now accepts `voice_id` and `tts_overrides` to PATCH just the
 voice on the live agent without touching the prompt logic — swap between them
@@ -118,7 +125,7 @@ creator = ElevenLabsAgentCreator()
 creator.update_agent(
     agent_id='agent_4901kwna71tve5nbyy85c8v20yre',
     store_id='9cec7cd0-9252-4aa2-985b-71c2a42018cb',
-    voice_id='o6qTxWUeRyzRYZyUNDVJ',  # swap to 'dVTC43Yewy5fAIcmsISI' to compare
+    voice_id='o6qTxWUeRyzRYZyUNDVJ',  # or 'dVTC43Yewy5fAIcmsISI' / '1Z7Y8o9cvUeWq8oLKgMY' / 'uYqzKDmOqxa1GrgoORxz'
     tts_overrides={'stability': 0.6, 'similarity_boost': 0.68, 'speed': 0.97},
 )
 "
