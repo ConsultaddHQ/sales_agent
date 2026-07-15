@@ -335,6 +335,11 @@ const CONNECTING_MESSAGES = [
 ];
 const CONNECTING_MESSAGE_INTERVAL_MS = 1500;
 
+// Minimum gap between applied carousel focus changes — roughly how long the
+// agent takes to speak one "Name — price" summary line. See the carousel focus
+// pacing block in AvatarInner for why tool-call arrival outruns the audio.
+const CAROUSEL_FOCUS_MIN_GAP_MS = 2400;
+
 /**
  * Map visual state to shopper-facing status pill text.
  * connectingMessageIndex only matters for the CONNECTING state (see OrbDock).
@@ -554,7 +559,6 @@ function OrbDock({
 // ─── ProductDetails ───────────────────────────────────────────────────────────
 
 const ProductDetails = ({ product, highlightPrice, cartedCount = 0, onShopNow, onAddToCart }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
   const [qty, setQty] = useState(1);
 
   const price = product.price
@@ -610,21 +614,9 @@ const ProductDetails = ({ product, highlightPrice, cartedCount = 0, onShopNow, o
       {cartedCount > 0 && (
         <div className="text-xs text-green-400 font-semibold">In cart: {cartedCount}</div>
       )}
-      {product.description && (
-        <div className="flex flex-col gap-1">
-          <div
-            className={`text-sm text-gray-400 transition-all ${!isExpanded ? "line-clamp-2" : ""}`}
-          >
-            {product.description}
-          </div>
-          <button
-            onClick={(e) => { e.preventDefault(); setIsExpanded(!isExpanded); }}
-            className="text-xs text-blue-400 self-start font-semibold"
-          >
-            {isExpanded ? "Show less" : "Read more"}
-          </button>
-        </div>
-      )}
+      {/* Description intentionally not rendered (client feedback 2026-07-15):
+          it forced the panel to scroll and pushed the thumbnails out of view.
+          The agent speaks the details, and Shop Now links to the full page. */}
     </div>
   );
 };
@@ -1084,6 +1076,38 @@ function AvatarInner({
     vadSubState,
   });
 
+  // ── Carousel focus pacing ─────────────────────────────────────────────────
+  // The LLM emits its whole turn (text + tool calls) in ~1-2s, and client tools
+  // run the moment they arrive — but the TTS audio plays back in real time. So
+  // during a product-by-product summary, "focus product 2" would land while the
+  // audio for product 1 is still playing, and the carousel visibly runs ahead
+  // of the voice. Pacing: apply focus changes at most once per
+  // CAROUSEL_FOCUS_MIN_GAP_MS, queueing the rest, so the screen advances at
+  // roughly the cadence the agent speaks ("Name — price" per product).
+  const carouselFocusQueueRef = useRef([]);
+  const carouselFocusTimerRef = useRef(null);
+  const lastCarouselFocusAtRef = useRef(0);
+
+  const applyCarouselFocus = useCallback((idx) => {
+    lastCarouselFocusAtRef.current = Date.now();
+    setActiveIndex(idx);
+  }, [setActiveIndex]);
+
+  const drainCarouselFocusQueue = useCallback(() => {
+    carouselFocusTimerRef.current = null;
+    const next = carouselFocusQueueRef.current.shift();
+    if (next === undefined) return;
+    applyCarouselFocus(next);
+    if (carouselFocusQueueRef.current.length > 0) {
+      carouselFocusTimerRef.current = setTimeout(drainCarouselFocusQueue, CAROUSEL_FOCUS_MIN_GAP_MS);
+    }
+  }, [applyCarouselFocus]);
+
+  const resetCarouselFocusPacing = useCallback(() => {
+    carouselFocusQueueRef.current = [];
+    if (carouselFocusTimerRef.current) { clearTimeout(carouselFocusTimerRef.current); carouselFocusTimerRef.current = null; }
+  }, []);
+
   // ── Tool: update_products ─────────────────────────────────────────────────
   useConversationClientTool("update_products", (parameters) => {
     isToolPendingRef.current = true;
@@ -1096,7 +1120,8 @@ function AvatarInner({
     setLatestProducts(products);
     latestProductsRef.current = products;
     setActiveView("PRODUCTS");
-    setActiveIndex(0);
+    resetCarouselFocusPacing(); // new result set — drop any queued focus from the old one
+    applyCarouselFocus(0);
     setAgentSubtitle(`Found ${products.length} products for you`);
     if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
     subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 3000);
@@ -1112,10 +1137,23 @@ function AvatarInner({
     const len = latestProductsRef.current.length;
     const safeIdx = Number.isFinite(index) && len > 0 ? Math.max(0, Math.min(index, len - 1)) : 0;
     if (Number.isFinite(index) && len > 0) {
-      setActiveIndex(safeIdx);
+      const sinceLast = Date.now() - lastCarouselFocusAtRef.current;
+      if (carouselFocusQueueRef.current.length === 0 && !carouselFocusTimerRef.current && sinceLast >= CAROUSEL_FOCUS_MIN_GAP_MS) {
+        applyCarouselFocus(safeIdx);
+      } else {
+        carouselFocusQueueRef.current.push(safeIdx);
+        if (!carouselFocusTimerRef.current) {
+          carouselFocusTimerRef.current = setTimeout(
+            drainCarouselFocusQueue,
+            Math.max(0, CAROUSEL_FOCUS_MIN_GAP_MS - sinceLast),
+          );
+        }
+      }
     }
     isToolPendingRef.current = false;
     // Return JSON so the agent can extract product_id reliably for get_similar_products.
+    // Computed from the TARGET index immediately (not the currently-visible one), so the
+    // agent's view of "what's focused" is correct even while the visual change is queued.
     const focused = latestProductsRef.current[safeIdx];
     return focused ? JSON.stringify({ product_name: focused.name, product_id: String(focused.id) }) : "ok";
   });
@@ -1564,6 +1602,7 @@ function AvatarInner({
       if (farewellFallbackTimerRef.current) clearTimeout(farewellFallbackTimerRef.current);
       if (farewellSettleTimerRef.current) clearTimeout(farewellSettleTimerRef.current);
       if (feedbackDismissTimerRef.current) clearTimeout(feedbackDismissTimerRef.current);
+      if (carouselFocusTimerRef.current) clearTimeout(carouselFocusTimerRef.current);
       if (rafVolRef.current) cancelAnimationFrame(rafVolRef.current);
       if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);
     };
@@ -1813,6 +1852,7 @@ function AvatarInner({
                       style={{ width: "60px", height: "60px" }}
                       onClick={() => {
                         console.log(`[Thumbnail] Click → index ${idx} (${latestProducts[idx]?.name || "unknown"})`);
+                        resetCarouselFocusPacing(); // user took control — drop queued agent focus changes
                         setActiveIndex(idx);
                         sessionMetricsRef.current.productsClicked += 1;
                       }}
