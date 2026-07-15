@@ -91,7 +91,7 @@ creator.update_agent(
         'description': 'skincare store',
         'categories': 'facewash, moisturiser, lip balm',
         'price_range': '₹299–₹399',
-        'offers': 'Extra 10% off first order; free shipping on orders ₹499+; 12% off facewashes and moisturisers (Rs 349, was Rs 399); 14% off lip balms (Rs 299, was Rs 349)',
+        'offers': 'Catalog prices are ALREADY the discounted offer prices: facewashes and moisturisers Rs 349 (12% off, regular Rs 399); lip balms Rs 299 (14% off, regular Rs 349). Checkout extras on top: extra 10% off first order, free shipping on orders ₹499+.',
     },
 )
 "
