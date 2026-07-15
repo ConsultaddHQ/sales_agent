@@ -637,12 +637,11 @@ const ProductDetails = ({ product, highlightPrice, cartedCount = 0, onShopNow, o
 
 // ─── FirstVisitNudge ──────────────────────────────────────────────────────────
 
+// No auto-dismiss (client feedback 2026-07-15): the nudge stays visible the
+// whole time the orb is resting/closed, so shoppers always know what it is.
+// It hides while a session is active and only goes away for good if the
+// shopper dismisses it with the ×.
 function FirstVisitNudge({ onDismiss }) {
-  useEffect(() => {
-    const t = setTimeout(onDismiss, 6000);
-    return () => clearTimeout(t);
-  }, [onDismiss]);
-
   return (
     <motion.div
       key="nudge"
@@ -656,7 +655,7 @@ function FirstVisitNudge({ onDismiss }) {
         <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V20H9v2h6v-2h-2v-2.08A7 7 0 0 0 19 11h-2z"/>
       </svg>
       <span className="text-white text-xs leading-snug flex-1">
-        Tap me! I'm your AI shopping assistant.
+        Tap me — I'm your Shopping Buddy!
       </span>
       <button
         onClick={onDismiss}
@@ -1606,7 +1605,6 @@ function AvatarInner({
     if (isSessionTransitioningRef.current) return;
     if (isDraggingRef.current) return; // Task 2: don't activate if a drag just finished
     if (conversation.status === "connecting") return;
-    if (showNudge) dismissNudge();
     resetInactivity();
     isSessionTransitioningRef.current = true;
     if (conversation.status === "connected") {
@@ -1615,7 +1613,7 @@ function AvatarInner({
       startVoiceSession();
     }
     setTimeout(() => { isSessionTransitioningRef.current = false; }, 500);
-  }, [conversation.status, startVoiceSession, endSessionAndCollapse, resetInactivity, showNudge, dismissNudge]);
+  }, [conversation.status, startVoiceSession, endSessionAndCollapse, resetInactivity]);
 
   /** PTT pointer/keyboard handlers — forwarded to the orb */
   const handlePttPointerDown = useCallback(

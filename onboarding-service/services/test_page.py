@@ -159,6 +159,9 @@ def _inject_widget(soup: BeautifulSoup, agent_id: str, store_id: str = "", cart_
 
     widget_tag = soup.new_tag("script")
     widget_tag["src"] = widget_script_url
+    # defer = download in parallel, execute only after HTML parsing finishes —
+    # the widget must never block the merchant page's own render.
+    widget_tag["defer"] = ""
     body.append(widget_tag)
 
     agent_el = soup.new_tag("team-pop-agent")

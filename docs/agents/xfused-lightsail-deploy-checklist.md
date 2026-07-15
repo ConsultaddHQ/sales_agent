@@ -165,6 +165,14 @@ update `ELEVENLABS_VOICE_ID` in `onboarding-service/.env` too, so the NEXT full
 silently fall back to Muskaan.
 
 ## 7. Point the duplicate theme's widget embed at the right agent
+**Performance (2026-07-15):** add `defer` to the widget script tag in the
+theme's embed snippet — `<script src="https://api.teampop.com/widget/widget.js"
+defer></script>` — so the ~375 KB (gzip) bundle downloads in parallel and only
+executes AFTER the store page finishes parsing. Without `defer`, a plain
+`<script src>` blocks the merchant page's HTML parsing while it downloads.
+New snippets from `/onboard` include `defer` automatically now, but the
+already-pasted snippet in the xfused theme must be edited by hand.
+
 Confirm the duplicate theme's embed snippet (`<script>` block with
 `window.__TEAM_POP_*` globals) has:
 - `window.__TEAM_POP_AGENT_ID__` = the agent you just updated in step 6

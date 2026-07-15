@@ -115,7 +115,7 @@ class OnboardingPipeline:
             f'window.__TEAM_POP_CART_ENABLED__ = {cart_enabled};\n'
             f'window.__TEAM_POP_API_URL__ = "{api_url}";\n'
             f'</script>\n'
-            f'<script src="{widget_script_url}"></script>\n'
+            f'<script src="{widget_script_url}" defer></script>\n'
             f'<team-pop-agent></team-pop-agent>'
         )
 
