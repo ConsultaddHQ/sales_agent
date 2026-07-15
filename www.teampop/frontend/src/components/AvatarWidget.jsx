@@ -335,10 +335,24 @@ const CONNECTING_MESSAGES = [
 ];
 const CONNECTING_MESSAGE_INTERVAL_MS = 1500;
 
-// Minimum gap between applied carousel focus changes — roughly how long the
-// agent takes to speak one "Name — price" summary line. See the carousel focus
-// pacing block in AvatarInner for why tool-call arrival outruns the audio.
+// Carousel speech-sync constants — see the "Carousel focus speech-sync" block
+// in AvatarInner. A focus tool call applies immediately only when the queue is
+// empty and the last applied focus is at least MIN_GAP old; otherwise it waits
+// for the audio-alignment match (primary) or the staggered fallback timer.
 const CAROUSEL_FOCUS_MIN_GAP_MS = 2400;
+const CAROUSEL_FOCUS_FALLBACK_GAP_MS = 3800;
+// Gap in audio-event arrivals that marks a NEW agent utterance (chunk gaps
+// within one utterance are much shorter than the user-turn + LLM latency).
+const SPEECH_SYNC_UTTERANCE_GAP_MS = 1500;
+
+// Normalize a product name to a short distinctive "needle" for matching against
+// the spoken-character stream: the first word with ≥3 alphanumeric characters
+// ("Dwell: Hydrating & Barrier Repair..." → "dwell"). The agent reliably says
+// at least the product's leading name word even when it shortens the rest.
+function productNameNeedle(name) {
+  const words = String(name || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+  return words[0] || null;
+}
 
 /**
  * Map visual state to shopper-facing status pill text.
@@ -707,6 +721,10 @@ function AvatarInner({
   const thinkingTimerRef = useRef(null);
   const rafVolRef = useRef(null);
   const agentIsSpeakingRef = useRef(false);
+  // Forwarding ref for the carousel speech-sync handlers (defined below the
+  // useConversation call, which captures its callbacks once — same stale-closure
+  // reason chatHistoryRef exists). Kept current via useEffect each render.
+  const speechSyncHandlersRef = useRef({});
   // Nudge — always show on page load; dismissed within the session only
   const [showNudge, setShowNudge] = useState(true);
   const dismissNudge = useCallback(() => { setShowNudge(false); }, []);
@@ -896,6 +914,12 @@ function AvatarInner({
     onInterruption: (details) => {
       sessionMetricsRef.current.interruptionCount += 1;
       console.log(`[ElevenLabs] onInterruption #${sessionMetricsRef.current.interruptionCount}:`, details);
+      // Agent stopped mid-speech — the rest of the carousel walk was never spoken
+      speechSyncHandlersRef.current.onInterruption?.();
+    },
+    onAudioAlignment: (alignment) => {
+      // Char-level timing of the audio being spoken — drives carousel speech-sync
+      speechSyncHandlersRef.current.onAlignment?.(alignment);
     },
     onModeChange: (modeObj) => {
       console.log(`[ElevenLabs] onModeChange event at ${Date.now()}:`, modeObj);
@@ -1076,37 +1100,116 @@ function AvatarInner({
     vadSubState,
   });
 
-  // ── Carousel focus pacing ─────────────────────────────────────────────────
+  // ── Carousel focus speech-sync ────────────────────────────────────────────
   // The LLM emits its whole turn (text + tool calls) in ~1-2s, and client tools
-  // run the moment they arrive — but the TTS audio plays back in real time. So
-  // during a product-by-product summary, "focus product 2" would land while the
-  // audio for product 1 is still playing, and the carousel visibly runs ahead
-  // of the voice. Pacing: apply focus changes at most once per
-  // CAROUSEL_FOCUS_MIN_GAP_MS, queueing the rest, so the screen advances at
-  // roughly the cadence the agent speaks ("Name — price" per product).
-  const carouselFocusQueueRef = useRef([]);
-  const carouselFocusTimerRef = useRef(null);
+  // run the moment they arrive — but the TTS audio plays back in real time, so
+  // "focus product 2" lands while product 1's audio is still playing. True fix:
+  // the SDK's onAudioAlignment delivers each audio chunk's characters with
+  // per-char start times. We queue focus calls with a name "needle" and flip
+  // the carousel at the exact moment the spoken-character timeline reaches that
+  // product's name. Staggered fallback timers cover paraphrased names or
+  // missing alignment. All state lives in speechSyncRef; helpers are plain
+  // closures over refs, published via speechSyncHandlersRef for the (once-
+  // captured) useConversation callbacks.
   const lastCarouselFocusAtRef = useRef(0);
+  const speechSyncRef = useRef({
+    anchorMs: null,      // wall-clock when the current utterance's audio started arriving
+    lastAudioEventAt: 0, // arrival time of the last alignment event
+    text: "",            // lowercase spoken characters of the current utterance
+    times: [],           // per-char start offsets (ms) within the utterance
+    totalMs: 0,          // audio duration buffered so far
+    searchFrom: 0,       // char index after the last matched needle (keeps FIFO order)
+    pending: [],         // [{idx, needle, scheduled, alignTimer, fallbackTimer}]
+  });
 
   const applyCarouselFocus = useCallback((idx) => {
     lastCarouselFocusAtRef.current = Date.now();
     setActiveIndex(idx);
   }, [setActiveIndex]);
 
-  const drainCarouselFocusQueue = useCallback(() => {
-    carouselFocusTimerRef.current = null;
-    const next = carouselFocusQueueRef.current.shift();
-    if (next === undefined) return;
-    applyCarouselFocus(next);
-    if (carouselFocusQueueRef.current.length > 0) {
-      carouselFocusTimerRef.current = setTimeout(drainCarouselFocusQueue, CAROUSEL_FOCUS_MIN_GAP_MS);
-    }
+  const fireFocusItem = useCallback((item) => {
+    const s = speechSyncRef.current;
+    const at = s.pending.indexOf(item);
+    if (at === -1) return; // already fired/cleared
+    s.pending.splice(at, 1);
+    if (item.alignTimer) clearTimeout(item.alignTimer);
+    if (item.fallbackTimer) clearTimeout(item.fallbackTimer);
+    applyCarouselFocus(item.idx);
   }, [applyCarouselFocus]);
 
-  const resetCarouselFocusPacing = useCallback(() => {
-    carouselFocusQueueRef.current = [];
-    if (carouselFocusTimerRef.current) { clearTimeout(carouselFocusTimerRef.current); carouselFocusTimerRef.current = null; }
+  const clearPendingCarouselFocus = useCallback(() => {
+    const s = speechSyncRef.current;
+    s.pending.forEach((item) => {
+      if (item.alignTimer) clearTimeout(item.alignTimer);
+      if (item.fallbackTimer) clearTimeout(item.fallbackTimer);
+    });
+    s.pending = [];
   }, []);
+
+  const trySchedulePendingFocus = useCallback(() => {
+    const s = speechSyncRef.current;
+    for (const item of s.pending) {
+      if (item.scheduled || !item.needle) continue;
+      const at = s.text.indexOf(item.needle, s.searchFrom);
+      if (at === -1) break; // name not spoken yet — keep FIFO order, wait for more audio
+      s.searchFrom = at + item.needle.length;
+      const delay = Math.max(0, (s.anchorMs ?? Date.now()) + (s.times[at] ?? 0) - Date.now());
+      item.scheduled = true;
+      console.log(`[speech-sync] "${item.needle}" found in audio timeline — focusing index ${item.idx} in ${Math.round(delay)}ms`);
+      item.alignTimer = setTimeout(() => fireFocusItem(item), delay);
+    }
+  }, [fireFocusItem]);
+
+  const enqueueCarouselFocus = useCallback((idx, needle) => {
+    const s = speechSyncRef.current;
+    const item = { idx, needle, scheduled: false, alignTimer: null, fallbackTimer: null };
+    // Fallback: staggered ~one-product-summary apart, so even with no alignment
+    // match the walk advances at a natural speaking cadence.
+    const fallbackDelay = CAROUSEL_FOCUS_FALLBACK_GAP_MS * (s.pending.length + 1);
+    item.fallbackTimer = setTimeout(() => {
+      console.log(`[speech-sync] fallback timer fired for index ${item.idx}`);
+      fireFocusItem(item);
+    }, fallbackDelay);
+    s.pending.push(item);
+    trySchedulePendingFocus(); // the name may already be in the buffered audio text
+  }, [fireFocusItem, trySchedulePendingFocus]);
+
+  const handleAudioAlignment = useCallback((alignment) => {
+    const s = speechSyncRef.current;
+    const now = Date.now();
+    if (s.anchorMs == null || now - s.lastAudioEventAt > SPEECH_SYNC_UTTERANCE_GAP_MS) {
+      // New utterance (chunk gaps within one reply are far shorter) — restart
+      // the spoken-text timeline, anchored at this first chunk's arrival.
+      s.anchorMs = now;
+      s.text = "";
+      s.times = [];
+      s.totalMs = 0;
+      s.searchFrom = 0;
+    }
+    s.lastAudioEventAt = now;
+    const chars = alignment?.chars || [];
+    const starts = alignment?.char_start_times_ms || [];
+    const durs = alignment?.char_durations_ms || [];
+    if (!chars.length) return;
+    // Start times may be chunk-relative (restart near 0 each event) or
+    // utterance-relative (keep growing) — detect and offset accordingly.
+    const base = (starts[0] ?? 0) >= s.totalMs - 10 ? 0 : s.totalMs;
+    for (let i = 0; i < chars.length; i++) {
+      s.text += String(chars[i]).toLowerCase();
+      s.times.push(base + (starts[i] ?? 0));
+    }
+    const last = chars.length - 1;
+    s.totalMs = Math.max(s.totalMs, base + (starts[last] ?? 0) + (durs[last] ?? 0));
+    trySchedulePendingFocus();
+  }, [trySchedulePendingFocus]);
+
+  // Publish the latest handlers for the once-captured useConversation callbacks.
+  useEffect(() => {
+    speechSyncHandlersRef.current = {
+      onAlignment: handleAudioAlignment,
+      onInterruption: clearPendingCarouselFocus,
+    };
+  }, [handleAudioAlignment, clearPendingCarouselFocus]);
 
   // ── Tool: update_products ─────────────────────────────────────────────────
   useConversationClientTool("update_products", (parameters) => {
@@ -1120,7 +1223,7 @@ function AvatarInner({
     setLatestProducts(products);
     latestProductsRef.current = products;
     setActiveView("PRODUCTS");
-    resetCarouselFocusPacing(); // new result set — drop any queued focus from the old one
+    clearPendingCarouselFocus(); // new result set — drop any queued focus from the old one
     applyCarouselFocus(0);
     setAgentSubtitle(`Found ${products.length} products for you`);
     if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
@@ -1138,16 +1241,12 @@ function AvatarInner({
     const safeIdx = Number.isFinite(index) && len > 0 ? Math.max(0, Math.min(index, len - 1)) : 0;
     if (Number.isFinite(index) && len > 0) {
       const sinceLast = Date.now() - lastCarouselFocusAtRef.current;
-      if (carouselFocusQueueRef.current.length === 0 && !carouselFocusTimerRef.current && sinceLast >= CAROUSEL_FOCUS_MIN_GAP_MS) {
+      if (speechSyncRef.current.pending.length === 0 && sinceLast >= CAROUSEL_FOCUS_MIN_GAP_MS) {
+        // Standalone focus (e.g. before a get_product_details answer) — apply now
         applyCarouselFocus(safeIdx);
       } else {
-        carouselFocusQueueRef.current.push(safeIdx);
-        if (!carouselFocusTimerRef.current) {
-          carouselFocusTimerRef.current = setTimeout(
-            drainCarouselFocusQueue,
-            Math.max(0, CAROUSEL_FOCUS_MIN_GAP_MS - sinceLast),
-          );
-        }
+        // Mid-walk focus — wait until the voice reaches this product's name
+        enqueueCarouselFocus(safeIdx, productNameNeedle(latestProductsRef.current[safeIdx]?.name));
       }
     }
     isToolPendingRef.current = false;
@@ -1602,7 +1701,10 @@ function AvatarInner({
       if (farewellFallbackTimerRef.current) clearTimeout(farewellFallbackTimerRef.current);
       if (farewellSettleTimerRef.current) clearTimeout(farewellSettleTimerRef.current);
       if (feedbackDismissTimerRef.current) clearTimeout(feedbackDismissTimerRef.current);
-      if (carouselFocusTimerRef.current) clearTimeout(carouselFocusTimerRef.current);
+      speechSyncRef.current.pending.forEach((item) => {
+        if (item.alignTimer) clearTimeout(item.alignTimer);
+        if (item.fallbackTimer) clearTimeout(item.fallbackTimer);
+      });
       if (rafVolRef.current) cancelAnimationFrame(rafVolRef.current);
       if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);
     };
@@ -1852,7 +1954,7 @@ function AvatarInner({
                       style={{ width: "60px", height: "60px" }}
                       onClick={() => {
                         console.log(`[Thumbnail] Click → index ${idx} (${latestProducts[idx]?.name || "unknown"})`);
-                        resetCarouselFocusPacing(); // user took control — drop queued agent focus changes
+                        clearPendingCarouselFocus(); // user took control — drop queued agent focus changes
                         setActiveIndex(idx);
                         sessionMetricsRef.current.productsClicked += 1;
                       }}
