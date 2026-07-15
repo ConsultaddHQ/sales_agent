@@ -220,6 +220,9 @@ function FeedbackCard({ onRate, onDismiss, onStepChange }) {
     onRate(rating, tag);
   };
 
+  // Rendered inside the full feedback panel (see activeView === "FEEDBACK") —
+  // sized up per client feedback 2026-07-15: the old small bottom-right card
+  // was too easy to miss.
   if (step === 1) {
     return (
       <motion.div
@@ -227,23 +230,22 @@ function FeedbackCard({ onRate, onDismiss, onStepChange }) {
         initial={{ opacity: 0, y: 20, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-        style={{ position: "fixed", bottom: "20px", right: "20px" }}
-        className="flex flex-col items-center gap-3 p-4 bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl pointer-events-auto w-56"
+        className="flex flex-col items-center gap-5 p-8 bg-zinc-900 rounded-3xl border border-white/10 shadow-2xl pointer-events-auto w-80 max-w-[90%]"
       >
-        <span className="text-white text-sm font-semibold text-center">How was your experience?</span>
-        <div className="flex gap-3">
+        <span className="text-white text-lg font-bold text-center">How was your experience?</span>
+        <div className="flex gap-5">
           {[["😍", "positive"], ["😐", "neutral"], ["😕", "negative"]].map(([emoji, r]) => (
             <button
               key={r}
               onClick={() => handleEmoji(r)}
-              className="w-12 h-12 rounded-full bg-zinc-800 hover:bg-zinc-700 border border-white/10 hover:border-white/30 transition-all flex items-center justify-center text-2xl hover:scale-110 active:scale-95"
+              className="w-16 h-16 rounded-full bg-zinc-800 hover:bg-zinc-700 border border-white/10 hover:border-white/30 transition-all flex items-center justify-center text-3xl hover:scale-110 active:scale-95"
               aria-label={r}
             >
               {emoji}
             </button>
           ))}
         </div>
-        <button onClick={onDismiss} className="text-gray-500 text-xs hover:text-gray-300 transition-colors cursor-pointer">
+        <button onClick={onDismiss} className="text-gray-400 text-sm hover:text-gray-200 transition-colors cursor-pointer">
           Skip
         </button>
       </motion.div>
@@ -256,22 +258,21 @@ function FeedbackCard({ onRate, onDismiss, onStepChange }) {
       initial={{ opacity: 0, y: 10, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 10, scale: 0.95 }}
-      style={{ position: "fixed", bottom: "20px", right: "20px" }}
-      className="flex flex-col items-center gap-2 p-4 bg-zinc-900 rounded-2xl border border-white/10 shadow-2xl pointer-events-auto w-56"
+      className="flex flex-col items-center gap-4 p-8 bg-zinc-900 rounded-3xl border border-white/10 shadow-2xl pointer-events-auto w-80 max-w-[90%]"
     >
-      <span className="text-white text-sm font-semibold text-center">{FOLLOW_UP_PROMPTS[rating]}</span>
-      <div className="flex flex-col gap-2 w-full">
+      <span className="text-white text-lg font-bold text-center">{FOLLOW_UP_PROMPTS[rating]}</span>
+      <div className="flex flex-col gap-2.5 w-full">
         {FOLLOW_UP_OPTIONS[rating].map((tag) => (
           <button
             key={tag}
             onClick={() => handleTag(tag)}
-            className="w-full px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-white/10 hover:border-white/30 text-gray-200 text-xs text-left transition-all hover:text-white cursor-pointer"
+            className="w-full px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-white/10 hover:border-white/30 text-gray-200 text-sm text-left transition-all hover:text-white cursor-pointer"
           >
             {tag}
           </button>
         ))}
       </div>
-      <button onClick={onDismiss} className="text-gray-500 text-xs hover:text-gray-300 transition-colors mt-1 cursor-pointer">
+      <button onClick={onDismiss} className="text-gray-400 text-sm hover:text-gray-200 transition-colors mt-1 cursor-pointer">
         Skip
       </button>
     </motion.div>
@@ -351,6 +352,55 @@ function getStatusLabel(visualState, connectingMessageIndex = 0) {
     case "ERROR":               return "Retry";
     default:                    return "";
   }
+}
+
+// ─── PanelSessionScreen ──────────────────────────────────────────────────────
+// Full-panel status screen rendered in the products panel's empty area while a
+// session is connecting / connected-but-no-products-yet (client feedback
+// 2026-07-15: the small status pill was too easy to miss — this makes the
+// connection state unmissable, the way the ElevenLabs widget does it).
+function PanelSessionScreen({ visualState }) {
+  const [msgIndex, setMsgIndex] = useState(0);
+  const isConnecting = visualState === "CONNECTING";
+
+  useEffect(() => {
+    if (!isConnecting) { setMsgIndex(0); return undefined; }
+    const id = setInterval(
+      () => setMsgIndex((i) => (i + 1) % CONNECTING_MESSAGES.length),
+      CONNECTING_MESSAGE_INTERVAL_MS,
+    );
+    return () => clearInterval(id);
+  }, [isConnecting]);
+
+  if (isConnecting) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-900 pointer-events-auto pt-16">
+        <div className="panel-session-orb panel-session-orb--connecting mb-8" aria-hidden="true" />
+        <h2 className="text-xl font-bold text-amber-300 mb-3 tracking-wide flex items-center justify-center gap-2.5">
+          <svg className="connecting-spinner w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+            <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          </svg>
+          <span aria-live="polite">{CONNECTING_MESSAGES[msgIndex]}</span>
+        </h2>
+        <p className="text-gray-400 text-sm max-w-[250px] mx-auto leading-relaxed">
+          Getting your assistant on the line — usually takes a few seconds.
+        </p>
+      </div>
+    );
+  }
+
+  // Connected, but no products shown yet — invite the shopper to speak so the
+  // window doesn't feel dead between connect and the first search result.
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-900 pointer-events-auto pt-16">
+      <div className="panel-session-orb panel-session-orb--live mb-8" aria-hidden="true" />
+      <h2 className="text-xl font-bold text-emerald-300 mb-3 tracking-wide">I'm listening!</h2>
+      <p className="text-gray-300 text-sm max-w-[260px] mx-auto leading-relaxed">
+        Just say what you're looking for — like &ldquo;show me a facewash&rdquo; or &ldquo;something for dry skin&rdquo;.
+      </p>
+    </div>
+  );
 }
 
 // ─── OrbDock ─────────────────────────────────────────────────────────────────
@@ -1096,6 +1146,11 @@ function AvatarInner({
   const startVoiceSession = useCallback(() => {
     setAgentSubtitle("");
     setHighlightPrice(false);
+    // Open the full panel immediately so the connecting state is unmissable
+    // (client feedback 2026-07-15: the small pill was too easy to overlook).
+    // The panel's empty-state area renders the connecting/listening screen
+    // until the first update_products call fills it with the carousel.
+    setActiveView("PRODUCTS");
     refreshCartState(); // pick up any pre-existing cart contents (e.g. added before opening the widget)
     variantCacheRef.current.clear();
 
@@ -1131,7 +1186,7 @@ function AvatarInner({
       connectionType: CONNECTION_TYPE,
       dynamicVariables: { session_context: sessionContextText },
     });
-  }, [conversation, agentId, refreshCartState]);
+  }, [conversation, agentId, refreshCartState, setActiveView]);
 
   const endVoiceSession = useCallback(() => {
     console.log("[session] endVoiceSession called manually by user.");
@@ -1157,9 +1212,10 @@ function AvatarInner({
       : 0;
     if (duration >= 10) {
       setActiveView("FEEDBACK");
+      // 12s (was 8s) — client feedback 2026-07-15: feedback disappeared too fast to notice
       feedbackDismissTimerRef.current = setTimeout(() => {
         setActiveView((prev) => prev === "FEEDBACK" ? "NONE" : prev);
-      }, 8000);
+      }, 12000);
     } else {
       setActiveView("NONE");
     }
@@ -1538,6 +1594,13 @@ function AvatarInner({
       }
 
       // 2. Ignore/reset inactivity conditions
+      if (document.hidden) {
+        // Tab/app is backgrounded — the shopper CAN'T speak (mobile OSes suspend
+        // the mic), so don't punish them with the 30s inactivity cutoff. The
+        // 7-min hard limit above still caps runaway sessions.
+        r.lastMeaningfulUserAt = now;
+        return;
+      }
       if (agentIsSpeaking) {
         // Reset/push forward inactivity while agent is speaking
         r.lastMeaningfulUserAt = now;
@@ -1574,6 +1637,35 @@ function AvatarInner({
     }, 3000);
     return () => clearInterval(id);
   }, [conversation.status, agentIsSpeaking, gracefulEndSession]);
+
+  // ── Background-tab handling ────────────────────────────────────────────────
+  // Mobile OSes suspend microphone capture when the browser app goes to
+  // background (shopper switches to WhatsApp etc.) while audio OUTPUT keeps
+  // playing — so the agent talks but can't hear. That's an OS privacy policy no
+  // web widget can bypass. Mitigation: tell the agent to stop re-prompting into
+  // the void, and to greet the shopper naturally when they come back.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (conversation.status !== "connected") return;
+      try {
+        if (document.hidden) {
+          console.log("[visibility] Tab hidden — telling agent to pause prompting.");
+          conversation.sendContextualUpdate?.(
+            "[system] The shopper switched away from this tab/app. They may still hear you but their microphone is unavailable, so they cannot reply by voice. Finish your current sentence, then stay quiet and wait — do NOT keep prompting or repeating yourself.",
+          );
+        } else {
+          console.log("[visibility] Tab visible again — telling agent the shopper is back.");
+          conversation.sendContextualUpdate?.(
+            "[system] The shopper is back on this tab and can talk again. If you were waiting on them, briefly and warmly pick the conversation back up (one short line) — don't mention tabs or apps.",
+          );
+        }
+      } catch (e) {
+        console.warn("[visibility] Contextual update failed:", e);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [conversation]);
 
   const isConnected = conversation.status === "connected";
 
@@ -1742,6 +1834,8 @@ function AvatarInner({
                 </div>
               </div>
             </>
+          ) : visualState === "CONNECTING" || isConnected ? (
+            <PanelSessionScreen visualState={visualState} />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-900 pointer-events-auto pt-16">
               <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mb-6 border border-zinc-700 shadow-xl">
@@ -1894,16 +1988,34 @@ function AvatarInner({
         </motion.div>
       )}
 
-      {/* ── Feedback card (Task 3) ────────────────────────────────────────── */}
+      {/* ── Feedback view (Task 3) — full panel so it can't be missed ─────── */}
       {activeView === "FEEDBACK" && (
-        <FeedbackCard
-          onRate={(r, tag) => submitFeedback(r, tag)}
-          onDismiss={() => submitFeedback(null, null)}
-          onStepChange={() => {
-            // User tapped an emoji — cancel the 8s auto-dismiss so step 2 isn't cut short
-            if (feedbackDismissTimerRef.current) { clearTimeout(feedbackDismissTimerRef.current); feedbackDismissTimerRef.current = null; }
-          }}
-        />
+        <motion.div
+          key="feedback"
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.96 }}
+          style={{ transformOrigin: "bottom right", left: "auto" }}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
+          className="shopping-panel flex flex-col items-center justify-center bg-black/95 overflow-hidden shadow-2xl pointer-events-auto"
+        >
+          <div className="flex-none p-4 flex justify-end items-start absolute top-0 w-full z-50 pointer-events-none">
+            <button
+              className="bg-black/40 hover:bg-black/60 backdrop-blur-md text-white rounded-full w-10 h-10 flex items-center justify-center text-xl shadow-lg transition-all pointer-events-auto"
+              onClick={() => submitFeedback(null, null)}
+            >
+              &times;
+            </button>
+          </div>
+          <FeedbackCard
+            onRate={(r, tag) => submitFeedback(r, tag)}
+            onDismiss={() => submitFeedback(null, null)}
+            onStepChange={() => {
+              // User tapped an emoji — cancel the auto-dismiss so step 2 isn't cut short
+              if (feedbackDismissTimerRef.current) { clearTimeout(feedbackDismissTimerRef.current); feedbackDismissTimerRef.current = null; }
+            }}
+          />
+        </motion.div>
       )}
     </AnimatePresence>
   );

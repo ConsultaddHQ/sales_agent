@@ -62,11 +62,19 @@ sudo systemctl status tp-onboard.service tp-search.service --no-pager
 Watch for clean startup — no `SUPABASE_KEY` auth errors, no `ELEVENLABS_API_KEY`
 errors. `journalctl -u tp-onboard -n 50 --no-pager` if something looks wrong.
 
-## 6. Push the updated agent prompt/voice to ElevenLabs
+## 6. Push the updated agent prompt/voice to ElevenLabs — RUN THIS AFTER EVERY DEPLOY
 Code changes to `elevenlabs_agent.py` (prompt, TTS settings) only take effect
 on the **next PATCH to the existing agent** — restarting the service does NOT
-re-push the prompt to an already-created agent. Run this from the box (inside
-the onboarding-service venv) to update xfused's live agent in place:
+re-push the prompt to an already-created agent.
+
+**⚠️ This run is also the fix for the "promotions disappeared" regression
+(2026-07-15):** the old `update_agent()` rebuilt the prompt with default store
+context on EVERY call, so each §6b voice swap silently wiped the offers, store
+name, and categories ("No active promotions to mention", "this store"). That
+bug is fixed in code — voice-only calls no longer touch the prompt — but the
+live agent still has the wiped prompt until you re-run this full-context PATCH.
+
+Offers below verified against the live goxfused.com homepage on 2026-07-15.
 ```bash
 cd /home/ubuntu/sales_agent/onboarding-service && source .venv/bin/activate
 python3 -c "
@@ -79,21 +87,36 @@ creator.update_agent(
     agent_id='agent_4901kwna71tve5nbyy85c8v20yre',
     store_id='9cec7cd0-9252-4aa2-985b-71c2a42018cb',
     store_context={
-        'store_name': 'Xfused',
+        'store_name': 'Xfused',   # brand name — NEVER the domain-derived 'Goxfused'
         'description': 'skincare store',
         'categories': 'facewash, moisturiser, lip balm',
         'price_range': '₹299–₹399',
-        'offers': '10% off first order, free shipping on orders ₹499+, up to 14% off select products',
+        'offers': 'Extra 10% off first order; free shipping on orders ₹499+; 12% off facewashes and moisturisers (Rs 349, was Rs 399); 14% off lip balms (Rs 299, was Rs 349)',
     },
 )
 "
 deactivate
 ```
-Fill in the real `agent_id` / `store_id` (check Supabase `agent_requests` or
-the admin dashboard for xfused's row). This is also where the store_offers
-text from this session's WebFetch of goxfused.com actually gets pushed live —
-until this runs, the agent is still on its old prompt regardless of what's in
-`elevenlabs_agent.py`.
+
+### 6a. (Optional) Push the "Shopping Buddy" greeting
+The greeting (first_message) is separate from the prompt and was edited by
+hand in the ElevenLabs dashboard — check it there first. If it still needs
+updating, `update_agent()` now supports patching it:
+```python
+creator.update_agent(
+    agent_id='agent_4901kwna71tve5nbyy85c8v20yre',
+    store_id='9cec7cd0-9252-4aa2-985b-71c2a42018cb',
+    first_message=(
+        \"Hi, welcome to Xfused! I'm your Xfused Shopping Buddy. \"
+        \"You can also talk to me in Hinglish or Tamil — just speak in your language. \"
+        \"What are you looking for today?\"
+    ),
+)
+```
+Note: if the agent's default language is now Hindi (dashboard change,
+2026-07-15), the Hindi preset greeting in the dashboard's language settings is
+what shoppers actually hear — update that one there too if needed
+("Main hoon aapki Xfused Shopping Buddy").
 
 ## 6b. A/B test the voice candidates
 Client flagged the current voice (Muskaan) as too high-pitched even after the
@@ -111,9 +134,13 @@ all already added to the account this session:
   tone of the four, but check it doesn't read as too slow/gentle for a
   shopping context
 
-`update_agent()` now accepts `voice_id` and `tts_overrides` to PATCH just the
-voice on the live agent without touching the prompt logic — swap between them
-by re-running with a different `voice_id`:
+`update_agent()` accepts `voice_id` and `tts_overrides` to PATCH just the
+voice on the live agent — swap between them by re-running with a different
+`voice_id`. **As of 2026-07-15 voice-only calls are guaranteed not to touch
+the prompt** (the old version rebuilt it with blank store context on every
+call, wiping the offers — that's why promotions vanished after voice swaps).
+Make sure the deployed code includes that fix BEFORE running voice swaps, and
+run §6 once after your last swap anyway, as a belt-and-braces restore:
 ```bash
 cd /home/ubuntu/sales_agent/onboarding-service && source .venv/bin/activate
 python3 -c "
@@ -146,8 +173,27 @@ Confirm the duplicate theme's embed snippet (`<script>` block with
 - `window.__TEAM_POP_API_URL__` pointing at `https://api.teampop.com`
 
 ## 8. Smoke test
-- Load the duplicate theme, open the widget, confirm it connects (rotating
-  "Connecting... / Setting up your assistant..." messages should show)
+- Load the duplicate theme, tap the orb → the FULL panel window should open
+  immediately with a large connecting screen (big pulsing orb + rotating
+  "Setting up your assistant..." messages), then flip to "Connected — say
+  what you're looking for" once live, then show products on first search
+- Ask about offers ("kya offers hain?") → agent must mention the real xfused
+  promotions (10% first order, free shipping ₹499+, 12–14% off) — regression
+  test for the prompt-wipe bug: run a §6b voice swap, ask again, offers must
+  STILL be there
+- Ask for something off-portfolio ("do you have shampoo?") → agent searches,
+  finds nothing, says it's not carried — and never PROACTIVELY offers
+  haircare/wellness categories on its own
+- Ask for details on "the second one" → the product it TALKS about must be
+  the product FOCUSED on screen (detox-vs-drench mismatch check). If it still
+  mismatches, pull the last few conversations in the ElevenLabs dashboard and
+  check whether update_carousel_main_view was called with the wrong index
+- End a session (≥10s) → feedback card should now be the large full-panel
+  version and stay ~12s
+- On a PHONE: start a session, switch to another app, come back → the agent
+  should NOT have kept re-prompting into silence, and should acknowledge you're
+  back (background-tab mitigation; mic-while-backgrounded itself is an OS
+  limitation and cannot work)
 - Add a product to cart by voice → confirm the header cart icon/badge updates
   IMMEDIATELY (not just after navigating to /cart) — this is the
   `syncThemeCartBadge` fix; if the theme's badge still doesn't move but `/cart`

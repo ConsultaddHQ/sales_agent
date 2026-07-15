@@ -85,6 +85,7 @@ After the result arrives, call update_carousel_main_view with that product's zer
 
 ## update_carousel_main_view
 Use when: customer references a product by position (e.g. "the second one"). Also call this immediately after every get_product_details result. Pass zero-based index.
+CRITICAL — the product you SPEAK about must be the product SHOWN on screen: before describing any specific product in detail, call this tool with that product's index and check the product_name it returns. If the returned name is NOT the product you were about to describe, you have the wrong index — correct it and call again BEFORE speaking. Never describe product A while product B is focused on screen.
 
 # Guardrails
 - After a search_products result arrives, your VERY NEXT action must be update_products. Do not say any words between the tool result and the update_products call. The screen must update BEFORE the customer hears you describe products. This step is important.
@@ -168,6 +169,7 @@ After the result arrives, call update_carousel_main_view with that product's zer
 
 ## update_carousel_main_view
 Use when: customer references a product by position (e.g. "the second one"). Also call this immediately after every get_product_details result. Pass zero-based index.
+CRITICAL — the product you SPEAK about must be the product SHOWN on screen: before describing any specific product in detail, call this tool with that product's index and check the product_name it returns. If the returned name is NOT the product you were about to describe, you have the wrong index — correct it and call again BEFORE speaking. Never describe product A while product B is focused on screen.
 
 # Tone
 Natural storefront conversation: brief, specific, and responsive to user intent. On [CAROUSEL UPDATE], acknowledge what they selected and continue.
@@ -262,6 +264,7 @@ After the result arrives, call update_carousel_main_view with that product's zer
 
 ## update_carousel_main_view
 Use when: customer references a product by position (e.g. "the second one"). Also call this immediately after every get_product_details result. Pass zero-based index.
+CRITICAL — the product you SPEAK about must be the product SHOWN on screen: before describing any specific product in detail, call this tool with that product's index and check the product_name it returns. If the returned name is NOT the product you were about to describe, you have the wrong index — correct it and call again BEFORE speaking. Never describe product A while product B is focused on screen.
 
 ## add_to_cart
 Call ONLY when user explicitly says they want to add to cart or buy.
@@ -297,7 +300,8 @@ When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks
 # reasoning behind rules (Claude respects "why"). ElevenLabs markdown headings
 # for platform tuning. Claude rarely drops instructions, so moderate length OK.
 PROMPT_CLAUDE = """# Personality
-You are Wrina — a natural, friendly shopping companion for {store_name}, a {store_description}. Speak like a knowledgeable person at a counter: conversational, varied, and context-aware.
+You are Wrina — the {store_name} Shopping Buddy: a natural, friendly shopping companion for {store_name}, a {store_description}. Speak like a knowledgeable person at a counter: conversational, varied, and context-aware.
+If you ever describe yourself, say "I'm your {store_name} Shopping Buddy" — never "AI shopping assistant" or "virtual assistant".
 
 # Goal
 Help customers discover products using tools and keep UI state aligned with what you say. You always look it up first; you never wing it. The customer only sees products after update_products runs. This step is important.
@@ -366,6 +370,7 @@ After the result arrives, call update_carousel_main_view with that product's zer
 
 ## update_carousel_main_view
 Use when: customer references a product by position (e.g. "the second one"). Also call this immediately after every get_product_details result. Pass zero-based index.
+CRITICAL — the product you SPEAK about must be the product SHOWN on screen: before describing any specific product in detail, call this tool with that product's index and check the product_name it returns. If the returned name is NOT the product you were about to describe, you have the wrong index — correct it and call again BEFORE speaking. Never describe product A while product B is focused on screen.
 
 # Guardrails
 - After a search_products result arrives, your very next action must be update_products. Do not speak between the tool result and the update_products call — the UI must update BEFORE the customer hears you describe products. This step is important.
@@ -374,6 +379,7 @@ Use when: customer references a product by position (e.g. "the second one"). Als
 - Never invent product names, prices, or details.
 - Unfamiliar or unrecognized words: if a customer says any product, brand, ingredient, or term you don't recognize, treat it as a SEARCH TERM, never as a reason to refuse. Call search_products FIRST — it is the only source of truth for what this store carries. Do not say "we have that" or "we don't carry that" until you have searched. Only after search AND the one retry both return nothing may you say it isn't carried, then point to "Shop Now". This step is important.
 - Clarify, don't guess: if a request is vague or could mean several things, ask ONE short clarifying question grounded in the store's Categories before searching — never invent an answer or refuse for lack of clarity. This step is important.
+- STAY IN THE STORE'S PORTFOLIO when YOU speak first: whenever you proactively suggest, upsell, offer alternatives, or list what the store has, mention ONLY product types from the store's Categories list or products already returned by search_products in this conversation. Never volunteer categories the store doesn't carry (e.g. never offer haircare, wellness, or supplements in a skincare store). If the SHOPPER asks for something outside the Categories list, still search for it first (Categories may be incomplete) — but your own suggestions must always come from the known catalog. This step is important.
 - When first showing products, say ONLY name/type and price — never recite detailed specifications unprompted. This step is important.
 - ANY product question beyond name/price (ingredients, benefits, claims, suitability, SPF, certifications, comparisons, usage, variants, availability) → call get_product_details FIRST, then answer ONLY from what it returns. Your search summary is truncated — answering from it gives shallow, incomplete answers. If a detail is not in the tool result either, say it is not listed and point to "Shop Now" — never guess or invent it. This step is important.
 - For checkout or "I'm ready to pay" / "take me to my cart" requests, give a brief closing line then call go_to_cart (see below). For shipping, returns, or store-policy questions, route to "Shop Now" instead.
@@ -402,7 +408,7 @@ CRITICAL: "checkout", "pay", "buy this", "cart" are checkout intent → ALWAYS c
 ## Pairing & "similar" requests
 When the customer asks "what goes with this?", "suggest pairings", "show similar items", or anything implying related products:
 - If unclear (pairing vs similar), ask first: "Something to go with it, or more like it?"
-- Use product knowledge to decide what complements it. The Categories list is only a HINT and may be incomplete — never treat it as the full catalog. ALWAYS call search_products first for any pairing or related-item request. Only if search returns nothing, say it's not carried and point to "Shop Now". Never refuse without searching first. This step is important.
+- Use product knowledge to decide what complements it, but keep your candidate ideas within the store's Categories list — a skincare store pairs a cleanser with a moisturizer or sunscreen, not with haircare or wellness items. The Categories list may be incomplete for interpreting SHOPPER requests, so ALWAYS call search_products first for any pairing or related-item request rather than refusing. Only if search returns nothing, say it's not carried and point to "Shop Now". Never refuse without searching first. This step is important.
 - Translate that into a search_products query (e.g. pairing a cleanser → "moisturizer"; similar → more of the same type), call search_products + update_products as usual. This step is important.
 - Present only what search_products returns. If nothing suitable comes back, say so and point to "Shop Now".
 
@@ -464,6 +470,7 @@ After the result arrives, call update_carousel_main_view with that product's zer
 
 ## update_carousel_main_view
 Use when: customer references a product by position (e.g. "the second one"). Also call this immediately after every get_product_details result. Pass zero-based index.
+CRITICAL — the product you SPEAK about must be the product SHOWN on screen: before describing any specific product in detail, call this tool with that product's index and check the product_name it returns. If the returned name is NOT the product you were about to describe, you have the wrong index — correct it and call again BEFORE speaking. Never describe product A while product B is focused on screen.
 
 # Guardrails
 - After search_products returns, your very next action must be update_products. Do not say any words between the tool result and the update_products call. The screen must update BEFORE you describe products. This step is important.
@@ -543,11 +550,11 @@ _LANGUAGE_FIRST_MESSAGES = {
     # Devanagari Hindi. hinglish_mode only activates when the active language is "hi",
     # so we keep the "hi" preset as the trigger but make all its output Hinglish.
     "hi": (
-        "Hi! {store_name} mein aapka swagat hai. Main hoon Wrina, aapki AI shopping companion. "
+        "Hi! {store_name} mein aapka swagat hai. Main hoon aapki {store_name} Shopping Buddy. "
         "Aap mujhse Hinglish ya Tamil mein baat kar sakte hain. Aaj aapko kya chahiye?"
     ),
     "ta": (
-        "வணக்கம்! {store_name} க்கு வரவேற்கிறோம். நான் Wrina, உங்கள் AI ஷாப்பிங் துணை. "
+        "வணக்கம்! {store_name} க்கு வரவேற்கிறோம். நான் உங்கள் {store_name} Shopping Buddy. "
         "நீங்கள் என்னிடம் தமிழிலும் இந்தியிலும் பேசலாம். இன்று உங்களுக்கு என்ன தேவை?"
     ),
 }
@@ -1101,7 +1108,7 @@ class ElevenLabsAgentCreator:
                         "cascade_timeout_seconds": 8,
                     },
                     "first_message": (
-                        f"Hi, welcome to {store_name}! I'm Wrina, your AI shopping companion. "
+                        f"Hi, welcome to {store_name}! I'm your {store_name} Shopping Buddy. "
                         "You can also talk to me in Hinglish or Tamil — just speak in your language. "
                         "What are you looking for today?"
                     ),
@@ -1252,44 +1259,60 @@ class ElevenLabsAgentCreator:
         llm_model: Optional[str] = None,
         voice_id: Optional[str] = None,
         tts_overrides: Optional[Dict] = None,
+        first_message: Optional[str] = None,
     ) -> Dict:
-        """Update an existing agent's prompt, model, tools — and optionally voice —
+        """Update an existing agent — prompt, model, tools, voice, greeting —
         without re-scraping.
 
-        Uses PATCH /v1/convai/agents/{agent_id}. By default only touches prompt
-        config (leaves voice/TTS/turn settings untouched); pass voice_id and/or
-        tts_overrides to A/B a different voice on a live agent without recreating it.
+        Uses PATCH /v1/convai/agents/{agent_id}.
+
+        IMPORTANT: the prompt/tools are only rebuilt and PATCHed when
+        store_context, llm_model, or search_api_url is provided. A voice-only
+        call (just voice_id/tts_overrides) patches ONLY conversation_config.tts
+        — earlier versions rebuilt the prompt with default store context on
+        every call, silently wiping offers/store_name/categories during voice
+        A/B swaps (the xfused "promotions disappeared" regression, 2026-07-15).
 
         Usage:
             creator = ElevenLabsAgentCreator()
+            # Voice-only swap (prompt untouched):
             creator.update_agent(
                 agent_id="abc123",
                 store_id="c5a0c8a1-...",
-                llm_model="claude-haiku-4-5",
-                voice_id="dVTC43Yewy5fAIcmsISI",  # e.g. testing "Anvi" vs Muskaan
+                voice_id="dVTC43Yewy5fAIcmsISI",
                 tts_overrides={"similarity_boost": 0.68, "speed": 0.97},
             )
+            # Full prompt refresh (pass the real store context!):
+            creator.update_agent(
+                agent_id="abc123",
+                store_id="c5a0c8a1-...",
+                store_context={"store_name": "Xfused", "offers": "...", ...},
+            )
         """
+        update_prompt = any([store_context, llm_model, search_api_url])
+        payload = {"conversation_config": {}}
+
         # Default mirrors create_agent (Claude Haiku 4.5 — 2026-04-17 decision).
         model = llm_model or os.getenv("ELEVENLABS_LLM_MODEL", "claude-haiku-4-5")
-        api_url = search_api_url or os.getenv("SEARCH_API_URL", "http://localhost:8006")
+        system_prompt = ""
+        tools = []
 
-        system_prompt = self._build_system_prompt(store_id, store_context, llm_model=model)
-        tools = self._get_tool_config(api_url, store_id)
-
-        payload = {
-            "conversation_config": {
-                "agent": {
-                    "prompt": {
-                        "prompt": system_prompt,
-                        "llm": model,
-                        "temperature": 0.4,
-                        "ignore_default_personality": True,
-                        "tools": tools,
-                    },
+        if update_prompt:
+            api_url = search_api_url or os.getenv("SEARCH_API_URL", "http://localhost:8006")
+            system_prompt = self._build_system_prompt(store_id, store_context, llm_model=model)
+            tools = self._get_tool_config(api_url, store_id)
+            payload["conversation_config"]["agent"] = {
+                "prompt": {
+                    "prompt": system_prompt,
+                    "llm": model,
+                    "temperature": 0.4,
+                    "ignore_default_personality": True,
+                    "tools": tools,
                 },
-            },
-        }
+            }
+
+        if first_message:
+            payload["conversation_config"].setdefault("agent", {})["first_message"] = first_message
 
         if voice_id or tts_overrides:
             tts_config = {}
@@ -1299,9 +1322,17 @@ class ElevenLabsAgentCreator:
                 tts_config.update(tts_overrides)
             payload["conversation_config"]["tts"] = tts_config
 
+        if not payload["conversation_config"]:
+            raise ValueError(
+                "update_agent called with nothing to update — pass store_context, "
+                "llm_model, voice_id, tts_overrides, and/or first_message"
+            )
+
         logger.info(
-            f"PATCHing agent {agent_id}: model={model}, voice={voice_id or '(unchanged)'}, "
-            f"prompt={len(system_prompt)} chars, tools={len(tools)}"
+            f"PATCHing agent {agent_id}: "
+            f"prompt={'%d chars, %d tools' % (len(system_prompt), len(tools)) if update_prompt else '(unchanged)'}, "
+            f"voice={voice_id or '(unchanged)'}, "
+            f"first_message={'(updated)' if first_message else '(unchanged)'}"
         )
 
         try:
@@ -1316,14 +1347,14 @@ class ElevenLabsAgentCreator:
                 logger.error(f"❌ ElevenLabs PATCH {response.status_code}: {response.text}")
                 response.raise_for_status()
 
-            logger.info(f"✅ Updated agent {agent_id} → model={model}")
+            logger.info(f"✅ Updated agent {agent_id} → model={model if update_prompt else '(unchanged)'}")
             self._verify_agent(agent_id)
 
             return {
                 "success": True,
                 "agent_id": agent_id,
-                "llm_model": model,
-                "prompt_chars": len(system_prompt),
+                "llm_model": model if update_prompt else None,
+                "prompt_chars": len(system_prompt) if update_prompt else None,
             }
 
         except requests.RequestException as e:

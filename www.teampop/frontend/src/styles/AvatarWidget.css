@@ -522,6 +522,33 @@
   .connecting-spinner { animation: none; }
 }
 
+/* ── PanelSessionScreen — large in-panel orb shown while connecting / waiting
+   for the first products (full-window connecting UX, 2026-07-15) ──────────── */
+.panel-session-orb {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, rgba(255,255,255,0.85), rgba(180,210,255,0.55) 35%, rgba(80,120,220,0.75) 70%, rgba(30,50,120,0.9));
+}
+.panel-session-orb--connecting {
+  animation: panelOrbConnecting 1.1s ease-in-out infinite alternate;
+}
+@keyframes panelOrbConnecting {
+  from { box-shadow: 0 0 24px rgba(245,158,11,0.35), 0 0 0 0 rgba(245,158,11,0.30); transform: scale(0.96); }
+  to   { box-shadow: 0 0 56px rgba(245,158,11,0.75), 0 0 0 18px rgba(245,158,11,0.08); transform: scale(1.04); }
+}
+.panel-session-orb--live {
+  animation: panelOrbLive 1.6s ease-in-out infinite;
+}
+@keyframes panelOrbLive {
+  0%, 100% { box-shadow: 0 0 20px rgba(34,197,94,0.35), 0 0 0 0 rgba(34,197,94,0.25); }
+  50%       { box-shadow: 0 0 48px rgba(34,197,94,0.7), 0 0 0 16px rgba(34,197,94,0.07); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel-session-orb--connecting { animation: none; box-shadow: 0 0 40px rgba(245,158,11,0.6); }
+  .panel-session-orb--live       { animation: none; box-shadow: 0 0 36px rgba(34,197,94,0.55); }
+}
+
 /* prefers-reduced-motion: static per-state color glow, no animation */
 @media (prefers-reduced-motion: reduce) {
   .orb-wrapper.IDLE .orb-core           { animation: none; }
