@@ -93,7 +93,7 @@ const ShoppingCard = ({ product, isActive, highlightPrice, onShopNow }) => {
           className={`shopping-card-price text-xl font-bold mt-2 ${isActive && highlightPrice ? "price-glow text-green-400" : "text-green-300"}`}
         >
           {product.price
-            ? `₹${Number(product.price).toLocaleString("en-IN")}`
+            ? `$${Number(product.price).toLocaleString("en-US")}`
             : "Check Price"}
         </div>
         <a
@@ -389,7 +389,7 @@ function OrbDock({
 const ProductDetails = ({ product, highlightPrice, isCarted, onShopNow, onAddToCart }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const price = product.price
-    ? `₹${Number(product.price).toLocaleString("en-IN")}`
+    ? `$${Number(product.price).toLocaleString("en-US")}`
     : "Check Price";
 
   return (
@@ -654,8 +654,8 @@ function AvatarInner({
         const lower = text.toLowerCase();
         if (
           lower.includes("price") ||
-          lower.includes("₹") ||
-          lower.includes("rupees") ||
+          lower.includes("$") ||
+          lower.includes("dollars") ||
           lower.includes("cost")
         ) {
           if (priceTimerRef.current) clearTimeout(priceTimerRef.current);
@@ -1159,7 +1159,7 @@ function AvatarInner({
       resetInactivity(); // carousel interaction = real user activity
       if (conversation.status !== "connected") {
         setAgentSubtitle(
-          `${product.name} — ₹${Number(product.price).toLocaleString("en-IN")}`,
+          `${product.name} — $${Number(product.price).toLocaleString("en-US")}`,
         );
         if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
         subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 4000);
@@ -1171,7 +1171,7 @@ function AvatarInner({
         console.log("[sync] Sending product context to agent:", product.name);
         isSyntheticMessageRef.current = true;
         sendUserMessage(
-          `[CAROUSEL UPDATE] (The user manually selected product: "${product.name}", Price: ₹${Number(product.price).toLocaleString("en-IN")}). Tell me about this one.`
+          `[CAROUSEL UPDATE] (The user manually selected product: "${product.name}", Price: $${Number(product.price).toLocaleString("en-US")}). Tell me about this one.`
         );
       }, 600);
     },
@@ -1191,7 +1191,7 @@ function AvatarInner({
   useEffect(() => {
     const activeProduct = latestProducts[safeIndex];
     if (!activeProduct || activeView !== "PRODUCTS") return;
-    const label = `${activeProduct.name} — ₹${Number(activeProduct.price || 0).toLocaleString("en-IN")}`;
+    const label = `${activeProduct.name} — $${Number(activeProduct.price || 0).toLocaleString("en-US")}`;
     setTimeout(() => setAgentSubtitle(label), 0);
     if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
     subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 4000);
