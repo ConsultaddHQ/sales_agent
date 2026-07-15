@@ -1095,6 +1095,9 @@ class ElevenLabsAgentCreator:
         system_prompt = self._build_system_prompt(store_id, store_context, llm_model=model)
         tools = self._get_tool_config(api_url, store_id)
 
+        context = store_context or {}
+        store_name = context.get("store_name", "the store")
+
         payload = {
             "conversation_config": {
                 "agent": {
@@ -1105,6 +1108,10 @@ class ElevenLabsAgentCreator:
                         "ignore_default_personality": True,
                         "tools": tools,
                     },
+                    "first_message": (
+                        f"Hi, welcome to {store_name}! I'm Wrina, your AI shopping companion. "
+                        "What are you looking for today?"
+                    ),
                 },
             },
         }
