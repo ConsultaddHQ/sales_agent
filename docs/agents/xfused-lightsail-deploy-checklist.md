@@ -180,6 +180,10 @@ xfused Supabase project's SQL editor (until then, the backend automatically
 falls back to storing the legacy columns only, so nothing breaks):
 ```sql
 alter table session_feedback
+  -- these two predate the new-project base schema — WITHOUT them every insert
+  -- fails and all feedback is silently lost (2026-07-16 incident)
+  add column if not exists tool_calls int default 0,
+  add column if not exists interruption_count int default 0,
   add column if not exists searches int default 0,
   add column if not exists products_focused int default 0,
   add column if not exists cart_adds int default 0,

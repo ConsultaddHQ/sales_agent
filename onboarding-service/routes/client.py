@@ -163,16 +163,22 @@ def submit_session_feedback(body: SessionFeedbackBody):
             "checkout_initiated": body.checkout_initiated,
             "resumed_session": body.resumed_session,
         }
-        try:
-            sb.table("session_feedback").insert(row).execute()
-        except Exception as col_err:
-            # Migration not applied yet — retry with the legacy column set so a
-            # missing-column error never loses the whole feedback row.
-            logger.warning(f"session_feedback insert failed ({col_err}); retrying with legacy columns")
-            for k in ("searches", "products_focused", "cart_adds", "cart_add_failures",
-                      "cart_value_paise", "checkout_initiated", "resumed_session"):
-                row.pop(k, None)
-            sb.table("session_feedback").insert(row).execute()
+        # Schema-drift tolerance: if the table is missing a column (migration not
+        # applied, or created from an older base schema — the 2026-07-16 xfused
+        # incident lost every row over 'interruption_count'), PostgREST names the
+        # missing column in the error. Drop exactly that column and retry, so a
+        # partial row is stored instead of losing the feedback entirely.
+        import re as _re
+        for _ in range(len(row)):
+            try:
+                sb.table("session_feedback").insert(row).execute()
+                break
+            except Exception as col_err:
+                m = _re.search(r"Could not find the '([^']+)' column", str(col_err))
+                if not m or m.group(1) not in row:
+                    raise
+                logger.warning(f"session_feedback missing column '{m.group(1)}' — retrying without it (run the migration in the deploy checklist)")
+                row.pop(m.group(1))
         return {"success": True}
     except Exception as e:
         logger.error(f"Failed to store session feedback: {e}", exc_info=True)
