@@ -122,6 +122,15 @@ class SessionFeedbackBody(BaseModel):
     latency_products_ms: Optional[int] = None
     tool_calls: int = 0
     interruption_count: int = 0
+    # Business/funnel metrics (2026-07-16) — require the matching session_feedback
+    # columns (see docs/agents/xfused-lightsail-deploy-checklist.md for the SQL).
+    searches: int = 0
+    products_focused: int = 0
+    cart_adds: int = 0
+    cart_add_failures: int = 0
+    cart_value_paise: int = 0
+    checkout_initiated: bool = False
+    resumed_session: bool = False
 
 
 @router.post("/session-feedback")
@@ -131,7 +140,7 @@ def submit_session_feedback(body: SessionFeedbackBody):
         sb = get_supabase()
         valid_ratings = {"positive", "neutral", "negative", "none"}
         rating = body.rating if body.rating in valid_ratings else "none"
-        sb.table("session_feedback").insert({
+        row = {
             "agent_id": body.agent_id,
             "duration_seconds": body.duration_seconds,
             "rating": rating,
@@ -146,7 +155,24 @@ def submit_session_feedback(body: SessionFeedbackBody):
             "latency_products_ms": body.latency_products_ms,
             "tool_calls": body.tool_calls,
             "interruption_count": body.interruption_count,
-        }).execute()
+            "searches": body.searches,
+            "products_focused": body.products_focused,
+            "cart_adds": body.cart_adds,
+            "cart_add_failures": body.cart_add_failures,
+            "cart_value_paise": body.cart_value_paise,
+            "checkout_initiated": body.checkout_initiated,
+            "resumed_session": body.resumed_session,
+        }
+        try:
+            sb.table("session_feedback").insert(row).execute()
+        except Exception as col_err:
+            # Migration not applied yet — retry with the legacy column set so a
+            # missing-column error never loses the whole feedback row.
+            logger.warning(f"session_feedback insert failed ({col_err}); retrying with legacy columns")
+            for k in ("searches", "products_focused", "cart_adds", "cart_add_failures",
+                      "cart_value_paise", "checkout_initiated", "resumed_session"):
+                row.pop(k, None)
+            sb.table("session_feedback").insert(row).execute()
         return {"success": True}
     except Exception as e:
         logger.error(f"Failed to store session feedback: {e}", exc_info=True)

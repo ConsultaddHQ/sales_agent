@@ -174,6 +174,28 @@ update `ELEVENLABS_VOICE_ID` in `onboarding-service/.env` too, so the NEXT full
 `create_agent`/`update_agent` run (e.g. after any prompt change) doesn't
 silently fall back to Muskaan.
 
+## 6c. Session-metrics migration (2026-07-16 — run once in Supabase)
+The widget now reports business/funnel metrics per session. Run this in the
+xfused Supabase project's SQL editor (until then, the backend automatically
+falls back to storing the legacy columns only, so nothing breaks):
+```sql
+alter table session_feedback
+  add column if not exists searches int default 0,
+  add column if not exists products_focused int default 0,
+  add column if not exists cart_adds int default 0,
+  add column if not exists cart_add_failures int default 0,
+  add column if not exists cart_value_paise bigint default 0,
+  add column if not exists checkout_initiated boolean default false,
+  add column if not exists resumed_session boolean default false;
+```
+Related behavior change: the feedback panel now SURVIVES the go_to_cart
+navigation (shown by the widget on the /cart page, restored from
+sessionStorage) and never auto-dismisses — it stays until the shopper rates,
+skips, or closes it. Successful adds also tag the Shopify cart with
+`TeamPop Assisted` / `TeamPop Conversation` attributes, which appear on the
+resulting ORDER in Shopify admin → the client can count and value
+agent-assisted orders (Orders → filter/export by additional details).
+
 ## 7. Point the duplicate theme's widget embed at the right agent
 **Performance (2026-07-15):** add `defer` to the widget script tag in the
 theme's embed snippet — `<script src="https://api.teampop.com/widget/widget.js"

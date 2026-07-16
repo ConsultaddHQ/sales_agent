@@ -24,6 +24,12 @@ const SESSION_HARD_LIMIT_MS = 420000;
 // consumed once on restore so a later, unrelated session doesn't inherit stale
 // context.
 const SESSION_CONTEXT_STORAGE_KEY = "team-pop-session-context";
+// Pending-feedback marker: go_to_cart navigates away, unloading this widget
+// instance before the shopper can rate the session. The marker survives the
+// navigation (sessionStorage) and the widget instance on the NEXT page (the
+// embed is theme-wide, so /cart has one too) shows the feedback panel.
+const PENDING_FEEDBACK_STORAGE_KEY = "team-pop-pending-feedback";
+const PENDING_FEEDBACK_TTL_MS = 10 * 60 * 1000;
 const SESSION_CONTEXT_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 function loadSessionContext() {
@@ -1123,6 +1129,9 @@ function AvatarInner({
 
   const applyCarouselFocus = useCallback((idx) => {
     lastCarouselFocusAtRef.current = Date.now();
+    const p = latestProductsRef.current[idx];
+    const ids = sessionMetricsRef.current.productsFocusedIds;
+    if (p?.id && Array.isArray(ids) && !ids.includes(String(p.id))) ids.push(String(p.id));
     setActiveIndex(idx);
   }, [setActiveIndex]);
 
@@ -1218,6 +1227,7 @@ function AvatarInner({
 
     _markProductsArrived(products.length);
     sessionMetricsRef.current.productsShown += products.length;
+    sessionMetricsRef.current.searches += 1;
 
     setLatestProducts(products);
     latestProductsRef.current = products;
@@ -1312,7 +1322,19 @@ function AvatarInner({
 
     const now = Date.now();
     inactivityRef.current = { startAt: now, lastMeaningfulUserAt: now };
-    sessionMetricsRef.current = { startAt: now, productsShown: 0, productsClicked: 0, shopNowClicked: false, chatMessages: 0, endReason: null, conversationId: null, latencyFirstAiMs: null, latencyProductsMs: null, toolCalls: 0, interruptionCount: 0 };
+    sessionMetricsRef.current = {
+      startAt: now, productsShown: 0, productsClicked: 0, shopNowClicked: false,
+      chatMessages: 0, endReason: null, conversationId: null,
+      latencyFirstAiMs: null, latencyProductsMs: null, toolCalls: 0, interruptionCount: 0,
+      // Business/funnel metrics (2026-07-16): how useful was the agent this session?
+      searches: 0,               // search result sets shown (update_products calls)
+      productsFocusedIds: [],    // unique product ids brought into the main view
+      cartAdds: 0,               // successful add-to-cart count
+      cartAddFailures: 0,        // failed add attempts (variant missing / cart API error)
+      cartValuePaise: 0,         // ₹ value added to cart this session, in paise
+      checkoutInitiated: false,  // shopper went to /cart via agent or widget button
+      resumedSession: !!saved,   // this session continued a recent one (session_context)
+    };
     // Transport is set once via CONNECTION_TYPE (see the constant near the top of the
     // file for the websocket-vs-webrtc audio-quality trade-offs). Currently "websocket"
     // for cleanest agent audio (raw PCM, no Opus/PLC artifacts) — the old first_message
@@ -1347,11 +1369,9 @@ function AvatarInner({
       ? Math.round((Date.now() - sessionMetricsRef.current.startAt) / 1000)
       : 0;
     if (duration >= 10) {
+      // No auto-dismiss (client feedback 2026-07-16): the panel stays until the
+      // shopper rates, skips, or closes it — auto-dismissing was losing ratings.
       setActiveView("FEEDBACK");
-      // 12s (was 8s) — client feedback 2026-07-15: feedback disappeared too fast to notice
-      feedbackDismissTimerRef.current = setTimeout(() => {
-        setActiveView((prev) => prev === "FEEDBACK" ? "NONE" : prev);
-      }, 12000);
     } else {
       setActiveView("NONE");
     }
@@ -1363,6 +1383,21 @@ function AvatarInner({
   // the farewell watcher) so the watcher can call it without a TDZ crash.
   const goToCart = useCallback(() => {
     console.log("[cart] goToCart() firing — navigating to /cart now.");
+    sessionMetricsRef.current.checkoutInitiated = true;
+    // Navigating unloads this widget instance before the shopper can rate the
+    // session — persist the metrics so the widget on the NEXT page (the embed
+    // is theme-wide, /cart has one too) shows the feedback panel instead.
+    try {
+      const m = sessionMetricsRef.current;
+      const duration = m.startAt ? Math.round((Date.now() - m.startAt) / 1000) : 0;
+      if (duration >= 10) {
+        sessionStorage.setItem(PENDING_FEEDBACK_STORAGE_KEY, JSON.stringify({
+          ts: Date.now(),
+          conversationId: conversationIdRef.current,
+          metrics: { ...m, durationSeconds: duration, startAt: null },
+        }));
+      }
+    } catch (_e) { /* feedback marker is best-effort */ }
     if (window.__TEAM_POP_DEMO__) {
       console.log("[cart] Demo mode — would navigate to /cart here.");
       return;
@@ -1452,6 +1487,23 @@ function AvatarInner({
   // covers the case where they already added items via the store's own UI (case 9).
   useEffect(() => { refreshCartState(); }, [refreshCartState]);
 
+  // Pending feedback from a go_to_cart navigation on the previous page: restore
+  // the session's metrics and show the feedback panel here. It stays open until
+  // the shopper rates, skips, or closes it — no auto-dismiss.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(PENDING_FEEDBACK_STORAGE_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(PENDING_FEEDBACK_STORAGE_KEY); // consume once
+      const saved = JSON.parse(raw);
+      if (!saved?.ts || Date.now() - saved.ts > PENDING_FEEDBACK_TTL_MS) return;
+      sessionMetricsRef.current = { ...sessionMetricsRef.current, ...(saved.metrics || {}) };
+      if (saved.conversationId) conversationIdRef.current = saved.conversationId;
+      console.log("[feedback] Showing pending feedback from pre-navigation session.");
+      setActiveView("FEEDBACK");
+    } catch (_e) { /* marker unreadable — skip */ }
+  }, [setActiveView]);
+
   // Shared add-to-cart logic used by both the voice tool and the manual button.
   const performAddToCart = useCallback(async (product, variantIndex = 0, quantity = 1) => {
     if (!cartEnabled) {
@@ -1474,6 +1526,7 @@ function AvatarInner({
     const variants = localVariants.length > 0 ? localVariants : await fetchVariants(product.id);
     const variant = variants[variantIndex] || variants[0];
     if (!variant?.id) {
+      sessionMetricsRef.current.cartAddFailures += 1;
       return "No variant available for this product. Please use the Shop Now link instead.";
     }
     try {
@@ -1484,6 +1537,19 @@ function AvatarInner({
       });
       if (!r.ok) throw new Error(await r.text());
       await r.json();
+      sessionMetricsRef.current.cartAdds += 1;
+      sessionMetricsRef.current.cartValuePaise += Math.round(Number(product.price || 0) * 100) * qty;
+      // Tag the Shopify cart so the eventual ORDER carries agent attribution —
+      // shows in Shopify admin under the order's "Additional details", letting
+      // the merchant count and value agent-assisted orders. Fire-and-forget.
+      fetch('/cart/update.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attributes: {
+          'TeamPop Assisted': 'yes',
+          'TeamPop Conversation': String(conversationIdRef.current || ''),
+        } }),
+      }).catch(() => { /* attribution is best-effort */ });
       setCartToast("success");
       if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
       cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
@@ -1493,6 +1559,7 @@ function AvatarInner({
       return `Added ${qty > 1 ? `${qty} ` : ""}${product.name} to cart!`;
     } catch (err) {
       console.warn("[cart] /cart/add.js failed:", err);
+      sessionMetricsRef.current.cartAddFailures += 1;
       setCartToast("error");
       if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
       cartToastTimerRef.current = setTimeout(() => setCartToast(null), 3000);
@@ -1567,11 +1634,13 @@ function AvatarInner({
       try { conversationIdRef.current = conversation.getId?.() ?? null; } catch (_e) {}
     }
     const m = sessionMetricsRef.current;
-    const duration = m.startAt ? Math.round((Date.now() - m.startAt) / 1000) : null;
+    // durationSeconds is pre-computed when feedback survived a go_to_cart
+    // navigation (startAt is nulled in the marker); otherwise compute live.
+    const duration = m.durationSeconds ?? (m.startAt ? Math.round((Date.now() - m.startAt) / 1000) : null);
 
     // ElevenLabs built-in feedback signal (positive/negative boolean)
     if (rating === "positive" || rating === "negative") {
-      try { conversation.sendFeedback(rating === "positive"); } catch (_e) { /* not all SDK versions support this */ }
+      try { conversation.sendFeedback(rating === "positive"); } catch (_e) { /* not all SDK versions support this / no live session post-navigation */ }
     }
 
     // Send to our backend (fire-and-forget, never blocks UX)
@@ -1594,6 +1663,13 @@ function AvatarInner({
         latency_products_ms: m.latencyProductsMs ?? null,
         tool_calls: m.toolCalls ?? 0,
         interruption_count: m.interruptionCount ?? 0,
+        searches: m.searches ?? 0,
+        products_focused: (m.productsFocusedIds || []).length,
+        cart_adds: m.cartAdds ?? 0,
+        cart_add_failures: m.cartAddFailures ?? 0,
+        cart_value_paise: m.cartValuePaise ?? 0,
+        checkout_initiated: m.checkoutInitiated ?? false,
+        resumed_session: m.resumedSession ?? false,
       }),
     }).catch((e) => console.warn("[feedback] Submission failed (non-blocking):", e));
 
