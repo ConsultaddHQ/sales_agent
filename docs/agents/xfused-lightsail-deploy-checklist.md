@@ -32,11 +32,21 @@ scp search-service/.env ubuntu@<lightsail-ip>:/home/ubuntu/sales_agent/search-se
 Or edit directly on the box with `nano`/`vim` if scp isn't convenient — just
 make sure both end up with:
 - `SUPABASE_URL=https://jchigqerypjwmszslzke.supabase.co`
+  ⚠️ (2026-07-16) the LOCAL `search-service/.env` still has the OLD project
+  `gbaqppxjrfqgnmhunhbb` and an old ngrok `IMAGE_SERVER_URL` — fix it before
+  scp'ing, or skip scp for that file and edit on the box directly.
 - the real `SUPABASE_KEY` (not the placeholder)
+- BOTH `.env` files: `ALLOWED_ORIGINS=https://goxfused.com,https://6rl39pelkbakvtf9-78719418621.shopifypreview.com`
+  (the shopifypreview.com origin is the shareable test link for people without
+  store access — note Shopify rotates these preview subdomains, so when the
+  link expires, add the new one here and restart both services)
 - `onboarding-service/.env`: `ELEVENLABS_VOICE_ID=xoV6iGVuOGYHLWjXhVC7`,
   `ELEVENLABS_TTS_MODEL=eleven_flash_v2`, and prod URLs
   (`SEARCH_API_URL`/`PUBLIC_SEARCH_API_URL`/`WIDGET_SCRIPT_URL`/
-  `IMAGE_SERVER_URL` all `https://api.teampop.com`, `ALLOWED_ORIGINS=https://goxfused.com`)
+  `IMAGE_SERVER_URL` all `https://api.teampop.com`)
+
+CORS is read once at startup — restart both services after any
+`ALLOWED_ORIGINS` change (§5).
 
 ## 3. Rebuild the widget
 ```bash
