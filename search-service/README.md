@@ -46,6 +46,14 @@ Create a `.env` from `.env.example` with the following vars:
 - `UVICORN_WORKERS` – worker count for non-reload runs (default `4`).
 - `RELOAD` – set `false` to enable multi-worker process mode from `python main.py`.
 - `LOG_LEVEL` – `INFO`/`DEBUG`.
+- `SEARCH_CACHE_ENABLED` – set `false` to disable the in-memory result cache (default `true`).
+- `SEARCH_CACHE_TTL_SECONDS` – how long a cached `(store_id, query)` result stays valid (default `300`).
+- `SEARCH_CACHE_MAX_ENTRIES` – bound on cache size before oldest entries are evicted (default `200`).
+- `SEARCH_CONFIG_VERSION` – tag stamped onto every `search_latency` row; bump it whenever a change here affects search timing, so `/api/latency-summary` (onboarding-service) can group before/after (default `v1-baseline`).
+
+## Latency tracking
+
+Every `/search` call persists a row to the `search_latency` Supabase table (embedding/RPC/queue-wait breakdown + cache hit/miss), independent of whether the calling widget's own telemetry POST arrives. Run `create_latency_tracking_table.sql` (repo root) once in the Supabase SQL editor before this data starts flowing. See `docs/agents/decisions.md` (2026-07-20 entry) for the full design.
 
 ## Setup
 

@@ -199,3 +199,110 @@ def get_feedback_summary(agent_id: str, x_admin_password: str = Header(...)):
         logger.error(f"Failed to fetch feedback summary: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+
+def _percentile(sorted_values: list, pct: float) -> Optional[float]:
+    """Nearest-rank percentile over an already-sorted list. pct in [0, 100]."""
+    if not sorted_values:
+        return None
+    idx = min(len(sorted_values) - 1, int(round(pct / 100 * (len(sorted_values) - 1))))
+    return sorted_values[idx]
+
+
+def _latency_stats(values: list) -> dict:
+    clean = sorted(v for v in values if v is not None)
+    if not clean:
+        return {"count": 0, "avg_ms": None, "p50_ms": None, "p95_ms": None, "max_ms": None}
+    return {
+        "count": len(clean),
+        "avg_ms": round(sum(clean) / len(clean), 1),
+        "p50_ms": _percentile(clean, 50),
+        "p95_ms": _percentile(clean, 95),
+        "max_ms": clean[-1],
+    }
+
+
+@router.get("/latency-summary/{agent_id}")
+def get_latency_summary(agent_id: str, x_admin_password: str = Header(...)):
+    """Admin: per-turn and per-search latency stats, grouped by config_variant —
+    the running answer to "is the latency work actually helping?" Pulls from
+    two vantage points: turn_latency (widget-reported, per voice cycle) and
+    search_latency (search-service-reported, per query — server truth,
+    unaffected by whether the widget's own POST ever lands)."""
+    _verify_admin(x_admin_password)
+    try:
+        sb = get_supabase()
+
+        turn_rows = (
+            sb.table("turn_latency")
+            .select("*")
+            .eq("agent_id", agent_id)
+            .order("created_at", desc=True)
+            .limit(1000)
+            .execute()
+            .data
+        )
+
+        # turn_latency has no store_id column — resolve it via agent_requests
+        # so search_latency (keyed by store_id) can be scoped to this agent's store.
+        store_id = None
+        req_row = (
+            sb.table("agent_requests")
+            .select("store_id")
+            .eq("agent_id", agent_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if req_row:
+            store_id = req_row[0].get("store_id")
+
+        search_rows = []
+        if store_id:
+            search_rows = (
+                sb.table("search_latency")
+                .select("*")
+                .eq("store_id", store_id)
+                .order("created_at", desc=True)
+                .limit(1000)
+                .execute()
+                .data
+            )
+
+        def _group_by_variant(rows: list) -> dict:
+            groups: dict = {}
+            for r in rows:
+                groups.setdefault(r.get("config_variant") or "unknown", []).append(r)
+            return groups
+
+        turn_by_variant = _group_by_variant(turn_rows)
+        search_by_variant = _group_by_variant(search_rows)
+
+        variants = sorted(set(turn_by_variant) | set(search_by_variant))
+        by_variant = {}
+        for variant in variants:
+            t_rows = turn_by_variant.get(variant, [])
+            s_rows = search_by_variant.get(variant, [])
+            by_variant[variant] = {
+                "turn": {
+                    "first_ai_ms": _latency_stats([r.get("latency_first_ai_ms") for r in t_rows]),
+                    "products_ms": _latency_stats([r.get("latency_products_ms") for r in t_rows]),
+                },
+                "search": {
+                    "total_ms": _latency_stats([r.get("total_ms") for r in s_rows]),
+                    "embedding_ms": _latency_stats([r.get("embedding_ms") for r in s_rows]),
+                    "rpc_ms": _latency_stats([r.get("rpc_ms") for r in s_rows]),
+                    "queue_wait_ms": _latency_stats([r.get("queue_wait_ms") for r in s_rows]),
+                },
+            }
+
+        return {
+            "agent_id": agent_id,
+            "store_id": store_id,
+            "total_turns_sampled": len(turn_rows),
+            "total_searches_sampled": len(search_rows),
+            "by_config_variant": by_variant,
+        }
+    except Exception as e:
+        logger.error(f"Failed to fetch latency summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+

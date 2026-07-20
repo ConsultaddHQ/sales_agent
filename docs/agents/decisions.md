@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-07-20: Per-turn latency tracking via `config_variant` tagging, not ad-hoc log-scraping
+
+- **Decision:** Added two new Supabase tables — `turn_latency` (widget-reported: per-voice-cycle `latency_first_ai_ms`/`latency_products_ms`, sent immediately via `POST /api/turn-latency` rather than only once at session end) and `search_latency` (search-service-reported: `total_ms`/`embedding_ms`/`rpc_ms`/`queue_wait_ms`/`cache_hit`, persisted server-side so it doesn't depend on the widget's own POST landing). Both carry a `config_variant` text column, stamped server-side from a `LATENCY_CONFIG_VERSION` / `SEARCH_CONFIG_VERSION` env var — never client-supplied. `session_feedback` also got a `config_variant` column for the same reason. Added `GET /api/latency-summary/{agent_id}` (admin-gated) returning avg/p50/p95/max grouped by `config_variant`, resolving `store_id` from `agent_id` via `agent_requests` to join the two tables' different keys.
+- **Context:** Client reported the agent "feels slow" and asked specifically to be able to tell, with data, whether each latency fix actually helps. Existing instrumentation (`AvatarWidget.jsx` `_markProductsArrived`) only console.log'd per-cycle numbers and persisted just the *last* cycle's value to `session_feedback` at session end — no history, no way to compare before/after a config change.
+- **Rationale:** A version tag stamped server-side (not inferred from timestamps) is the only way to reliably answer "did change X help?" after the fact, especially once multiple changes ship close together. Two tables instead of one because the widget-reported and search-service-reported numbers answer different questions (perceived latency vs. backend truth) and the widget's POST can fail to arrive (network, ad blockers) while the search-service's own insert cannot.
+- **Alternatives considered:** (a) Parse production `journalctl` logs for `X-Search-Duration-Ms` — already exists (`testing/load/latency_report.sh`) but is a manual pull, not a live dashboard, and doesn't capture widget-side (STT+LLM+TTS) time at all. (b) Extend `session_feedback` with a JSON array of per-cycle timings — rejected, breaks the existing one-row-per-session shape and every existing query against that table.
+- **Consequences:** `create_latency_tracking_table.sql` must be run in Supabase before these columns/tables exist — same schema-drift-tolerant insert pattern as `session_feedback` is used, so a missing column degrades gracefully instead of losing the whole row. Any future latency-affecting change (prompt trims, model swaps, TTS/turn settings) should bump `LATENCY_CONFIG_VERSION` (and `SEARCH_CONFIG_VERSION` if backend-side) on deploy so its rows are distinguishable in `/latency-summary`.
+- **Status:** Active
+- **Agent/Author:** Claude (Opus 4.6)
+
+---
+
 ## 2026-07-04: Multilingual agents use language_presets + language_detection, not a multilingual base TTS model
 
 - **Decision:** English-primary agents keep `tts.model_id = eleven_flash_v2` (never `eleven_flash_v2_5` or `eleven_multilingual_v2`). Hindi/Tamil support is added via two confirmed-API-settable fields on `create_agent()`: `additional_languages` (populates `conversation_config.language_presets`, a sibling of `agent`, each with a translated `first_message` override) and `hinglish_mode` (boolean on `conversation_config.agent`, blends Hindi-English when the active language is Hindi). Both also proved safe to send at `create_agent()` time without touching `update_agent()`.

@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-07-20 — N/A — Voice-agent latency: per-turn tracking infra + search cache + soft-timeout tuning
+
+- **Status:** Completed
+- **Owner:** Claude Opus 4.6
+- **Summary:** Xfused client feedback: the agent "feels slow." Built per-turn latency tracking (two new tables, an admin summary endpoint, `config_variant` tagging) so future latency changes are measurable instead of anecdotal, and shipped two safe wins: a 5-minute TTL search-result cache in `search-service`, and `soft_timeout_config.timeout_seconds` 2.5s→1.2s (filler phrase now "One sec..." instead of "Let me see...").
+- **Why:** Prior investigation found the two most obvious "quick wins" (`turn_eagerness: "eager"` + `speculative_turn: true`, and `optimize_streaming_latency: 3`) had already been tried live and reverted for real regressions (premature interruptions; audible TTS dropouts) — see decisions.md 2026-07-20 entry and `[[elevenlabs-latency-reverts]]` memory. Rather than guess again, built measurement infra first so any future re-test of those settings (or new ones) has real before/after data instead of repeating the same trial-and-error.
+- **Files:** `create_latency_tracking_table.sql` (new — run in Supabase before use), `onboarding-service/routes/client.py` (`POST /api/turn-latency`, `LATENCY_CONFIG_VERSION`), `onboarding-service/routes/admin.py` (`GET /api/latency-summary/{agent_id}`), `search-service/main.py` (in-memory FIFO cache keyed on `(store_id, normalized_query)`, `SEARCH_CACHE_TTL_SECONDS`/`SEARCH_CACHE_MAX_ENTRIES`/`SEARCH_CACHE_ENABLED` env vars, `SEARCH_CONFIG_VERSION`, `_persist_search_latency`), `www.teampop/frontend/src/components/AvatarWidget.jsx` (`_markProductsArrived` now POSTs each cycle immediately), `onboarding-service/elevenlabs_agent.py` (soft timeout + comment documenting why eagerness/streaming-latency were left alone).
+- **Tradeoffs:** Search cache trades a few minutes of product-catalog staleness for latency — fine for a single-store pilot catalog that doesn't change minute-to-minute; would need revisiting for a high-churn multi-tenant catalog. Cache is FIFO-bounded (200 entries), not true LRU — acceptable at this scale, dependency-free. Did not touch `turn_eagerness`/`optimize_streaming_latency`/prompt length in this pass — flagged in roadmap as re-test candidates now that tracking exists.
+- **Verification:** `python3 -m py_compile` on all 4 changed Python files; `npm run build` on the widget (506 modules, no errors). Not yet verified against a live Supabase instance — `create_latency_tracking_table.sql` must be run manually first (same manual-migration pattern as `create_feedback_table.sql`).
+- **Related Decisions:** 2026-07-20 "Per-turn latency tracking via config_variant tagging" (decisions.md).
+- **Notes:** Bump `LATENCY_CONFIG_VERSION` (onboarding-service env) and `SEARCH_CONFIG_VERSION` (search-service env) on every future latency-affecting deploy so `/latency-summary` can distinguish before/after. This closes roadmap fast-follow "search cache (#1)" from the 2026-07-03 pilot-launch entry.
+
+---
+
 ## 2026-07-03 — N/A — Xfused pilot launch: search relevance UX + domain-neutral agent
 
 - **Status:** Completed

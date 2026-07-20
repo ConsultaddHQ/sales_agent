@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -41,6 +42,54 @@ RELOAD_ENABLED = os.getenv("RELOAD", "true").lower() == "true"
 SEARCH_EMBEDDING_CONCURRENCY = int(os.getenv("SEARCH_EMBEDDING_CONCURRENCY", "2"))
 EMBEDDING_TIMEOUT = float(os.getenv("EMBEDDING_TIMEOUT", "5.0"))
 RPC_TIMEOUT = float(os.getenv("RPC_TIMEOUT", "5.0"))
+
+# Bump alongside LATENCY_CONFIG_VERSION in onboarding-service whenever a
+# change here affects search timing (cache added, reranker toggled, model
+# swapped) so search_latency rows can be grouped by "which backend config
+# produced this number" the same way turn_latency groups by voice-agent config.
+SEARCH_CONFIG_VERSION = os.getenv("SEARCH_CONFIG_VERSION", "v1-baseline")
+
+# ── Search result cache ──────────────────────────────────────────────────
+# Same store + same (normalized) query within TTL skips embedding + RPC +
+# rerank entirely. Sized for a single-store pilot — bounded FIFO eviction,
+# not LRU, to keep this dependency-free. Correctness note: this trades a
+# few minutes of staleness for latency; fine for a product catalog that
+# doesn't change minute-to-minute, NOT fine if that assumption stops holding
+# for a future multi-tenant high-churn catalog.
+SEARCH_CACHE_TTL_SECONDS = float(os.getenv("SEARCH_CACHE_TTL_SECONDS", "300"))
+SEARCH_CACHE_MAX_ENTRIES = int(os.getenv("SEARCH_CACHE_MAX_ENTRIES", "200"))
+SEARCH_CACHE_ENABLED = os.getenv("SEARCH_CACHE_ENABLED", "true").lower() == "true"
+
+_search_cache: "OrderedDict[tuple[str, str], tuple[list, float]]" = OrderedDict()
+
+
+def _cache_key(store_id: str, query: str) -> tuple:
+    return (store_id, " ".join(query.strip().lower().split()))
+
+
+def _cache_get(store_id: str, query: str):
+    if not SEARCH_CACHE_ENABLED:
+        return None
+    key = _cache_key(store_id, query)
+    entry = _search_cache.get(key)
+    if entry is None:
+        return None
+    products, expires_at = entry
+    if time.time() > expires_at:
+        _search_cache.pop(key, None)
+        return None
+    _search_cache.move_to_end(key)
+    return products
+
+
+def _cache_put(store_id: str, query: str, products: list) -> None:
+    if not SEARCH_CACHE_ENABLED:
+        return
+    key = _cache_key(store_id, query)
+    _search_cache[key] = (products, time.time() + SEARCH_CACHE_TTL_SECONDS)
+    _search_cache.move_to_end(key)
+    while len(_search_cache) > SEARCH_CACHE_MAX_ENTRIES:
+        _search_cache.popitem(last=False)
 
 _embedding_semaphore: Optional[asyncio.Semaphore] = None
 
@@ -446,6 +495,42 @@ def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+def _persist_search_latency(
+    store_id: str,
+    query: str,
+    result_count: int,
+    total_ms: int,
+    embedding_ms: int,
+    rpc_ms: int,
+    queue_wait_ms: int,
+    cache_hit: bool = False,
+) -> None:
+    """Fire-and-forget insert into search_latency — server-side truth for the
+    timing breakdown, independent of whether the widget's own /api/turn-latency
+    POST ever arrives. Never awaited by the request path; a failure here must
+    never slow down or fail a search response."""
+    async def _do_insert() -> None:
+        try:
+            sb = get_supabase()
+            await asyncio.to_thread(
+                lambda: sb.table("search_latency").insert({
+                    "store_id": store_id,
+                    "query": query[:200],
+                    "result_count": result_count,
+                    "total_ms": total_ms,
+                    "embedding_ms": embedding_ms,
+                    "rpc_ms": rpc_ms,
+                    "queue_wait_ms": queue_wait_ms,
+                    "cache_hit": cache_hit,
+                    "config_variant": SEARCH_CONFIG_VERSION,
+                }).execute()
+            )
+        except Exception as e:
+            logger.warning(f"Failed to persist search_latency (non-blocking): {e}")
+
+    asyncio.ensure_future(_do_insert())
+
+
 @app.post("/search", response_model=SearchResponse)
 @limiter.limit(SEARCH_RATE_LIMIT)
 async def search(
@@ -481,15 +566,44 @@ async def search(
 
     # ── Measure embed + RPC duration so callers can correlate latency ──
     t0 = time.perf_counter()
+
+    cached = _cache_get(req.store_id, req.query)
+    if cached is not None:
+        total_ms = int((time.perf_counter() - t0) * 1000)
+        response.headers["X-Search-Duration-Ms"] = str(total_ms)
+        response.headers["X-Search-Cache"] = "hit"
+        logger.info(
+            f"⏱  Search performance: total_ms={total_ms} | cache=hit | "
+            f"store_id={req.store_id} | query={req.query!r} | results={len(cached)}"
+        )
+        _persist_search_latency(
+            store_id=req.store_id, query=req.query, result_count=len(cached),
+            total_ms=total_ms, embedding_ms=0, rpc_ms=0, queue_wait_ms=0,
+            cache_hit=True,
+        )
+        pitch = f"Found {len(cached)} products." if cached else "No matching products found."
+        return SearchResponse(products=cached, pitch=pitch)
+
     products, queue_wait_ms, embedding_ms, rpc_ms = await _hybrid_search_products(
         sb=sb, store_id=req.store_id, query=req.query, final_limit=12
     )
     total_ms = int((time.perf_counter() - t0) * 1000)
     response.headers["X-Search-Duration-Ms"] = str(total_ms)
+    response.headers["X-Search-Cache"] = "miss"
     logger.info(
         f"⏱  Search performance: total_ms={total_ms} | queue_wait_ms={queue_wait_ms} | "
-        f"embedding_ms={embedding_ms} | rpc_ms={rpc_ms} | "
+        f"embedding_ms={embedding_ms} | rpc_ms={rpc_ms} | cache=miss | "
         f"store_id={req.store_id} | query={req.query!r} | results={len(products)}"
+    )
+    _persist_search_latency(
+        store_id=req.store_id,
+        query=req.query,
+        result_count=len(products),
+        total_ms=total_ms,
+        embedding_ms=embedding_ms,
+        rpc_ms=rpc_ms,
+        queue_wait_ms=queue_wait_ms,
+        cache_hit=False,
     )
 
     pitch = f"Found {len(products)} products." if products else "No matching products found."
@@ -507,6 +621,7 @@ async def search(
             )
         )
 
+    _cache_put(req.store_id, req.query, serialized_products)
     return SearchResponse(products=serialized_products, pitch=pitch)
 
 

@@ -1,6 +1,7 @@
 """Client-facing endpoints — submit request, send agent delivery, session feedback."""
 
 import logging
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -28,6 +29,14 @@ logger = logging.getLogger("onboarding-service")
 router = APIRouter(prefix="/api")
 
 _bg_executor = ThreadPoolExecutor(max_workers=4)
+
+# Bump this string (and redeploy) every time a latency-affecting config
+# changes in elevenlabs_agent.py — soft_timeout, turn_eagerness, TTS
+# streaming settings, prompt length, etc. It's stamped server-side (never
+# client-supplied) onto every turn_latency/session_feedback row so
+# /latency-summary can group "did change X actually help?" by variant
+# instead of eyeballing timestamps.
+LATENCY_CONFIG_VERSION = os.getenv("LATENCY_CONFIG_VERSION", "v1-baseline")
 
 
 class SubmitRequestBody(BaseModel):
@@ -162,6 +171,7 @@ def submit_session_feedback(body: SessionFeedbackBody):
             "cart_value_paise": body.cart_value_paise,
             "checkout_initiated": body.checkout_initiated,
             "resumed_session": body.resumed_session,
+            "config_variant": LATENCY_CONFIG_VERSION,
         }
         # Schema-drift tolerance: if the table is missing a column (migration not
         # applied, or created from an older base schema — the 2026-07-16 xfused
@@ -183,4 +193,47 @@ def submit_session_feedback(body: SessionFeedbackBody):
     except Exception as e:
         logger.error(f"Failed to store session feedback: {e}", exc_info=True)
         # Never surface errors to the widget — feedback is non-critical
+        return {"success": False}
+
+
+class TurnLatencyBody(BaseModel):
+    agent_id: str
+    conversation_id: Optional[str] = None
+    cycle: Optional[int] = None
+    latency_first_ai_ms: Optional[int] = None
+    latency_products_ms: Optional[int] = None
+
+
+@router.post("/turn-latency")
+def submit_turn_latency(body: TurnLatencyBody):
+    """Public: per-turn latency sample, sent immediately after each voice cycle
+    (not just once at session end). No auth — no PII stored."""
+    try:
+        sb = get_supabase()
+        row = {
+            "agent_id": body.agent_id,
+            "conversation_id": body.conversation_id,
+            "cycle": body.cycle,
+            "latency_first_ai_ms": body.latency_first_ai_ms,
+            "latency_products_ms": body.latency_products_ms,
+            "config_variant": LATENCY_CONFIG_VERSION,
+        }
+        # Same schema-drift tolerance as /session-feedback: drop whatever
+        # column PostgREST reports missing and retry, so a partial row is
+        # stored instead of losing the sample entirely.
+        import re as _re
+        for _ in range(len(row)):
+            try:
+                sb.table("turn_latency").insert(row).execute()
+                break
+            except Exception as col_err:
+                m = _re.search(r"Could not find the '([^']+)' column", str(col_err))
+                if not m or m.group(1) not in row:
+                    raise
+                logger.warning(f"turn_latency missing column '{m.group(1)}' — retrying without it (run create_latency_tracking_table.sql)")
+                row.pop(m.group(1))
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Failed to store turn latency: {e}", exc_info=True)
+        # Never surface errors to the widget — telemetry is non-critical
         return {"success": False}

@@ -801,16 +801,34 @@ function AvatarInner({
     if (lc.userSpeechAt) {
       lc.productsAt = performance.now();
       const totalMs = Math.round(lc.productsAt - lc.userSpeechAt);
-      const fromAi = lc.firstAiAt ? Math.round(lc.productsAt - lc.firstAiAt) : "N/A";
+      const firstAiMs = lc.firstAiAt ? Math.round(lc.firstAiAt - lc.userSpeechAt) : null;
+      const fromAi = firstAiMs !== null ? Math.round(lc.productsAt - lc.firstAiAt) : "N/A";
       console.log(
         `%c⏱ [Cycle ${lc.cycle}] Products in carousel (${count} items): ${totalMs}ms total | ${fromAi}ms after first AI`,
         "color: #ffb74d; font-weight: bold; font-size: 13px"
       );
       console.log(
-        `%c⏱ [Cycle ${lc.cycle}] BREAKDOWN → User→AI: ${lc.firstAiAt ? Math.round(lc.firstAiAt - lc.userSpeechAt) : "?"}ms | User→Products: ${totalMs}ms`,
+        `%c⏱ [Cycle ${lc.cycle}] BREAKDOWN → User→AI: ${firstAiMs ?? "?"}ms | User→Products: ${totalMs}ms`,
         "color: #ce93d8; font-weight: bold; font-size: 14px"
       );
       sessionMetricsRef.current.latencyProductsMs = totalMs;
+
+      // Send this cycle's numbers immediately (fire-and-forget) instead of
+      // only at session end — lets /latency-summary see every turn, not
+      // just each session's last one, and correlates with cycle number so
+      // "does latency degrade over a long conversation" is answerable.
+      const apiBase = window.__TEAM_POP_API_URL__ || "";
+      fetch(`${apiBase}/api/turn-latency`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent_id: agentId,
+          conversation_id: conversationIdRef.current,
+          cycle: lc.cycle,
+          latency_first_ai_ms: firstAiMs,
+          latency_products_ms: totalMs,
+        }),
+      }).catch((e) => console.warn("[latency] Turn sample submission failed (non-blocking):", e));
     }
   }
 

@@ -1164,10 +1164,21 @@ class ElevenLabsAgentCreator:
                 },
                 "turn": {
                     "turn_timeout": 7,
+                    # normal/false: kept as-is. "eager"+speculative_turn=true was
+                    # tried 2026-04-08/09 and reverted 2026-04-10 (premature
+                    # interruptions) — do not reapply without new evidence and
+                    # per-turn latency tracking to validate it this time.
                     "turn_eagerness": "normal",
+                    # 2026-07-20: lowered from 2.5s → 1.2s to mask perceived dead
+                    # air sooner (client feedback: response feels slow). This is
+                    # distinct from the earlier rejected idea of lowering it to
+                    # fix tool-chain context loss (docs/agents/decisions.md L108)
+                    # — that concern doesn't apply here since we're not touching
+                    # eagerness/speculative_turn. Bump LATENCY_CONFIG_VERSION on
+                    # deploy so /latency-summary can A/B this against the prior value.
                     "soft_timeout_config": {
-                        "timeout_seconds": 2.5,
-                        "message": "Let me see...",
+                        "timeout_seconds": 1.2,
+                        "message": "One sec...",
                         "use_llm_generated_message": False,
                     },
                     "speculative_turn": False,
