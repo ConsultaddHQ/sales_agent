@@ -573,3 +573,19 @@
 - **Status:** Active
 - **Agent/Author:** Antigravity (Gemini)
 
+
+---
+
+## 2026-08-12: Live xfused agent diverged from code — dashboard hand-edits treated as source of truth
+
+- **Decision:** For the live pilot agent (`agent_4901kwna71tve5nbyy85c8v20yre`, "Wrina - Xfused (v2, multilingual)"), the ElevenLabs dashboard's current live config is authoritative over `elevenlabs_agent.py`'s hardcoded defaults where they conflict. Code was updated to make the divergent fields reproducible instead of silently overwriting them.
+- **Context:** A latency audit compared the code in this repo against the live agent via `GET /v1/convai/agents/{id}` and found real drift, most likely from manual dashboard edits during live testing that were never ported back:
+  - `agent.language`: code hardcoded `"en"`; live is `"hi"` (base language), with `hinglish_mode=true` and `language_presets` for `en`/`ta`.
+  - `tts.model_id`: code/decisions.md (2026-07-04 entry) mandate `eleven_flash_v2` for English-primary agents; live runs `eleven_flash_v2_5`. This is **not a contradiction** — the 400 ElevenLabs throws on `eleven_flash_v2_5` is keyed on `agent.language == "en"`, and live is no longer `"en"`. Switching the base language is what unlocked the multilingual TTS model.
+  - `tts.voice_id`: live is `o6qTxWUeRyzRYZyUNDVJ`, not the `.env.example` default `xoV6iGVuOGYHLWjXhVC7` (Muskaan).
+  - `turn.soft_timeout_config`: live has 2 rotating fillers (`randomize_fillers=true`, `max_soft_timeouts_per_generation=2`) vs. code's single static filler — an undocumented refinement of the 2026-07-20 latency fix.
+- **Rationale:** Reproducing exactly what's proven live in production (10 real conversations through 2026-08-06) is lower-risk than re-deriving these settings from the 2026-07-04 decision, which was correct for an English-primary agent but doesn't apply once the base language changed.
+- **Consequences:** `create_agent()` gained a `language: str = "en"` param (elevenlabs_agent.py) so this setup is reproducible instead of hardcoded — pass `language="hi"` + `ELEVENLABS_TTS_MODEL=eleven_flash_v2_5` to match Wrina v2. The soft-timeout defaults in `create_agent()` were updated to the rotating-filler version. The 2026-07-04 decision is **not reversed** — `eleven_flash_v2` + `language="en"` remains correct for any future English-primary store; this entry documents a store-specific exception, not a new global default. `update_agent()` was not touched — it already patches only the sub-objects it's asked to (prompt, tts), so routine prompt/model updates for xfused do not risk overwriting `turn`/`language`/`asr`, which live only in `create_agent()`'s payload.
+- **Open risk:** If xfused's agent is ever re-created (not just updated) without passing `language="hi"` explicitly, it will silently regress to the English defaults. There is no guardrail against this beyond this doc entry and the code comments at `elevenlabs_agent.py` create_agent().
+- **Status:** Active
+- **Agent/Author:** Claude

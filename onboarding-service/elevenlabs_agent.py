@@ -1042,6 +1042,7 @@ class ElevenLabsAgentCreator:
         llm_model: Optional[str] = None,
         additional_languages: Optional[List[str]] = None,
         hinglish_mode: bool = False,
+        language: str = "en",
     ) -> Dict:
         """Create a new conversational agent for a store.
 
@@ -1062,6 +1063,17 @@ class ElevenLabsAgentCreator:
             (2025-12-15 changelog): when true and the active language is
             Hindi, responses blend Hindi-English (Hinglish) instead of pure
             Hindi.
+        language:
+            Base `conversation_config.agent.language`. Default "en" per the
+            2026-07-04 decision (docs/agents/decisions.md) — English-primary
+            agents can't use `eleven_flash_v2_5`/multilingual TTS models.
+            The live xfused agent (`agent_4901kwna71...`, "Wrina v2") was
+            hand-edited in the ElevenLabs dashboard to base language "hi" —
+            that's what unlocked `eleven_flash_v2_5` for it (see
+            docs/agents/decisions.md 2026-08-12 entry). Pass "hi" here to
+            reproduce that setup for a new agent; don't flip the default,
+            since it's unverified whether "hi" base language is right for a
+            store whose customers are primarily English-speaking.
         """
         # Validate store_id is a proper UUID before baking it into the webhook
         try:
@@ -1097,18 +1109,22 @@ class ElevenLabsAgentCreator:
         #
         # ── Settings aligned with tested ElevenLabs dashboard config ──
         # 1. LLM: claude-haiku-4-5 (~686ms) — 100% tool reliability, zero 1002 timeouts
-        # 2. TTS: eleven_flash_v2 — CORRECTED 2026-07-04: eleven_flash_v2_5 was assumed
-        #    to be the right multilingual choice, but ElevenLabs rejects it outright for
-        #    an English-primary agent ("English Agents must use turbo or flash v2" — a
-        #    live 400 on PATCH with model_id=eleven_flash_v2_5 while agent.language="en").
-        #    Hindi/Tamil switching runs through language_presets + the language_detection
-        #    system tool instead (see additional_languages/hinglish_mode params below),
-        #    not through the base TTS model. Telugu has no supported real-time model at
-        #    all (only the higher-latency Eleven v3) — not offered yet; see roadmap.md.
-        # 3. optimize_streaming_latency: 3 = max latency reduction
-        # 4. turn_eagerness: "normal" — balanced (valid: patient/normal/eager)
-        # 5. soft_timeout: 2.5s with static "Let me see..." — fills silence
-        #    during tool execution without derailing LLM context
+        # 2. TTS: eleven_flash_v2 default — 2026-07-04: eleven_flash_v2_5 gets a hard
+        #    400 ("English Agents must use turbo or flash v2") when agent.language="en".
+        #    That restriction is keyed on base language, not "is this store English-
+        #    speaking" — 2026-08-12: the live xfused agent was hand-switched to
+        #    language="hi" in the dashboard and runs eleven_flash_v2_5 successfully in
+        #    production (better Hindi/Tamil prosody was the reason). Pass language="hi"
+        #    to this function to reproduce that; ELEVENLABS_TTS_MODEL env var still
+        #    controls the actual model_id either way. Telugu has no supported real-time
+        #    model at all (only the higher-latency Eleven v3) — not offered; see roadmap.md.
+        # 3. optimize_streaming_latency: 0 — 3 caused audible TTS dropouts live, reverted
+        #    2026-07-04. This field is now deprecated ElevenLabs-side (Feb 2026 changelog).
+        # 4. turn_eagerness: "normal" — "eager"+speculative_turn caused premature
+        #    interruptions live, reverted 2026-04-10. Don't reapply without per-turn data.
+        # 5. soft_timeout: 1.2s with rotating fillers (2026-07-20 latency fix, then
+        #    2026-08-12 filler rotation to match the live dashboard config) — fills
+        #    silence during tool execution without derailing LLM context.
         # 6. speculative_turn: false — avoids premature responses
         # 7. cascade_timeout_seconds: 8 — buffer for tool round-trips
         # 8. ASR: elevenlabs provider, PCM 16000 Hz input
@@ -1132,7 +1148,7 @@ class ElevenLabsAgentCreator:
                         "You can also talk to me in Hinglish or Tamil — just speak in your language. "
                         "What are you looking for today?"
                     ),
-                    "language": "en",
+                    "language": language,
                     "hinglish_mode": hinglish_mode,
                 },
                 "tts": {
@@ -1176,9 +1192,16 @@ class ElevenLabsAgentCreator:
                     # — that concern doesn't apply here since we're not touching
                     # eagerness/speculative_turn. Bump LATENCY_CONFIG_VERSION on
                     # deploy so /latency-summary can A/B this against the prior value.
+                    # 2026-08-12: rotating fillers + max_soft_timeouts_per_generation
+                    # match the live xfused agent's dashboard config (hand-edited
+                    # after the 1.2s cutover) — a single static filler repeats
+                    # awkwardly on multi-tool-call turns, which live testing hit.
                     "soft_timeout_config": {
                         "timeout_seconds": 1.2,
-                        "message": "One sec...",
+                        "message": "One second, Looking that up.",
+                        "additional_soft_timeout_messages": ["Let , me see "],
+                        "randomize_fillers": True,
+                        "max_soft_timeouts_per_generation": 2,
                         "use_llm_generated_message": False,
                     },
                     "speculative_turn": False,

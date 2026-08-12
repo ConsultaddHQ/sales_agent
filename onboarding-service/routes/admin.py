@@ -222,12 +222,24 @@ def _latency_stats(values: list) -> dict:
 
 
 @router.get("/latency-summary/{agent_id}")
-def get_latency_summary(agent_id: str, x_admin_password: str = Header(...)):
+def get_latency_summary(
+    agent_id: str,
+    store_id: Optional[str] = None,
+    x_admin_password: str = Header(...),
+):
     """Admin: per-turn and per-search latency stats, grouped by config_variant —
     the running answer to "is the latency work actually helping?" Pulls from
     two vantage points: turn_latency (widget-reported, per voice cycle) and
     search_latency (search-service-reported, per query — server truth,
-    unaffected by whether the widget's own POST ever lands)."""
+    unaffected by whether the widget's own POST ever lands).
+
+    store_id: pass explicitly (recommended) since turn_latency has no
+    store_id column and the agent_requests table this used to resolve it
+    from does not exist in every Supabase project (confirmed missing on the
+    xfused pilot project, 2026-08-12) — that made this endpoint 500 for
+    every request. Falls back to the agent_requests lookup if store_id is
+    omitted, but that lookup is now best-effort and never fails the request.
+    """
     _verify_admin(x_admin_password)
     try:
         sb = get_supabase()
@@ -242,19 +254,24 @@ def get_latency_summary(agent_id: str, x_admin_password: str = Header(...)):
             .data
         )
 
-        # turn_latency has no store_id column — resolve it via agent_requests
-        # so search_latency (keyed by store_id) can be scoped to this agent's store.
-        store_id = None
-        req_row = (
-            sb.table("agent_requests")
-            .select("store_id")
-            .eq("agent_id", agent_id)
-            .limit(1)
-            .execute()
-            .data
-        )
-        if req_row:
-            store_id = req_row[0].get("store_id")
+        if not store_id:
+            try:
+                req_row = (
+                    sb.table("agent_requests")
+                    .select("store_id")
+                    .eq("agent_id", agent_id)
+                    .limit(1)
+                    .execute()
+                    .data
+                )
+                if req_row:
+                    store_id = req_row[0].get("store_id")
+            except Exception as lookup_err:
+                logger.warning(
+                    f"agent_requests lookup failed for {agent_id} (table may not "
+                    f"exist in this project) — pass ?store_id=... explicitly. "
+                    f"Error: {lookup_err}"
+                )
 
         search_rows = []
         if store_id:
