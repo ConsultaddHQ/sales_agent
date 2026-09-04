@@ -7,20 +7,23 @@
 
 ## Active Tasks
 
-- **Voice latency work implemented on `cursor/voice-latency-design-bcc1`** — Tasks 1–6 of `docs/superpowers/plans/2026-09-04-xfused-voice-latency.md` are coded and unit-tested on that branch. Nothing is live yet.
-- **Blocked on human Lightsail deploy** — pull the branch on the box, rebuild the widget locally and scp `dist/`, then PATCH the Wrina agent via `update_agent` (prompt + tools only). Do **not** re-run `create_agent`; `language="hi"` must stay. Runbook: `docs/agents/handoff.md` (2026-09-04).
-- **Tasks 7–9 are STOP-gated** — do not start them until the deployed numbers from checklist A1–A10 come back. They exist to be chosen by data, not guessed.
+- **Wrina PATCH done** — `agent_4901kwna71tve5nbyy85c8v20yre` has `show_search_error`; `language` still `"hi"`. Do not run `create_agent`.
+- **Blocked on Lightsail SSH** — this env has all 24 API secrets, but SSH to the Mumbai box as `ubuntu` is `Permission denied (publickey)`. Need `LIGHTSAIL_SSH_PRIVATE_KEY` (or a human) to pull `release/xfused-pilot`, bump config versions, restart `tp-onboard`/`tp-search`, and scp `www.teampop/frontend/dist/`.
+- **Live widget is stale** — production `/widget/widget.js` has `turn-latency` but not `SEARCH_FAIL`. Local dist is built and ready to copy.
+- **Tasks 7–9 are STOP-gated** — wait for A1–A10 numbers. `ADMIN_PASSWORD` is not in this env.
 
 ---
 
 ## Files Currently Being Modified
 
-- none (branch is clean; awaiting deploy + measurement)
+- none (ops session; widget `dist/` is gitignored)
 
 ---
 
 ## Recent Completions (for quick context)
 
+- **2026-09-04** — Confirmed new env has all 24 injected secrets. PATCHed Wrina prompt+tools only; `language=hi` unchanged.
 - **2026-09-04** — Whole-branch review fixes: single latency row per leg, session-scoped SEARCH_FAIL, fallback re-armed after filler, timing headers on search errors.
 - **2026-09-04** — Instant THINKING, SEARCH_FAIL UI, `show_search_error` tool, per-turn latency POST, error-path `search_latency` rows.
-- **2026-08-13** — Latency-audit: 07-20 work never deployed; live agent `language="hi"` + `eleven_flash_v2_5`.
+- **2026-08-13** — Latency-audit: 07-20 work never deployed; live agent `language="hi"` + dashboard TTS.
+

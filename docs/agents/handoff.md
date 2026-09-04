@@ -65,6 +65,41 @@ Copy this block and fill it in when handing off:
 
 ---
 
+## Handoff — 2026-09-04 (continue)
+
+**From:** Cloud agent on personal env `ConsultaddHQ/sales_agent` (`release/xfused-pilot` @ `3f411ce`)
+**To:** Human (Gautam) or next agent with Lightsail SSH
+**Task:** Finish Lightsail pull + widget copy after Wrina PATCH
+**Ticket:** none
+
+### Current Progress
+- Env API secrets: **complete**. All 24 names in `CLOUD_AGENT_ALL_SECRET_NAMES` were injected (`ELEVENLABS_*`, `SUPABASE_*`, `OPENROUTER_*`, service URLs). No `.env` files on disk; keys live in process env.
+- Wrina PATCH: **done**. `update_agent` prompt+tools only. `language` remains `"hi"`. `show_search_error` is now a live client tool. `store_id` webhook constant is still `9cec7cd0-9252-4aa2-985b-71c2a42018cb`. TTS voice `o6qTxWUeRyzRYZyUNDVJ` and `hinglish_mode=true` unchanged. Did **not** run `create_agent`.
+- Widget: **built locally** (`www.teampop/frontend/dist/widget.js`, SEARCH_FAIL present). **Not copied** to the box.
+- Lightsail pull/restart: **blocked**. SSH to the Mumbai box as `ubuntu` → `Permission denied (publickey)`. This pod has no SSH private key and no AWS creds.
+
+### What Remains
+1. Inject `LIGHTSAIL_SSH_PRIVATE_KEY` (or run the commands from a laptop that already has the key).
+2. On the box: `git fetch && git checkout release/xfused-pilot && git pull`, set `LATENCY_CONFIG_VERSION=v3-heardyou-searchfail` and `SEARCH_CONFIG_VERSION=v3-error-persist`, `sudo systemctl restart tp-onboard tp-search`.
+3. `scp` the built `www.teampop/frontend/dist/` onto `/home/ubuntu/sales_agent/www.teampop/frontend/dist/`. Live `widget.js` is still the pre-SEARCH_FAIL bundle (1.30MB, no `SEARCH_FAIL` string).
+4. Do **not** re-PATCH Wrina unless tools drift; do **not** change `language=hi`.
+5. Then checklist A1–A10. `ADMIN_PASSWORD` is still not in this env, so `/api/latency-summary` from the agent will need that header from a human.
+
+### Context the Next Agent Needs
+- Live `GET /api/turn-latency` is already **405** (2026-08-13 code is on the box). The 2026-09-04 SEARCH_FAIL widget is **not**.
+- Env `ELEVENLABS_VOICE_ID` / `ELEVENLABS_TTS_MODEL` do **not** match live Wrina. Never pass `voice_id` or `tts_overrides` on a prompt PATCH or you will overwrite the dashboard-tuned voice.
+
+### Confidence
+[x] High for Wrina PATCH + secret inventory; Lightsail still needs SSH
+
+### Test Command
+```bash
+# language must stay hi; show_search_error must be present
+python3 -c "import json,os,urllib.request; d=json.load(urllib.request.urlopen(urllib.request.Request('https://api.elevenlabs.io/v1/convai/agents/agent_4901kwna71tve5nbyy85c8v20yre', headers={'xi-api-key': os.environ['ELEVENLABS_API_KEY']}))); a=d['conversation_config']['agent']; print(a.get('language'), [t.get('name') for t in a['prompt']['tools']])"
+```
+
+---
+
 ## Handoff — 2026-09-04
 
 **From:** Claude Opus 5 (branch `cursor/voice-latency-design-bcc1`)
