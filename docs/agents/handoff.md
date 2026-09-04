@@ -65,6 +65,69 @@ Copy this block and fill it in when handing off:
 
 ---
 
+## Handoff — 2026-09-04
+
+**From:** Claude Opus 5 (branch `cursor/voice-latency-design-bcc1`)
+**To:** Human (Gautam) — Lightsail deploy + ElevenLabs PATCH, then any agent for measurement
+**Task:** Deploy the perceived-latency work and run checklist A1–A10 so Tasks 7–9 can be chosen from data
+**Ticket:** none
+
+### Current Progress
+- Tasks 1–6 coded and unit-tested on `cursor/voice-latency-design-bcc1`. Details in `docs/agents/completions.md` (2026-09-04).
+- `https://api.teampop.com/api/turn-latency` already returns 405, so the 2026-08-13 deploy landed. This branch has not been deployed.
+
+### What Remains
+1. **Deploy the services** — the config-version tags are what make before/after comparable, so set them before restarting:
+   ```bash
+   ssh ubuntu@<lightsail-ip>
+   cd /home/ubuntu/sales_agent
+   git fetch origin && git checkout cursor/voice-latency-design-bcc1 && git pull origin cursor/voice-latency-design-bcc1
+   sed -i 's/^LATENCY_CONFIG_VERSION=.*/LATENCY_CONFIG_VERSION=v3-heardyou-searchfail/' onboarding-service/.env
+   sed -i 's/^SEARCH_CONFIG_VERSION=.*/SEARCH_CONFIG_VERSION=v3-error-persist/' search-service/.env
+   sudo systemctl restart tp-onboard tp-search
+   sudo systemctl status tp-onboard tp-search --no-pager
+   ```
+2. **Rebuild and ship the widget** — the THINKING/SEARCH_FAIL states and the per-turn POST all live in `AvatarWidget.jsx`, so the built bundle on the box is stale. Build locally (2GB box + Vite is risky) and copy:
+   ```bash
+   cd www.teampop/frontend && npm ci && npm run build
+   scp -r dist/* ubuntu@<lightsail-ip>:/home/ubuntu/sales_agent/www.teampop/frontend/dist/
+   ```
+3. **PATCH the Wrina agent** (`agent_4901kwna71tve5nbyy85c8v20yre`) so it knows about `show_search_error`. Use `update_agent` with prompt + tools only — it PATCHes just the sub-objects it is given. **Do not run `create_agent`**: that would reset `language` to `"en"` and undo the deliberate `language="hi"` + `eleven_flash_v2_5` setup (decisions.md 2026-08-12). Pass the store context (`store_id` `9cec7cd0-9252-4aa2-985b-71c2a42018cb`) so the webhook keeps `value_type: "constant"`; an LLM-filled UUID gets truncated.
+4. **Run checklist A1–A10** in `testing/manual_test_checklist.md`, 3× on WiFi and 3× on 4G. A10 specifically needs a forced failure (stop `tp-search` for one query, then start it) to confirm both SEARCH_FAIL paths.
+5. **Pull the numbers**, then decide Tasks 7–9:
+   ```bash
+   curl -s -H "<admin-header>" \
+     "https://api.teampop.com/api/latency-summary/agent_4901kwna71tve5nbyy85c8v20yre?store_id=9cec7cd0-9252-4aa2-985b-71c2a42018cb"
+   ```
+
+### Context the Next Agent Needs
+- Tasks 7–9 are STOP-gated on step 5's output. They are alternatives to be chosen by data, not a queue to work through.
+- First-AI and products are now separate `turn_latency` rows; `_latency_stats` drops nulls, so each leg averages independently. A row with both fields populated means the double-count regression came back.
+- SEARCH_FAIL fires either from `show_search_error` or from 8s with no `update_products` after agent audio stops. Soft-timeout filler deliberately does not count as a successful search.
+
+### Blockers / Open Questions
+- No SSH access from the agent session — steps 1–2 are a runbook, not something executed here.
+- Whether the 8s fallback is the right threshold is unverified against real 4G traffic; A1–A10 is the check.
+
+### Key Files
+- `www.teampop/frontend/src/components/AvatarWidget.jsx` — THINKING/SEARCH_FAIL wiring, per-turn latency POST
+- `www.teampop/frontend/src/visualState.js` — state machine + timing constants
+- `onboarding-service/elevenlabs_agent.py` — `show_search_error` tool + Claude prompt
+- `search-service/main.py` — error-path `search_latency` row + timing headers
+- `testing/manual_test_checklist.md` — A1–A10
+
+### Confidence
+[x] Medium — unit-tested and reviewed, but nothing has run against live voice traffic yet
+
+### Test Command
+```bash
+cd www.teampop/frontend && node --test src/visualState.test.js
+cd onboarding-service && python3 -m unittest tests.test_show_search_error_tool -v
+cd search-service && .venv/bin/python -m unittest tests.test_search_error_latency -v
+```
+
+---
+
 ## Handoff — 2026-08-13
 
 **From:** Claude (Sonnet 5)

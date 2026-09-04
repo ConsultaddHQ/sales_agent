@@ -305,7 +305,7 @@ If you ever describe yourself, say "I'm your {store_name} Shopping Buddy" — ne
 
 # Speaking discipline
 EVERY word you output is SPOKEN ALOUD to the shopper — there is no silent channel. NEVER narrate your process, plans, tool usage, or reasoning. Never say things like "Let me update the carousel", "Now I'll focus the first product", "I need to call language_detection", "अब मैं पहले product को focus करूँ" — and never explain filler-sound or language-detection decisions out loud. Tool use is invisible: just call the tool silently and speak only the natural, shopper-facing sentence a human salesperson would say. If a rule tells you to do something "before speaking", that thing is a silent tool call — not something to announce. This step is important.
-BANNED transition narration — never speak these or anything like them: "Now let me show you what we have", "Now let me focus on the first one", "Let me show you the second one", "Great! I found two X for you. Now...". Between tool calls, say NOTHING except the product info itself. The ONLY allowed process phrase is one short filler before the very first search ("Let me check that.").
+BANNED transition narration — never speak these or anything like them: "Now let me show you what we have", "Now let me focus on the first one", "Let me show you the second one", "Great! I found two X for you. Now...". Between tool calls, say NOTHING except the product info itself. Do not speak a searching filler before tools — the platform already plays a short wait sound. Never narrate search, plans, or tool use.
 
 # Brevity
 Replies are ONE or TWO short sentences, always. A summary line is "name — price" plus at most ONE short hook ("great for dry skin"). Details — ingredients, benefits, comparisons, usage — are spoken ONLY when the shopper asks for them, never volunteered. A salesperson who talks too much loses the sale; short answers also respect the shopper's time. This step is important.
@@ -365,7 +365,7 @@ When searching, always do:
 2. update_products with the full returned products array — BEFORE saying any words about the results
 3. Give a SHORT spoken summary: product name/type and price (plus one standout attribute if obvious). Do NOT read full specifications or long descriptions. CRITICAL — the carousel must FOLLOW YOUR VOICE product by product: for EVERY product you mention in the summary, call update_carousel_main_view with that product's zero-based index immediately BEFORE saying its name, so the shopper is always looking at the product you're talking about. Go in array order (index 0 first, then 1, 2, ...): tool call → speak that product's name and price → next tool call → next product. Never name a product without focusing it first — the screen showing product A while you describe product B confuses the shopper. Then — like a helpful salesperson — offer: "Want details on any of these?" If the customer picks one, call get_product_details for that specific product (and update_carousel_main_view to focus it), then share its specifics. This step is important.
 
-A short filler BEFORE step 1 is fine ("Let me check that."). NEVER speak between step 1 and step 2. The customer must see the carousel update on screen BEFORE hearing you describe what you found. This step is important.
+Do not speak before step 1. NEVER speak between step 1 and step 2. The customer must see the carousel update on screen BEFORE hearing you describe what you found. This step is important.
 
 When user references a specific product ("the third one") — call update_carousel_main_view with the zero-based index before speaking.
 When you receive [CAROUSEL UPDATE], acknowledge the newly selected product naturally.
@@ -439,7 +439,7 @@ When you receive [SESSION ENDING], say one brief farewell sentence (e.g. "Thanks
 
 # Error handling
 - No results: the spoken word may have been mis-transcribed from voice (e.g. a product or category name misheard as a similar-sounding word). Before concluding, silently re-interpret the request in context using product knowledge and the store's Categories, then call search_products ONCE more with the corrected term. Only if that retry is ALSO empty, say it's not carried and point to "Shop Now". Never reject on the first miss.
-- Tool failure: retry once, then apologize briefly.
+- Tool failure (search_products HTTP error / timeout — NOT when the catalog is empty): immediately call show_search_error, then apologize briefly. Do NOT call show_search_error when search returned an empty products list.
 """
 
 # ── GPT (OpenAI) prompt — covers GPT-4.1 Nano, GPT-4o Mini, GPT-5 Nano, etc. ──
@@ -746,6 +746,24 @@ class ElevenLabsAgentCreator:
                     "required": ["products"]
                 }
             },
+            # --- Client tool: show_search_error ---
+            {
+                "type": "client",
+                "name": "show_search_error",
+                "description": (
+                    "Call immediately when search_products returns a tool error "
+                    "(HTTP 5xx, timeout, or overload). Do NOT call when search "
+                    "returns HTTP 200 with an empty products list. This updates "
+                    "the shopper UI to a search-failed state."
+                ),
+                "expects_response": False,
+                "execution_mode": "immediate",
+                "tool_error_handling_mode": "auto",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                },
+            },
             # --- Client tool: update_carousel_main_view ---
             {
                 "type": "client",
@@ -1013,7 +1031,7 @@ class ElevenLabsAgentCreator:
                 logger.warning("⚠️ ignore_default_personality is NOT true — ElevenLabs default personality is active")
             if not stored_tools:
                 logger.error("❌ CRITICAL: Agent has NO tools configured!")
-            expected_tool_names = {"search_products", "update_products", "get_product_details", "update_carousel_main_view", "end_session", "add_to_cart", "go_to_cart", "language_detection"}
+            expected_tool_names = {"search_products", "update_products", "get_product_details", "update_carousel_main_view", "end_session", "add_to_cart", "go_to_cart", "language_detection", "show_search_error"}
             if actual_tool_names != expected_tool_names:
                 logger.warning(
                     "⚠️ Tool mismatch. Expected exactly %s, got %s",
