@@ -47,6 +47,8 @@ Run each scenario **3 times** on WiFi and **3 times** on 4G. For each turn, note
 | A9 | Empty catalog ("red spaceship") | Empty carousel / "not carried" speech. Pill is NOT SEARCH_FAIL. |
 | A10 | Forced search failure (temporarily stop `tp-search` for one query, then start it) | Pill + panel: "Couldn't search — try again". Agent calls `show_search_error`. `search_latency` row with `result_count=0` if the request reached search. |
 
+SEARCH_FAIL is triggered two ways: the agent calling `show_search_error`, or 8s passing with no `update_products` after the agent's audio stops — soft-timeout filler ("let me check that") does not count as a successful search, so if the LLM skips `show_search_error` the fallback still fires once the filler ends.
+
 **Pass bar (ship gate B, Wi-Fi and 4G):** first useful feedback p95 ≤ 1.2s; User→Products p95 ≤ 3.5–4s on search turns; dead-air (User→Products − User→AI > 1.5s) < 10%; 1002 < 5%; update_products miss < 10%. Stretch A (0.8s / 2.5s) is reported, not required.
 Pull `GET /api/latency-summary/agent_4901kwna71tve5nbyy85c8v20yre?store_id=9cec7cd0-9252-4aa2-985b-71c2a42018cb` (admin header required).
 

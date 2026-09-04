@@ -695,6 +695,8 @@ function AvatarInner({
   const vadSubStateRef = useRef("LISTENING");
   const [searchFailed, setSearchFailed] = useState(false);
   const searchFailTimerRef = useRef(null);
+  const wasAgentSpeakingRef = useRef(false);
+  const wasConnectedRef = useRef(false);
   const thinkingTimerRef = useRef(null);
   const rafVolRef = useRef(null);
   const agentIsSpeakingRef = useRef(false);
@@ -807,7 +809,9 @@ function AvatarInner({
         searchFailTimerRef.current = null;
       }
       setSearchFailed(false);
-      _submitTurnLatency(firstAiMs, totalMs);
+      // First-AI is already its own row (posted by _markFirstAi), so send only the
+      // products leg here — otherwise /api/latency-summary averages it twice.
+      _submitTurnLatency(null, totalMs);
     }
   }
 
@@ -983,7 +987,28 @@ function AvatarInner({
     } else if (conversation.status === "connected") {
       vadSubStateRef.current = "LISTENING";
       setVadSubState("LISTENING");
+      if (!wasConnectedRef.current) {
+        // Fresh session — a SEARCH_FAIL left over from the previous one must not
+        // greet the shopper. Only on the connect edge: once connected, the error
+        // has to persist until the shopper actually speaks again.
+        setSearchFailed(false);
+        if (searchFailTimerRef.current) { clearTimeout(searchFailTimerRef.current); searchFailTimerRef.current = null; }
+      } else if (wasAgentSpeakingRef.current && latencyRef.current.userSpeechAt && !latencyRef.current.productsAt) {
+        // Filler audio ("let me check that") cleared the fallback timer when it
+        // started. Soft-timeout filler is not a successful search, so re-arm once
+        // the audio stops — otherwise a search that dies after the filler leaves
+        // the orb listening forever with no products and no show_search_error.
+        if (searchFailTimerRef.current) clearTimeout(searchFailTimerRef.current);
+        searchFailTimerRef.current = setTimeout(() => {
+          searchFailTimerRef.current = null;
+          if (!agentIsSpeakingRef.current && !latencyRef.current.productsAt) {
+            setSearchFailed(true);
+          }
+        }, SEARCH_FAIL_FALLBACK_MS);
+      }
     }
+    wasAgentSpeakingRef.current = agentIsSpeaking;
+    wasConnectedRef.current = conversation.status === "connected";
   }, [agentIsSpeaking, conversation.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Volume-reactive rAF loop: detects user speech (input vol) to distinguish LISTENING vs THINKING
