@@ -10,6 +10,14 @@ import { useVoiceMode } from "../hooks/useVoiceMode";
 // eslint-disable-next-line no-unused-vars -- motion is used as <motion.div> in JSX
 import { motion, AnimatePresence, useMotionValue } from "framer-motion";
 import { usePttInteraction } from "../hooks/usePttInteraction";
+import {
+  CONNECTING_MESSAGES,
+  CONNECTING_MESSAGE_INTERVAL_MS,
+  getStatusLabel,
+  getVisualState,
+  SEARCH_FAIL_FALLBACK_MS,
+  THINKING_SILENCE_MS,
+} from "../visualState.js";
 
 // Served from the widget mount (onboarding-service mounts dist/ at /widget),
 // not the page root — a bare "/image.png" 404s against the host origin.
@@ -309,38 +317,6 @@ const isMeaningfulUserSpeech = (text) => {
   return normalized.length >= 2;
 };
 
-/**
- * Derive a single visual-state token from conversation + PTT state.
- * This is the source of truth for orb CSS class and status pill copy.
- *
- * VAD states  : IDLE | CONNECTING | LISTENING | THINKING | AGENT_SPEAKING | ERROR
- * PTT states  : PTT_READY | CONNECTING | PTT_MUTED_CONNECTED | PTT_HOLDING | ERROR
- */
-function getVisualState({ status, interactionMode, isPressActive, vadSubState }) {
-  if (status === "connecting") return "CONNECTING";
-  if (status === "error") return "ERROR";
-
-  if (status === "connected") {
-    if (interactionMode === "ptt") {
-      return isPressActive ? "PTT_HOLDING" : "PTT_MUTED_CONNECTED";
-    }
-    return vadSubState || "LISTENING";
-  }
-
-  // disconnected
-  return interactionMode === "ptt" ? "PTT_READY" : "IDLE";
-}
-
-// Rotated while visualState === "CONNECTING" so the handshake (a few seconds,
-// like a phone call connecting) reads as active progress rather than a stalled
-// spinner. See CONNECTING_MESSAGE_INTERVAL_MS for the rotation cadence.
-const CONNECTING_MESSAGES = [
-  "Connecting...",
-  "Setting up your assistant...",
-  "Almost ready...",
-];
-const CONNECTING_MESSAGE_INTERVAL_MS = 1500;
-
 // Carousel speech-sync constants — see the "Carousel focus speech-sync" block
 // in AvatarInner. A focus tool call applies immediately only when the queue is
 // empty and the last applied focus is at least MIN_GAP old; otherwise it waits
@@ -358,25 +334,6 @@ const SPEECH_SYNC_UTTERANCE_GAP_MS = 1500;
 function productNameNeedle(name) {
   const words = String(name || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
   return words[0] || null;
-}
-
-/**
- * Map visual state to shopper-facing status pill text.
- * connectingMessageIndex only matters for the CONNECTING state (see OrbDock).
- */
-function getStatusLabel(visualState, connectingMessageIndex = 0) {
-  switch (visualState) {
-    case "IDLE":                return "Talk to AI";
-    case "CONNECTING":          return CONNECTING_MESSAGES[connectingMessageIndex % CONNECTING_MESSAGES.length];
-    case "LISTENING":           return "Listening...";
-    case "THINKING":            return "Thinking...";
-    case "AGENT_SPEAKING":      return "Speaking...";
-    case "PTT_READY":           return "Hold to speak";
-    case "PTT_MUTED_CONNECTED": return "Hold to talk";
-    case "PTT_HOLDING":         return "Listening";
-    case "ERROR":               return "Retry";
-    default:                    return "";
-  }
 }
 
 // ─── PanelSessionScreen ──────────────────────────────────────────────────────
@@ -1121,6 +1078,7 @@ function AvatarInner({
     interactionMode,
     isPressActive: ptt.isPressActiveRef.current,
     vadSubState,
+    searchFailed: false,
   });
 
   // ── Carousel focus speech-sync ────────────────────────────────────────────
