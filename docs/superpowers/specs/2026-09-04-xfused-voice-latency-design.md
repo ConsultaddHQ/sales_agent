@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-04  
 **Branch basis:** `release/xfused-pilot`  
-**Status:** Draft for human review (brainstorming gate). Do not implement until this spec is approved.  
+**Status:** Approved 2026-09-04. Implementation plan: `docs/superpowers/plans/2026-09-04-xfused-voice-latency.md`.  
 **Audience:** India-only shoppers (north / south / central). Not overseas.
 
 ---

@@ -20,6 +20,13 @@
    `405` = new code is deployed (route exists, GET not allowed). `404` = still running old code — **stop, deploy first**, the results below won't mean anything.
 2. Note the current `LATENCY_CONFIG_VERSION` / `SEARCH_CONFIG_VERSION` you deployed with (see handoff.md). You'll need this to pull the right slice out of `/api/latency-summary` afterward.
 3. Have two test devices ready: one on decent WiFi, one on actual mobile data (4G) — client's users are on mobile, and voice/network behavior differs meaningfully.
+4. Confirm env tags on the box (do not commit these):
+   ```
+   grep LATENCY_CONFIG_VERSION onboarding-service/.env
+   grep SEARCH_CONFIG_VERSION search-service/.env
+   grep SEARCH_CACHE_ENABLED search-service/.env
+   ```
+   Expected for this cutover: `LATENCY_CONFIG_VERSION=v3-heardyou-searchfail` `SEARCH_CONFIG_VERSION=v3-error-persist` `SEARCH_CACHE_ENABLED=true`
 
 ---
 
@@ -35,8 +42,13 @@ Run each scenario **3 times** on WiFi and **3 times** on 4G. For each turn, note
 | A4 | Ask a question requiring **two tool calls in one turn** (e.g. "show me shirts under 1000" then immediately "tell me more about the second one") | Watch whether the soft-timeout filler fires twice — it's capped at `max_soft_timeouts_per_generation: 2` live; if you hear 3+ fillers or dead air after 2, something regressed. |
 | A5 | Ask something that returns **zero results** ("show me a red spaceship") | No search-result cache benefit here (nothing to cache well) — confirm the agent still responds quickly with a "couldn't find that" instead of hanging on an empty carousel. |
 | A6 | 5+ turn conversation, check if turn 5 is noticeably slower than turn 1 | Tests whether latency degrades over a long session (bloated conversation context) — this is explicitly why turn-latency is sent at end-of-session per-turn instead of only once. |
+| A7 | Non-search turn ("tell me more about the second one") | THINKING pill as soon as you stop talking (not ~500ms later). No `/search` proxy log. `turn_latency` row with `latency_products_ms` null. |
+| A8 | Repeat the same search 10s later | Second `search_latency` row `cache_hit=true` and `total_ms` much lower. |
+| A9 | Empty catalog ("red spaceship") | Empty carousel / "not carried" speech. Pill is NOT SEARCH_FAIL. |
+| A10 | Forced search failure (temporarily stop `tp-search` for one query, then start it) | Pill + panel: "Couldn't search — try again". Agent calls `show_search_error`. `search_latency` row with `result_count=0` if the request reached search. |
 
-**Pass bar:** p50 (typical) time-to-first-audio under ~1.5s, p90 under ~2.5s. Pull actual numbers from `GET /api/latency-summary/agent_4901kwna71tve5nbyy85c8v20yre?store_id=9cec7cd0-9252-4aa2-985b-71c2a42018cb` after the session — don't rely on stopwatch feel alone.
+**Pass bar (ship gate B, Wi-Fi and 4G):** first useful feedback p95 ≤ 1.2s; User→Products p95 ≤ 3.5–4s on search turns; dead-air (User→Products − User→AI > 1.5s) < 10%; 1002 < 5%; update_products miss < 10%. Stretch A (0.8s / 2.5s) is reported, not required.
+Pull `GET /api/latency-summary/agent_4901kwna71tve5nbyy85c8v20yre?store_id=9cec7cd0-9252-4aa2-985b-71c2a42018cb` (admin header required).
 
 ---
 
