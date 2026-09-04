@@ -531,16 +531,14 @@ def _persist_search_latency(
     asyncio.ensure_future(_do_insert())
 
 
-async def _search_uncached(sb, store_id: str, query: str, t0: float, response: Response):
+async def _search_uncached(sb, store_id: str, query: str, t0: float):
     try:
         products, queue_wait_ms, embedding_ms, rpc_ms = await _hybrid_search_products(
             sb=sb, store_id=store_id, query=query, final_limit=12
         )
         return products, queue_wait_ms, embedding_ms, rpc_ms
-    except HTTPException:
+    except HTTPException as e:
         total_ms = int((time.perf_counter() - t0) * 1000)
-        response.headers["X-Search-Duration-Ms"] = str(total_ms)
-        response.headers["X-Search-Cache"] = "error"
         logger.error(
             f"⏱  Search failed: total_ms={total_ms} | store_id={store_id} | query={query!r}"
         )
@@ -554,7 +552,18 @@ async def _search_uncached(sb, store_id: str, query: str, t0: float, response: R
             queue_wait_ms=0,
             cache_hit=False,
         )
-        raise
+        # FastAPI builds a fresh response for HTTPException, so anything written to
+        # `response` here is discarded. The timing headers only survive if they ride
+        # on the exception itself.
+        raise HTTPException(
+            status_code=e.status_code,
+            detail=e.detail,
+            headers={
+                **(getattr(e, "headers", None) or {}),
+                "X-Search-Duration-Ms": str(total_ms),
+                "X-Search-Cache": "error",
+            },
+        ) from e
 
 
 @app.post("/search", response_model=SearchResponse)
@@ -611,7 +620,7 @@ async def search(
         return SearchResponse(products=cached, pitch=pitch)
 
     products, queue_wait_ms, embedding_ms, rpc_ms = await _search_uncached(
-        sb=sb, store_id=req.store_id, query=req.query, t0=t0, response=response
+        sb=sb, store_id=req.store_id, query=req.query, t0=t0
     )
     total_ms = int((time.perf_counter() - t0) * 1000)
     response.headers["X-Search-Duration-Ms"] = str(total_ms)
