@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-09-04 — N/A — Xfused voice latency: perceived-latency UI, search-failure surfacing, per-turn measurement
+
+- **Status:** Completed on `cursor/voice-latency-design-bcc1` — **not deployed**
+- **Owner:** Claude Opus 5
+- **Summary:** Tasks 1–6 of the approved latency plan. THINKING now shows the instant the user stops talking (`THINKING_SILENCE_MS` 500→150ms); a failed search surfaces as a distinct `SEARCH_FAIL` state instead of silently looking like listening; the agent gets a `show_search_error` client tool; every turn POSTs its own `turn_latency` row; and `search-service` persists a `search_latency` row on the error path too. Whole-branch review then fixed four real defects: `_markProductsArrived` was POSTing the first-AI leg a second time (double-counting it in `/api/latency-summary`), `searchFailed` leaked across sessions, the `SEARCH_FAIL` fallback was permanently cancelled by soft-timeout filler audio, and the search-error timing headers were written to a `Response` object FastAPI discards.
+- **Why:** The client's "feels slow" report had no numbers behind it, and the two obvious ElevenLabs knobs were already tried and reverted (decisions.md 2026-07-20). Measure per turn, and stop the two failure modes that read as slowness but aren't: dead air while thinking, and a search that fails without ever saying so.
+- **Files:** `www.teampop/frontend/src/visualState.js` + `.test.js`, `www.teampop/frontend/src/components/AvatarWidget.jsx`, `onboarding-service/elevenlabs_agent.py` + `tests/test_show_search_error_tool.py`, `search-service/main.py` + `tests/test_search_error_latency.py`, `testing/manual_test_checklist.md`.
+- **Tradeoffs:** `searchFailed` resets only on the connect edge, not whenever agent audio stops — otherwise the apology would clear the error pill the moment the agent finished saying it. The 8s fallback is re-armed after filler instead of during, so a slow-but-successful search is never mislabelled as a failure. First-AI and products are separate rows rather than one wide row, which keeps `_latency_stats` null-dropping correct at the cost of two POSTs per search turn.
+- **Verification:** `node --test src/visualState.test.js` (8/8), `python3 -m unittest tests.test_show_search_error_tool` (2/2), `.venv/bin/python -m unittest tests.test_search_error_latency` (1/1). `https://api.teampop.com/api/turn-latency` already returns 405, so the 2026-08-13 deploy did land — but **this branch is not on the box**, so none of the above is live. No measurement is meaningful until the handoff runbook is executed.
+- **Related Decisions:** builds on 2026-07-20 per-turn latency tracking; spec at `docs/superpowers/specs/2026-09-04-xfused-voice-latency-design.md`.
+- **Notes:** Tasks 7–9 are deliberately gated on the deployed A1–A10 numbers. Do not pick a further optimisation without them.
+
+---
+
 ## 2026-07-20 — N/A — Voice-agent latency: per-turn tracking infra + search cache + soft-timeout tuning
 
 - **Status:** Completed
