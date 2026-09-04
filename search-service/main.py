@@ -531,6 +531,32 @@ def _persist_search_latency(
     asyncio.ensure_future(_do_insert())
 
 
+async def _search_uncached(sb, store_id: str, query: str, t0: float, response: Response):
+    try:
+        products, queue_wait_ms, embedding_ms, rpc_ms = await _hybrid_search_products(
+            sb=sb, store_id=store_id, query=query, final_limit=12
+        )
+        return products, queue_wait_ms, embedding_ms, rpc_ms
+    except HTTPException:
+        total_ms = int((time.perf_counter() - t0) * 1000)
+        response.headers["X-Search-Duration-Ms"] = str(total_ms)
+        response.headers["X-Search-Cache"] = "error"
+        logger.error(
+            f"⏱  Search failed: total_ms={total_ms} | store_id={store_id} | query={query!r}"
+        )
+        _persist_search_latency(
+            store_id=store_id,
+            query=query,
+            result_count=0,
+            total_ms=total_ms,
+            embedding_ms=0,
+            rpc_ms=0,
+            queue_wait_ms=0,
+            cache_hit=False,
+        )
+        raise
+
+
 @app.post("/search", response_model=SearchResponse)
 @limiter.limit(SEARCH_RATE_LIMIT)
 async def search(
@@ -584,8 +610,8 @@ async def search(
         pitch = f"Found {len(cached)} products." if cached else "No matching products found."
         return SearchResponse(products=cached, pitch=pitch)
 
-    products, queue_wait_ms, embedding_ms, rpc_ms = await _hybrid_search_products(
-        sb=sb, store_id=req.store_id, query=req.query, final_limit=12
+    products, queue_wait_ms, embedding_ms, rpc_ms = await _search_uncached(
+        sb=sb, store_id=req.store_id, query=req.query, t0=t0, response=response
     )
     total_ms = int((time.perf_counter() - t0) * 1000)
     response.headers["X-Search-Duration-Ms"] = str(total_ms)
