@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-09-04 — N/A — Wrina `show_search_error` PATCH from secrets-backed env (language=hi preserved)
+
+- **Status:** Agent PATCH complete; Lightsail code/widget deploy still blocked on SSH
+- **Owner:** Cloud agent (`release/xfused-pilot` @ `3f411ce`)
+- **Summary:** The new personal Cloud Agent env injects all 24 expected secrets (`ELEVENLABS_API_KEY`, `SUPABASE_KEY`, `OPENROUTER_API_KEY`, URLs, rerank/worker settings). Used that to PATCH live Wrina (`agent_4901kwna71tve5nbyy85c8v20yre`) via `update_agent(store_context=…)` only — prompt + 9 tools including `show_search_error`. Confirmed `conversation_config.agent.language == "hi"`, `hinglish_mode=true`, webhook `store_id` constant `9cec7cd0-9252-4aa2-985b-71c2a42018cb`, voice still `o6qTxWUeRyzRYZyUNDVJ`. Built widget locally (`SEARCH_FAIL` present). Could not SSH to the Lightsail Mumbai box (publickey denied).
+- **Why:** Previous pod had no keys. This pod has API keys but not an SSH private key. Wrina can be PATCHed from anywhere with `ELEVENLABS_API_KEY`; the box still needs git pull + widget copy for SEARCH_FAIL to show on the storefront.
+- **Files:** no application code. Docs: `docs/agents/handoff.md`, `docs/agents/memory.md`, this entry.
+- **Tradeoffs:** Did not pass `voice_id`/`tts_overrides` even though env TTS/voice differ from live — those env values would clobber the dashboard-tuned Hindi voice. Did not run `create_agent`.
+- **Verification:** Independent GET after PATCH: `language=hi`, tools include `show_search_error`, prompt mentions the tool. Widget unit tests 8/8. `test_show_search_error_tool` 2/2. Live `GET /api/turn-latency` → 405. Live widget.js still lacks `SEARCH_FAIL`.
+- **Notes:** Next step is SSH. Do not change `language=hi`. Tasks 7–9 still STOP-gated.
+
+---
+
 ## 2026-09-04 — N/A — Xfused voice latency: perceived-latency UI, search-failure surfacing, per-turn measurement
 
 - **Status:** Completed on `cursor/voice-latency-design-bcc1` — **not deployed**
