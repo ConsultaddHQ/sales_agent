@@ -1,0 +1,20 @@
+{
+  "name": "sales-voice-agent",
+  "user": "ubuntu",
+  "install": "./.cursor/install.sh",
+  "terminals": [
+    {
+      "name": "onboarding-service",
+      "command": "cd onboarding-service && .venv/bin/python main.py"
+    },
+    {
+      "name": "search-service",
+      "command": "cd search-service && PORT=8006 .venv/bin/python main.py"
+    },
+    {
+      "name": "website",
+      "command": "cd www.teampop/website && npm run preview -- --port 4173 --host"
+    }
+  ],
+  "ports": [8005, 8006, 4173]
+}
