@@ -1026,6 +1026,7 @@ function AvatarInner({
     return () => {
       if (rafVolRef.current) { cancelAnimationFrame(rafVolRef.current); rafVolRef.current = null; }
       if (thinkingTimerRef.current) { clearTimeout(thinkingTimerRef.current); thinkingTimerRef.current = null; }
+      if (searchFailTimerRef.current) { clearTimeout(searchFailTimerRef.current); searchFailTimerRef.current = null; }
     };
   }, [conversation.status, conversation.getInputVolume]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1810,6 +1811,7 @@ function AvatarInner({
       });
       if (rafVolRef.current) cancelAnimationFrame(rafVolRef.current);
       if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);
+      if (searchFailTimerRef.current) clearTimeout(searchFailTimerRef.current);
     };
   }, []);
 
