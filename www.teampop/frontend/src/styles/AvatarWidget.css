@@ -486,6 +486,14 @@
   to   { filter: drop-shadow(0 0 20px rgba(99,102,241,0.9)); transform: scale(1.05); }
 }
 
+.orb-wrapper.SEARCH_FAIL .orb-core {
+  animation: searchFailPulse 0.9s ease-in-out infinite alternate;
+}
+@keyframes searchFailPulse {
+  from { filter: drop-shadow(0 0 6px rgba(244, 63, 94, 0.45)); }
+  to   { filter: drop-shadow(0 0 18px rgba(244, 63, 94, 0.85)); }
+}
+
 /* AGENT_SPEAKING — purple drop-shadow scale pulse (fast, energetic) */
 .orb-wrapper.AGENT_SPEAKING .orb-core {
   animation: speakPulse 0.4s ease-in-out infinite alternate;
@@ -555,6 +563,7 @@
   .orb-wrapper.CONNECTING .orb-core     { animation: none; filter: drop-shadow(0 0 14px rgba(245,158,11,0.55)); }
   .orb-wrapper.LISTENING .orb-core      { animation: none; filter: drop-shadow(0 0 14px rgba(34,197,94,0.55)); }
   .orb-wrapper.THINKING .orb-core       { animation: none; filter: drop-shadow(0 0 14px rgba(99,102,241,0.55)); }
+  .orb-wrapper.SEARCH_FAIL .orb-core { animation: none; filter: drop-shadow(0 0 14px rgba(244,63,94,0.55)); }
   .orb-wrapper.AGENT_SPEAKING .orb-core { animation: none; filter: drop-shadow(0 0 14px rgba(168,85,247,0.55)); }
 }
 

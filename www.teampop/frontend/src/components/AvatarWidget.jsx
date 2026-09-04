@@ -374,6 +374,18 @@ function PanelSessionScreen({ visualState }) {
 
   // Connected, but no products shown yet — invite the shopper to speak so the
   // window doesn't feel dead between connect and the first search result.
+  if (visualState === "SEARCH_FAIL") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-900 pointer-events-auto pt-16">
+        <div className="panel-session-orb panel-session-orb--live mb-8" aria-hidden="true" />
+        <h2 className="text-xl font-bold text-rose-300 mb-3 tracking-wide">Couldn't search — try again</h2>
+        <p className="text-gray-300 text-sm max-w-[260px] mx-auto leading-relaxed">
+          I heard you, but product search failed. Say what you want again.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-900 pointer-events-auto pt-16">
       <div className="panel-session-orb panel-session-orb--live mb-8" aria-hidden="true" />
@@ -448,6 +460,7 @@ function OrbDock({
     // brighter border, plus the status-pill-connecting breathing glow (CSS).
     CONNECTING:    "bg-amber-500/30 text-amber-300 border-amber-400/70 shadow-[0_0_14px_rgba(245,158,11,0.4)] status-pill-connecting",
     PTT_HOLDING:   "bg-green-500/20 text-green-400 border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.2)]",
+    SEARCH_FAIL: "bg-rose-500/20 text-rose-400 border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.2)]",
   };
   const pillStyle = PILL_STYLES[visualState] || "bg-zinc-800/80 text-gray-400 border-white/5";
   const isConnecting = visualState === "CONNECTING";
@@ -680,6 +693,8 @@ function AvatarInner({
   // VAD sub-states for connected mode: LISTENING | THINKING | AGENT_SPEAKING
   const [vadSubState, setVadSubState] = useState("LISTENING");
   const vadSubStateRef = useRef("LISTENING");
+  const [searchFailed, setSearchFailed] = useState(false);
+  const searchFailTimerRef = useRef(null);
   const thinkingTimerRef = useRef(null);
   const rafVolRef = useRef(null);
   const agentIsSpeakingRef = useRef(false);
@@ -743,6 +758,22 @@ function AvatarInner({
     console.log(`%c⏱ [Cycle ${latencyRef.current.cycle}] User spoke: "${userText.slice(0, 50)}"`, "color: #4fc3f7; font-weight: bold");
   }
 
+  function _submitTurnLatency(firstAiMs, productsMs) {
+    const lc = latencyRef.current;
+    const apiBase = window.__TEAM_POP_API_URL__ || "";
+    fetch(`${apiBase}/api/turn-latency`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent_id: agentId,
+        conversation_id: conversationIdRef.current,
+        cycle: lc.cycle,
+        latency_first_ai_ms: firstAiMs,
+        latency_products_ms: productsMs,
+      }),
+    }).catch((e) => console.warn("[latency] Turn sample submission failed (non-blocking):", e));
+  }
+
   function _markFirstAi() {
     const lc = latencyRef.current;
     if (lc.userSpeechAt && !lc.firstAiAt) {
@@ -750,6 +781,7 @@ function AvatarInner({
       const ms = Math.round(lc.firstAiAt - lc.userSpeechAt);
       console.log(`%c⏱ [Cycle ${lc.cycle}] First AI response: ${ms}ms`, "color: #81c784; font-weight: bold");
       sessionMetricsRef.current.latencyFirstAiMs = ms;
+      _submitTurnLatency(ms, null);
     }
   }
 
@@ -770,22 +802,12 @@ function AvatarInner({
       );
       sessionMetricsRef.current.latencyProductsMs = totalMs;
 
-      // Send this cycle's numbers immediately (fire-and-forget) instead of
-      // only at session end — lets /latency-summary see every turn, not
-      // just each session's last one, and correlates with cycle number so
-      // "does latency degrade over a long conversation" is answerable.
-      const apiBase = window.__TEAM_POP_API_URL__ || "";
-      fetch(`${apiBase}/api/turn-latency`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          agent_id: agentId,
-          conversation_id: conversationIdRef.current,
-          cycle: lc.cycle,
-          latency_first_ai_ms: firstAiMs,
-          latency_products_ms: totalMs,
-        }),
-      }).catch((e) => console.warn("[latency] Turn sample submission failed (non-blocking):", e));
+      if (searchFailTimerRef.current) {
+        clearTimeout(searchFailTimerRef.current);
+        searchFailTimerRef.current = null;
+      }
+      setSearchFailed(false);
+      _submitTurnLatency(firstAiMs, totalMs);
     }
   }
 
@@ -834,6 +856,19 @@ function AvatarInner({
 
       if (source === "user" && text) {
         _startLatencyTimer(text);
+        if (thinkingTimerRef.current) {
+          clearTimeout(thinkingTimerRef.current);
+          thinkingTimerRef.current = null;
+        }
+        vadSubStateRef.current = "THINKING";
+        setVadSubState("THINKING");
+        if (searchFailTimerRef.current) clearTimeout(searchFailTimerRef.current);
+        searchFailTimerRef.current = setTimeout(() => {
+          searchFailTimerRef.current = null;
+          if (!agentIsSpeakingRef.current && !latencyRef.current.productsAt) {
+            setSearchFailed(true);
+          }
+        }, SEARCH_FAIL_FALLBACK_MS);
         if (isMeaningfulUserSpeech(text)) {
           resetInactivity();
           sessionMetricsRef.current.chatMessages += 1;
@@ -942,6 +977,7 @@ function AvatarInner({
   useEffect(() => {
     if (agentIsSpeaking) {
       if (thinkingTimerRef.current) { clearTimeout(thinkingTimerRef.current); thinkingTimerRef.current = null; }
+      if (searchFailTimerRef.current) { clearTimeout(searchFailTimerRef.current); searchFailTimerRef.current = null; }
       vadSubStateRef.current = "AGENT_SPEAKING";
       setVadSubState("AGENT_SPEAKING");
     } else if (conversation.status === "connected") {
@@ -967,6 +1003,11 @@ function AvatarInner({
       smoothedIn = smoothedIn * (1 - ALPHA) + rawIn * ALPHA;
       if (smoothedIn > INPUT_THRESHOLD) {
         if (thinkingTimerRef.current) { clearTimeout(thinkingTimerRef.current); thinkingTimerRef.current = null; }
+        setSearchFailed(false);
+        if (searchFailTimerRef.current) {
+          clearTimeout(searchFailTimerRef.current);
+          searchFailTimerRef.current = null;
+        }
         if (vadSubStateRef.current !== "LISTENING") {
           vadSubStateRef.current = "LISTENING";
           setVadSubState("LISTENING");
@@ -978,7 +1019,7 @@ function AvatarInner({
             vadSubStateRef.current = "THINKING";
             setVadSubState("THINKING");
           }
-        }, 500);
+        }, THINKING_SILENCE_MS);
       }
     };
     rafVolRef.current = requestAnimationFrame(tick);
@@ -1078,7 +1119,7 @@ function AvatarInner({
     interactionMode,
     isPressActive: ptt.isPressActiveRef.current,
     vadSubState,
-    searchFailed: false,
+    searchFailed,
   });
 
   // ── Carousel focus speech-sync ────────────────────────────────────────────
@@ -1215,6 +1256,18 @@ function AvatarInner({
     subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 3000);
     isToolPendingRef.current = false;
     return "UI updated successfully";
+  });
+
+  useConversationClientTool("show_search_error", () => {
+    if (searchFailTimerRef.current) {
+      clearTimeout(searchFailTimerRef.current);
+      searchFailTimerRef.current = null;
+    }
+    setSearchFailed(true);
+    setAgentSubtitle("Couldn't search — try again");
+    if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
+    subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 3000);
+    return "search error shown";
   });
 
   useConversationClientTool("update_carousel_main_view", (parameters) => {
