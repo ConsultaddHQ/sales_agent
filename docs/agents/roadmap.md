@@ -1,7 +1,7 @@
 # Roadmap — Tasks, Improvements & Pending Work
 
 > **Purpose:** Single source of truth for what needs to be done, by whom, and priority.
-> **Updated:** 2026-07-20
+> **Updated:** 2026-09-06
 > **Rule:** Agents update this after completing work or discovering new tasks. Remove done items, add new ones.
 
 ---
@@ -21,6 +21,7 @@ These cannot be done by an agent — they require account access, credentials, o
 | 7 | `pip install resend` in onboarding venv | ✅ Done | Already in requirements.txt |
 | 8 | End-to-end test of full flow | ⬜ In Progress | Agent + onboarding works; admin flow has 422 issue under investigation |
 | 9 | Merge PR after testing | ⬜ Pending | After full flow verified |
+| 10 | Inject `LIGHTSAIL_SSH_PRIVATE_KEY` for Mumbai box `ubuntu@13.232.36.194` | ⬜ Blocking SEARCH_FAIL deploy | Wrina `language=hi` + `show_search_error` already live. Local widget rebuilt. `ssh` is `Permission denied (publickey)`. Optional: `ADMIN_PASSWORD` for `/api/latency-summary`. Do not change `language=hi`. |
 
 ---
 
@@ -28,7 +29,7 @@ These cannot be done by an agent — they require account access, credentials, o
 
 | Task | Owner | Status | Effort | Notes |
 |------|-------|--------|--------|-------|
-| **⭐ [Post-pilot #1] Search-result cache (subset of Refactor A)** | Agent | ✅ Coded (2026-07-20), ⬜ **not deployed** | 30 min | Shipped as a 5-min TTL FIFO cache keyed on `(store_id, normalized_query)` in `search-service/main.py` (`SEARCH_CACHE_ENABLED`/`SEARCH_CACHE_TTL_SECONDS`/`SEARCH_CACHE_MAX_ENTRIES` env vars). 2026-08-12: confirmed the live `api.teampop.com` box is still running pre-`03ef0af` code — `turn_latency`/`search_latency` have 0 rows despite 10 real conversations on 2026-08-06. Needs a deploy (see handoff.md) before the cache or any latency numbers are real. |
+| **⭐ [Post-pilot #1] Search-result cache (subset of Refactor A)** | Agent | ✅ Coded (2026-07-20), 🟨 **2026-08-13 code on box, v3 SEARCH_FAIL widget not** | 30 min | Cache + `POST /api/turn-latency` are on the box (`GET` → 405). 2026-09-06: live widget is still the 12 Aug bundle (no `SEARCH_FAIL`). Needs Lightsail `git pull` of `release/xfused-pilot` + widget scp (handoff.md 2026-09-06). Blocked on SSH. |
 | **[Refactor A] Rewrite search-service/main.py** | Agent | ⬜ Ready | 1 hr | Plan at `docs/refactor-plan-2026-06-19.md`. Adds: TTLCache (512/300s), /metrics endpoint, structured logging, WEBHOOK_SECRET, ALLOWED_ORIGINS CORS, request-ID correlation, asyncio.to_thread() in /product-details, semaphore init in startup |
 | **[Refactor B] Parallel image downloads + batch embedding + pipeline timing** | Agent | ⬜ Ready | 1–2 hrs | Plan at `docs/refactor-plan-2026-06-19.md`. Rewrites: `services/products.py` (4-phase batch pipeline) + `pipeline.py` (step timing, ElevenLabs retry, structured completion log) |
 | Upgrade existing production agents to Claude Haiku 4.5 | Human | ⬜ Pending | 15 min per agent | Run `./onboarding-service/.venv/bin/python testing/latency/upgrade_agent_model.py --agent-id <id> --store-id <uuid>` for each live agent that should inherit the 2026-04-17 winner. `--from-json` for batch. |

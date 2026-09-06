@@ -65,6 +65,72 @@ Copy this block and fill it in when handing off:
 
 ---
 
+## Handoff — 2026-09-06
+
+**From:** Cloud agent on secrets-backed env `ConsultaddHQ/sales_agent` (`cursor/xfused-lightsail-wrina-5e44` from `release/xfused-pilot` @ `3f411ce`)
+**To:** Human (Gautam) or next agent with Lightsail SSH
+**Task:** Finish Lightsail pull + widget copy. Wrina PATCH is already live. Do not change `language=hi`.
+**Ticket:** none
+
+### Current Progress
+- Env API secrets: **present** on this pod (24 names in `CLOUD_AGENT_ALL_SECRET_NAMES`, including `ELEVENLABS_API_KEY`). No `.env` files on disk.
+- Wrina PATCH: **already done** (prior 2026-09-04 session). This session **GET-only**. Confirmed `language == "hi"`, 9 tools including `show_search_error` (client), webhook `store_id` still constant `9cec7cd0-9252-4aa2-985b-71c2a42018cb`. Did **not** call `update_agent` or `create_agent`. Live voice still `o6qTxWUeRyzRYZyUNDVJ`.
+- Widget: **rebuilt locally** (`www.teampop/frontend/dist/widget.js` 1,436,292 bytes, contains `SEARCH_FAIL` + `show_search_error`). **Not copied** to the box.
+- Lightsail pull/restart: **blocked**. `ssh ubuntu@13.232.36.194` → `Permission denied (publickey)`. No SSH private key, no AWS creds.
+
+### What Remains
+1. Inject `LIGHTSAIL_SSH_PRIVATE_KEY` (user `ubuntu`, host `13.232.36.194`).
+2. On the box:
+   ```bash
+   ssh ubuntu@13.232.36.194
+   cd /home/ubuntu/sales_agent
+   git fetch origin && git checkout release/xfused-pilot && git pull origin release/xfused-pilot
+   grep -q '^LATENCY_CONFIG_VERSION=' onboarding-service/.env \
+     && sed -i 's/^LATENCY_CONFIG_VERSION=.*/LATENCY_CONFIG_VERSION=v3-heardyou-searchfail/' onboarding-service/.env \
+     || echo 'LATENCY_CONFIG_VERSION=v3-heardyou-searchfail' >> onboarding-service/.env
+   grep -q '^SEARCH_CONFIG_VERSION=' search-service/.env \
+     && sed -i 's/^SEARCH_CONFIG_VERSION=.*/SEARCH_CONFIG_VERSION=v3-error-persist/' search-service/.env \
+     || echo 'SEARCH_CONFIG_VERSION=v3-error-persist' >> search-service/.env
+   sudo systemctl restart tp-onboard tp-search
+   sudo systemctl status tp-onboard tp-search --no-pager
+   ```
+3. Copy the built widget (prefer local/scp; 2GB box + Vite is risky):
+   ```bash
+   scp -r www.teampop/frontend/dist/* ubuntu@13.232.36.194:/home/ubuntu/sales_agent/www.teampop/frontend/dist/
+   ```
+   If rebuilding: `cd www.teampop/frontend && npm install && npm run build` (no lockfile). Live `$WIDGET_SCRIPT_URL` is still the 12 Aug 2026 bundle (1,302,202 bytes, **no** `SEARCH_FAIL`).
+4. Do **not** re-PATCH Wrina unless a GET shows `show_search_error` missing or `language != hi`. Never pass `voice_id` / `tts_overrides`. Never run `create_agent`.
+5. Checklist A1–A10 in `testing/manual_test_checklist.md`. `ADMIN_PASSWORD` is still not in this env.
+
+### Context the Next Agent Needs
+- This pod **did** receive the 24 API secrets. The missing key is SSH, not ElevenLabs.
+- Live `GET /api/turn-latency` is **405** (2026-08-13 code is on the box). The 2026-09-04 SEARCH_FAIL widget is **not**.
+- Env `ELEVENLABS_VOICE_ID` / `ELEVENLABS_TTS_MODEL` do **not** match live Wrina.
+
+### Attempted Approaches That Failed
+- `ssh -o BatchMode=yes ubuntu@13.232.36.194` — host key accepted (ED25519), auth `Permission denied (publickey)`.
+
+### Blockers / Open Questions
+- `LIGHTSAIL_SSH_PRIVATE_KEY` not injected. Optional later: `ADMIN_PASSWORD` for `/api/latency-summary`.
+
+### Key Files
+- `onboarding-service/elevenlabs_agent.py` — `update_agent` (prompt+tools only)
+- `www.teampop/frontend/dist/widget.js` — built this session, gitignored
+- `testing/manual_test_checklist.md` — A1–A10
+
+### Confidence
+[x] High for Wrina GET + widget rebuild; Lightsail still needs SSH
+
+### Test Command
+```bash
+python3 -c "import json,os,urllib.request; d=json.load(urllib.request.urlopen(urllib.request.Request('https://api.elevenlabs.io/v1/convai/agents/agent_4901kwna71tve5nbyy85c8v20yre', headers={'xi-api-key': os.environ['ELEVENLABS_API_KEY']}))); a=d['conversation_config']['agent']; print(a.get('language'), [t.get('name') for t in a['prompt']['tools']])"
+# expect: hi ... show_search_error ...
+curl -s $WIDGET_SCRIPT_URL | python3 -c "import sys; t=sys.stdin.read(); print('SEARCH_FAIL', 'SEARCH_FAIL' in t)"
+# expect True after scp
+```
+
+---
+
 ## Handoff — 2026-09-04
 
 **From:** Claude Opus 5 (branch `cursor/voice-latency-design-bcc1`)
