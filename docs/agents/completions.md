@@ -6,15 +6,29 @@
 
 ---
 
+## 2026-09-06 — N/A — Lightsail pull + widget copy of SEARCH_FAIL; Wrina language=hi left unchanged
+
+- **Status:** Deployed to Lightsail Mumbai (`ubuntu@13.232.36.194`)
+- **Owner:** Cloud agent (this env, `cursor/xfused-lightsail-deploy-061d`)
+- **Summary:** Finished the 2026-09-04 handoff ops job that earlier pods could not: SSH with `LIGHTSAIL_SSH_PRIVATE_KEY`, fast-forward the box `90e9b00` → `3f411ce` on `release/xfused-pilot`, stamp `LATENCY_CONFIG_VERSION=v3-heardyou-searchfail` and `SEARCH_CONFIG_VERSION=v3-error-persist`, restart `tp-onboard`/`tp-search`, rebuild the widget on the agent pod, and `scp` `dist/{widget.js,image.png}`. Did **not** PATCH Wrina this session — a GET already showed `language="hi"` and client tool `show_search_error` from the 2026-09-04 `update_agent`. Did **not** run `create_agent`.
+- **Why:** Perceived-latency Tasks 1–6 were merged but not on the box. The Aug 12 widget (1,302,202 bytes, no `SEARCH_FAIL`) was still what `/widget/widget.js` served. Without the pull + copy, A1–A10 numbers would describe stale code.
+- **Files:** Live box `/home/ubuntu/sales_agent` (git + gitignored `.env` tags + `www.teampop/frontend/dist/`). Repo docs: `docs/agents/{memory,handoff,completions,roadmap}.md`.
+- **Tradeoffs:** Skipped a redundant `update_agent` so dashboard-tuned voice/TTS/`language=hi` cannot drift. Did not stop `tp-search` for A10 on the live box from this session. Did not scp local `.env` files onto the box (this pod's env is process-injected and is not a full production env file).
+- **Verification:** `node --test src/visualState.test.js` 8/8. `python3 -m unittest tests.test_show_search_error_tool` 2/2. `npm run build` → 1,436,292-byte `widget.js` with `SEARCH_FAIL`. After deploy: box `HEAD=3f411ce`; both units active; local `GET /api/turn-latency` 405; live `$WIDGET_SCRIPT_URL` 1,436,292 bytes, `SEARCH_FAIL` true, Last-Modified 2026-09-06 18:01:24 GMT; local `POST /search` moisturizer → 200 / 2 products; Wrina GET `language=hi`, `show_search_error` present, `store_id` constant `9cec7cd0-9252-4aa2-985b-71c2a42018cb`. `/api/latency-summary` → 422 without `X-Admin-Password`.
+- **Related Decisions:** 2026-08-12 live Wrina `language=hi` + multilingual TTS; 2026-09-04 perceived-latency UI
+- **Notes:** Next step is A1–A10 + latency-summary. Tasks 7–9 stay STOP-gated. Inject `ADMIN_PASSWORD` if the next agent should pull the summary.
+
+---
+
 ## 2026-09-04 — N/A — Xfused voice latency: perceived-latency UI, search-failure surfacing, per-turn measurement
 
-- **Status:** Completed on `cursor/voice-latency-design-bcc1` — **not deployed**
+- **Status:** Completed on `cursor/voice-latency-design-bcc1` — **deployed 2026-09-06** to Lightsail @ `3f411ce`
 - **Owner:** Claude Opus 5
 - **Summary:** Tasks 1–6 of the approved latency plan. THINKING now shows the instant the user stops talking (`THINKING_SILENCE_MS` 500→150ms); a failed search surfaces as a distinct `SEARCH_FAIL` state instead of silently looking like listening; the agent gets a `show_search_error` client tool; every turn POSTs its own `turn_latency` row; and `search-service` persists a `search_latency` row on the error path too. Whole-branch review then fixed four real defects: `_markProductsArrived` was POSTing the first-AI leg a second time (double-counting it in `/api/latency-summary`), `searchFailed` leaked across sessions, the `SEARCH_FAIL` fallback was permanently cancelled by soft-timeout filler audio, and the search-error timing headers were written to a `Response` object FastAPI discards.
 - **Why:** The client's "feels slow" report had no numbers behind it, and the two obvious ElevenLabs knobs were already tried and reverted (decisions.md 2026-07-20). Measure per turn, and stop the two failure modes that read as slowness but aren't: dead air while thinking, and a search that fails without ever saying so.
 - **Files:** `www.teampop/frontend/src/visualState.js` + `.test.js`, `www.teampop/frontend/src/components/AvatarWidget.jsx`, `onboarding-service/elevenlabs_agent.py` + `tests/test_show_search_error_tool.py`, `search-service/main.py` + `tests/test_search_error_latency.py`, `testing/manual_test_checklist.md`.
 - **Tradeoffs:** `searchFailed` resets only on the connect edge, not whenever agent audio stops — otherwise the apology would clear the error pill the moment the agent finished saying it. The 8s fallback is re-armed after filler instead of during, so a slow-but-successful search is never mislabelled as a failure. First-AI and products are separate rows rather than one wide row, which keeps `_latency_stats` null-dropping correct at the cost of two POSTs per search turn.
-- **Verification:** `node --test src/visualState.test.js` (8/8), `python3 -m unittest tests.test_show_search_error_tool` (2/2), `.venv/bin/python -m unittest tests.test_search_error_latency` (1/1). `https://api.teampop.com/api/turn-latency` already returns 405, so the 2026-08-13 deploy did land — but **this branch is not on the box**, so none of the above is live. No measurement is meaningful until the handoff runbook is executed.
+- **Verification:** `node --test src/visualState.test.js` (8/8), `python3 -m unittest tests.test_show_search_error_tool` (2/2), `.venv/bin/python -m unittest tests.test_search_error_latency` (1/1). ``GET /api/turn-latency`` already returns 405, so the 2026-08-13 deploy did land. Live deploy of this cut is recorded in the 2026-09-06 completions entry.
 - **Related Decisions:** builds on 2026-07-20 per-turn latency tracking; spec at `docs/superpowers/specs/2026-09-04-xfused-voice-latency-design.md`.
 - **Notes:** Tasks 7–9 are deliberately gated on the deployed A1–A10 numbers. Do not pick a further optimisation without them.
 

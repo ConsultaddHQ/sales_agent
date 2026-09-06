@@ -1,26 +1,25 @@
 # Agent Memory — Active Work State
 
 > **Keep this file under 2KB.** It is read by every agent at session start.
-> **Last updated:** 2026-09-04
+> **Last updated:** 2026-09-06
 
 ---
 
 ## Active Tasks
 
-- **Voice latency work implemented on `cursor/voice-latency-design-bcc1`** — Tasks 1–6 of `docs/superpowers/plans/2026-09-04-xfused-voice-latency.md` are coded and unit-tested on that branch. Nothing is live yet.
-- **Blocked on human Lightsail deploy** — pull the branch on the box, rebuild the widget locally and scp `dist/`, then PATCH the Wrina agent via `update_agent` (prompt + tools only). Do **not** re-run `create_agent`; `language="hi"` must stay. Runbook: `docs/agents/handoff.md` (2026-09-04).
-- **Tasks 7–9 are STOP-gated** — do not start them until the deployed numbers from checklist A1–A10 come back. They exist to be chosen by data, not guessed.
+- **A1–A10 measurement (STOP-gated Tasks 7–9)** — Lightsail pull, widget copy, and Wrina `language=hi` are done. Next is `testing/manual_test_checklist.md` A1–A10 (3× WiFi, 3× 4G). Needs `ADMIN_PASSWORD` for `/api/latency-summary`. Do **not** re-PATCH Wrina or run `create_agent`.
+- **Do not start Tasks 7–9** until those numbers exist.
 
 ---
 
 ## Files Currently Being Modified
 
-- none (branch is clean; awaiting deploy + measurement)
+- none (ops deploy landed; this branch only records it)
 
 ---
 
 ## Recent Completions (for quick context)
 
-- **2026-09-04** — Whole-branch review fixes: single latency row per leg, session-scoped SEARCH_FAIL, fallback re-armed after filler, timing headers on search errors.
-- **2026-09-04** — Instant THINKING, SEARCH_FAIL UI, `show_search_error` tool, per-turn latency POST, error-path `search_latency` rows.
-- **2026-08-13** — Latency-audit: 07-20 work never deployed; live agent `language="hi"` + `eleven_flash_v2_5`.
+- **2026-09-06** — Lightsail `ubuntu@13.232.36.194`: `90e9b00` → `3f411ce`, widget `dist/` copied (`SEARCH_FAIL` live), env tags `v3-heardyou-searchfail` / `v3-error-persist`. Wrina GET-only; `language=hi` unchanged.
+- **2026-09-04** — Wrina `update_agent` prompt+tools PATCH (`show_search_error`); `language` left `hi`.
+- **2026-09-04** — Tasks 1–6 coded + merged to `release/xfused-pilot`.
