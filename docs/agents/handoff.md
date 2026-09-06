@@ -65,6 +65,71 @@ Copy this block and fill it in when handing off:
 
 ---
 
+## Handoff — 2026-09-06 (Lightsail deploy landed)
+
+**From:** Cloud agent on secrets-backed env `ConsultaddHQ/sales_agent` (`cursor/xfused-lightsail-deploy-061d` from `release/xfused-pilot` @ `3f411ce`)
+**To:** Human (Gautam) or next agent with `ADMIN_PASSWORD` + two devices (WiFi + 4G)
+**Task:** Run checklist A1–A10 and pull `/api/latency-summary` so Tasks 7–9 can be chosen from data
+**Ticket:** none
+
+### Current Progress
+- Lightsail pull: **done.** Box was `90e9b00`; now `3f411ce` on `release/xfused-pilot` (`ubuntu@13.232.36.194`).
+- Config tags set **before** restart: `LATENCY_CONFIG_VERSION=v3-heardyou-searchfail`, `SEARCH_CONFIG_VERSION=v3-error-persist`, `SEARCH_CACHE_ENABLED=true`.
+- Services: `tp-onboard` and `tp-search` restarted and active. Search warmup completed (reranker + Supabase). Local `POST /search` moisturizer → 200, 2 products.
+- Widget copy: **done.** Built on this pod (`npm install && npm run build`, 1,436,292 bytes). Live `$WIDGET_SCRIPT_URL` now has `SEARCH_FAIL`, `show_search_error`, and `turn-latency`. Last-Modified `Sun, 06 Sep 2026 18:01:24 GMT`.
+- Wrina PATCH: **not re-run this session.** GET confirms `language == "hi"`, 9 tools including client `show_search_error`, webhook `store_id` constant `9cec7cd0-9252-4aa2-985b-71c2a42018cb`, voice still `o6qTxWUeRyzRYZyUNDVJ`. Did **not** call `update_agent` or `create_agent`.
+
+### What Was Done
+- SSH with injected `LIGHTSAIL_SSH_PRIVATE_KEY` as `ubuntu` (previous pods lacked this key).
+- `git fetch && git pull origin release/xfused-pilot` on `/home/ubuntu/sales_agent`.
+- Env upsert on the box (gitignored `.env` files; not copied from this pod).
+- `sudo systemctl restart tp-onboard tp-search`.
+- `scp` of `www.teampop/frontend/dist/{widget.js,image.png}`.
+
+### What Remains
+1. Run `testing/manual_test_checklist.md` Section A (A1–A10), 3× WiFi and 3× 4G. A10 is a forced `tp-search` stop for one query — do it in a short window; this is the live Mumbai box.
+2. Pull numbers (needs `ADMIN_PASSWORD`, still not in this env):
+   ```bash
+   curl -s -H "X-Admin-Password: <admin>" \
+     "$PUBLIC_SEARCH_API_URL/api/latency-summary/agent_4901kwna71tve5nbyy85c8v20yre?store_id=9cec7cd0-9252-4aa2-985b-71c2a42018cb"
+   ```
+   Look at the `v3-heardyou-searchfail` / `v3-error-persist` slices, not `v1-baseline`.
+3. Choose Tasks 7–9 from those numbers. They are alternatives, not a queue.
+4. Do **not** re-PATCH Wrina unless a GET shows `show_search_error` missing or `language != hi`. Never pass `voice_id` / `tts_overrides`. Never run `create_agent`.
+
+### Context the Next Agent Needs
+- Public `GET /api/turn-latency` is **405**. Live widget is the 2026-09-06 bundle, not the 12 Aug 1.30MB file.
+- Env `ELEVENLABS_VOICE_ID` / `ELEVENLABS_TTS_MODEL` on this pod still do **not** match live Wrina. Leave TTS alone.
+- `goxfused.com` homepage HTML does not embed the public API host (duplicate/unpublished theme per the 2026-07-14 checklist). Test on the theme that actually loads `$WIDGET_SCRIPT_URL`.
+- Search cache was already hitting before this restart (logs from 2026-09-04); this deploy stamps `SEARCH_CONFIG_VERSION=v3-error-persist` so new `search_latency` rows are comparable.
+
+### Attempted Approaches That Failed
+- Local curl immediately after `systemctl restart` returned connection refused — search-service needs ~40s to load the reranker. Wait for `Application startup complete` before smoke tests.
+
+### Blockers / Open Questions
+- `ADMIN_PASSWORD` not injected — cannot pull `/api/latency-summary` from this pod (endpoint returns 422 without `X-Admin-Password`).
+- A1–A10 needs real voice sessions on WiFi and 4G; not executed here.
+
+### Key Files
+- Live box `/home/ubuntu/sales_agent` @ `3f411ce`
+- `www.teampop/frontend/dist/widget.js` — gitignored; live copy is what shoppers get
+- `testing/manual_test_checklist.md` — A1–A10
+
+### Confidence
+[x] High — pull, tags, restart, widget copy, and Wrina GET all verified against live
+
+### Test Command
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" "$PUBLIC_SEARCH_API_URL/api/turn-latency"
+# expect 405
+curl -s "$WIDGET_SCRIPT_URL" | python3 -c "import sys; t=sys.stdin.read(); print(len(t), 'SEARCH_FAIL' in t)"
+# expect 1436292 True
+python3 -c "import json,os,urllib.request; d=json.load(urllib.request.urlopen(urllib.request.Request('https://api.elevenlabs.io/v1/convai/agents/agent_4901kwna71tve5nbyy85c8v20yre', headers={'xi-api-key': os.environ['ELEVENLABS_API_KEY']}))); a=d['conversation_config']['agent']; print(a.get('language'), [t.get('name') for t in a['prompt']['tools']])"
+# expect: hi ... show_search_error ...
+```
+
+---
+
 ## Handoff — 2026-09-04
 
 **From:** Claude Opus 5 (branch `cursor/voice-latency-design-bcc1`)
