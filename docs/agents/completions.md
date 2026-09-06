@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-09-06 — N/A — Wrina GET verification + SEARCH_FAIL widget rebuild (Lightsail still blocked)
+
+- **Status:** Wrina verified live; widget rebuilt locally; Lightsail pull/copy **not done**
+- **Owner:** Cloud agent (secrets-backed personal env)
+- **Summary:** Started from the secrets-injected env on `release/xfused-pilot`. Confirmed the 2026-09-04 Wrina `update_agent` PATCH is still live: `language="hi"`, `show_search_error` is a client tool, webhook `store_id` is still the xfused constant. Did not re-PATCH and did not call `create_agent`. Rebuilt `www.teampop/frontend/dist/widget.js` (1,436,292 bytes, contains `SEARCH_FAIL`). Live `$WIDGET_SCRIPT_URL` is still the 12 Aug 2026 bundle without `SEARCH_FAIL`. SSH to `ubuntu@13.232.36.194` is `Permission denied (publickey)`.
+- **Why:** The 2026-09-04 handoff’s first job (Lightsail pull + widget copy + Wrina PATCH) was blocked on keys in the previous pod. This env has the ElevenLabs/Supabase/OpenRouter secrets; it still lacks an SSH key, so only the PATCH half can be confirmed.
+- **Files:** `docs/agents/{memory,handoff,completions}.md` (this session). Live ElevenLabs agent `agent_4901kwna71tve5nbyy85c8v20yre` unchanged this session.
+- **Tradeoffs:** Skipped a redundant `update_agent` so dashboard-tuned voice/TTS/`language=hi` cannot drift. Widget `dist/` stays gitignored; next agent must rebuild or scp from a machine with the key.
+- **Verification:** GET agent → `language=hi`, tools include `show_search_error`, store_id `constant_value` matches `9cec7cd0-9252-4aa2-985b-71c2a42018cb`. `node --test src/visualState.test.js` 8/8. `python3 -m unittest tests.test_show_search_error_tool` 2/2. `npm install && npm run build` → `SEARCH_FAIL` in dist. Live widget GET: 1,302,202 bytes, `SEARCH_FAIL` absent. `GET /api/turn-latency` → 405. SSH → publickey denied.
+- **Related Decisions:** 2026-08-12 live Wrina `language=hi` + multilingual TTS; 2026-09-04 perceived-latency UI
+- **Notes:** Next step is only SSH. Do not pass `voice_id`/`tts_overrides` if a later PATCH is required.
+
+---
+
 ## 2026-09-04 — N/A — Xfused voice latency: perceived-latency UI, search-failure surfacing, per-turn measurement
 
 - **Status:** Completed on `cursor/voice-latency-design-bcc1` — **not deployed**
