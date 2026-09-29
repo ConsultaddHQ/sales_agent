@@ -16,7 +16,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from shared.config import ADMIN_PASSWORD
-from shared.db import get_supabase
+from shared.db import get_supabase, insert_tolerant
 from notifications import (
     send_slack_notification,
     send_client_ack_email,
@@ -199,9 +199,13 @@ def submit_session_feedback(body: SessionFeedbackBody):
 class TurnLatencyBody(BaseModel):
     agent_id: str
     conversation_id: Optional[str] = None
-    cycle: Optional[int] = None
+    cycle: Optional[int] = None             # 0 = session start (connect + greeting)
     latency_first_ai_ms: Optional[int] = None
     latency_products_ms: Optional[int] = None
+    connect_ms: Optional[int] = None        # cycle 0: click → session connected
+    image_ms: Optional[int] = None          # products shown → main image painted
+    network_rtt_ms: Optional[int] = None    # latest ElevenLabs ping RTT
+    context_tokens: Optional[int] = None    # LLM prompt tokens of the last agent turn
 
 
 @router.post("/turn-latency")
@@ -209,29 +213,21 @@ def submit_turn_latency(body: TurnLatencyBody):
     """Public: per-turn latency sample, sent immediately after each voice cycle
     (not just once at session end). No auth — no PII stored."""
     try:
-        sb = get_supabase()
         row = {
             "agent_id": body.agent_id,
             "conversation_id": body.conversation_id,
             "cycle": body.cycle,
             "latency_first_ai_ms": body.latency_first_ai_ms,
             "latency_products_ms": body.latency_products_ms,
+            "connect_ms": body.connect_ms,
+            "image_ms": body.image_ms,
+            "network_rtt_ms": body.network_rtt_ms,
+            "context_tokens": body.context_tokens,
             "config_variant": LATENCY_CONFIG_VERSION,
         }
-        # Same schema-drift tolerance as /session-feedback: drop whatever
-        # column PostgREST reports missing and retry, so a partial row is
-        # stored instead of losing the sample entirely.
-        import re as _re
-        for _ in range(len(row)):
-            try:
-                sb.table("turn_latency").insert(row).execute()
-                break
-            except Exception as col_err:
-                m = _re.search(r"Could not find the '([^']+)' column", str(col_err))
-                if not m or m.group(1) not in row:
-                    raise
-                logger.warning(f"turn_latency missing column '{m.group(1)}' — retrying without it (run create_latency_tracking_table.sql)")
-                row.pop(m.group(1))
+        # Schema-drift tolerant: stores a partial row if a column is missing
+        # (run create_observability_tables.sql) instead of losing the sample.
+        insert_tolerant("turn_latency", row, logger)
         return {"success": True}
     except Exception as e:
         logger.error(f"Failed to store turn latency: {e}", exc_info=True)

@@ -10,3 +10,5 @@ httpx
 beautifulsoup4
 playwright
 resend
+sentry-sdk[fastapi]
+psutil

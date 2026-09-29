@@ -114,6 +114,12 @@ uvicorn main:app --reload --port 8005
 - `POST /api/update-request/{id}` — Admin: update request metadata.
 - `POST /api/send-agent/{id}` — Admin: send delivery email with test link.
 
+### Observability
+
+- `POST /webhooks/elevenlabs` — ElevenLabs post-call webhook (HMAC-verified with `ELEVENLABS_WEBHOOK_SECRET`). Stores `conversations` + `conversation_turns` and forwards the OTel trace to Grafana if `GRAFANA_OTLP_*` is set.
+- `POST /api/turn-latency` — Widget per-turn timings (cycle 0 = connect/greeting; also `image_ms`, `network_rtt_ms`, `context_tokens`).
+- Env vars: `LOG_FORMAT`, `SENTRY_*`, `SYSTEM_STATS_INTERVAL_SECONDS`, `ELEVENLABS_WEBHOOK_SECRET`, `ELEVENLABS_API_BASE`, `GRAFANA_OTLP_ENDPOINT/_INSTANCE_ID/_TOKEN` — see `.env.example` and `docs/observability-runbook.md`.
+
 ### Other
 
 - `GET /health` — Health check.

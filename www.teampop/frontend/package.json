@@ -11,7 +11,8 @@
     "test": "node --test src/visualState.test.js"
   },
   "dependencies": {
-    "@elevenlabs/react": "^1.8.0",
+    "@elevenlabs/react": "^1.16.0",
+    "@sentry/browser": "^11.1.0",
     "framer-motion": "^12.40.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

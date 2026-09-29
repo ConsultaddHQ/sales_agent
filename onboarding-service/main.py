@@ -24,13 +24,19 @@ for p in (_REPO_ROOT, _SERVICE_DIR):
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
-# Logging
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=LOG_LEVEL,
-    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+# Logging + error tracking (see shared/observability.py for env vars)
+from shared.observability import (
+    CorrelationMiddleware,
+    bind_conversation,
+    current_request_id,
+    init_sentry,
+    log_event,
+    run_system_stats_logger,
+    setup_logging,
 )
-logger = logging.getLogger("onboarding-service")
+
+logger = setup_logging("onboarding-service")
+init_sentry("onboarding-service")
 
 # FastAPI app
 app = FastAPI(title="TeamPop Onboarding Service", version="3.0.0")
@@ -45,7 +51,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-Id"],
 )
+app.add_middleware(CorrelationMiddleware)
 
 # Serve built widget.js from frontend dist
 WIDGET_DIST_DIR = Path(__file__).parent.parent / "www.teampop" / "frontend" / "dist"
@@ -70,10 +78,12 @@ logger.info(f"Images served from: {IMAGES_DIR}")
 from routes.onboard import router as onboard_router
 from routes.admin import router as admin_router
 from routes.client import router as client_router
+from routes.webhooks import router as webhooks_router
 
 app.include_router(onboard_router)
 app.include_router(admin_router)
 app.include_router(client_router)
+app.include_router(webhooks_router)
 
 # Force adapter registration on startup
 import adapters  # noqa: F401
@@ -89,6 +99,7 @@ def health_check():
 
 
 # ── Search proxy (so ElevenLabs webhook can hit the same ngrok tunnel) ──
+import asyncio
 import json as _json
 import time as _time
 
@@ -112,6 +123,7 @@ async def _init_search_proxy_client() -> None:
         limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
     )
     logger.info(f"Search proxy client initialized (target={SEARCH_SERVICE_URL})")
+    asyncio.ensure_future(run_system_stats_logger(logger))
 
 
 @app.on_event("shutdown")
@@ -146,10 +158,11 @@ async def search_proxy(request: Request):
         if isinstance(parsed, dict):
             store_id_log = str(parsed.get("store_id", "?"))
             query_log = str(parsed.get("query", "?"))[:80]
+            bind_conversation(parsed.get("conversation_id"))
     except Exception:
         pass
 
-    return await _proxy_to_search("/search", body, store_id_log, query_log)
+    return await _proxy_to_search("/search", body, store_id_log, query_log, request)
 
 
 @app.post("/product-details")
@@ -169,11 +182,12 @@ async def product_details_proxy(request: Request):
         if isinstance(parsed, dict):
             store_id_log = str(parsed.get("store_id", "?"))
             product_id_log = str(parsed.get("product_id", "?"))
+            bind_conversation(parsed.get("conversation_id"))
     except Exception:
         pass
 
     return await _proxy_to_search(
-        "/product-details", body, store_id_log, product_id_log
+        "/product-details", body, store_id_log, product_id_log, request
     )
 
 
@@ -182,16 +196,27 @@ async def _proxy_to_search(
     body: bytes,
     store_id_log: str,
     detail_log: str,
+    request: Request,
 ):
     """Forward a request body to `{SEARCH_SERVICE_URL}{path}` and relay the response."""
+    # Carry correlation + real client IP downstream: search-service logs the
+    # same request_id, and its per-IP rate limit stops lumping every caller
+    # under 127.0.0.1.
+    headers = {"Content-Type": "application/json"}
+    rid = current_request_id()
+    if rid:
+        headers["X-Request-Id"] = rid
+    fwd = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    if fwd:
+        headers["X-Forwarded-For"] = fwd
     client = _search_proxy_client
     if client is None:
         # Extremely unlikely — startup event hasn't fired. Fall back to a
         # one-shot client so we never 500 on this path.
         logger.warning("Search proxy client missing on startup; using one-shot client")
         async with httpx.AsyncClient(timeout=25) as one_shot:
-            return await _do_proxy(one_shot, path, body, store_id_log, detail_log)
-    return await _do_proxy(client, path, body, store_id_log, detail_log)
+            return await _do_proxy(one_shot, path, body, store_id_log, detail_log, headers)
+    return await _do_proxy(client, path, body, store_id_log, detail_log, headers)
 
 
 async def _do_proxy(
@@ -200,33 +225,33 @@ async def _do_proxy(
     body: bytes,
     store_id_log: str,
     detail_log: str,
+    headers: dict,
 ):
     proxy_start = _time.perf_counter()
     try:
-        resp = await client.post(
-            f"{SEARCH_SERVICE_URL}{path}",
-            content=body,
-            headers={"Content-Type": "application/json"},
-        )
+        resp = await client.post(f"{SEARCH_SERVICE_URL}{path}", content=body, headers=headers)
     except Exception as e:
-        logger.error(
-            f"Proxy error | path={path} | store_id={store_id_log} | detail={detail_log!r} | {e}"
+        log_event(
+            logger, "proxy.error", logging.ERROR,
+            path=path, store_id=store_id_log, detail=detail_log, error=repr(e),
         )
-        return JSONResponse(content={"error": str(e)}, status_code=502)
+        return JSONResponse(content={"error": "search service unavailable"}, status_code=502)
 
     proxy_ms = int((_time.perf_counter() - proxy_start) * 1000)
-    downstream_ms = resp.headers.get("X-Search-Duration-Ms", "?")
-    logger.info(
-        f"⏱  {path} proxy | store_id={store_id_log} | detail={detail_log!r} "
-        f"| search_ms={downstream_ms} | proxy_total_ms={proxy_ms} "
-        f"| status={resp.status_code}"
+    downstream_ms = resp.headers.get("X-Search-Duration-Ms")
+    log_event(
+        logger, "proxy.completed",
+        path=path, store_id=store_id_log, detail=detail_log,
+        search_ms=int(downstream_ms) if downstream_ms and downstream_ms.isdigit() else None,
+        proxy_total_ms=proxy_ms, status=resp.status_code,
+        cache=resp.headers.get("X-Search-Cache"),
     )
 
-    # Forward the timing header through to the caller (ElevenLabs webhook /
+    # Forward the timing headers through to the caller (ElevenLabs webhook /
     # browser widget). Also preserve status code and JSON body.
-    forward_headers = {}
-    if "X-Search-Duration-Ms" in resp.headers:
-        forward_headers["X-Search-Duration-Ms"] = resp.headers["X-Search-Duration-Ms"]
+    forward_headers = {
+        h: resp.headers[h] for h in ("X-Search-Duration-Ms", "X-Search-Cache") if h in resp.headers
+    }
 
     try:
         content = resp.json()

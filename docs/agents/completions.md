@@ -629,3 +629,26 @@ Configured in `elevenlabs_agent.py:728-731` via `client_events`:
 - **Verification:** Added `.personal/` and `.claude/` to `.gitignore`, moved the learning files under `.personal/learning/`, and verified that tracked docs no longer reference the personal file names.
 - **Related Decisions:** None
 - **Notes:** Future personal notes should stay under `.personal/` or another gitignored local folder, not under tracked `docs/`.
+
+
+---
+
+## 2026-09-29 — Phase 0 observability (conversation-level RCA)
+
+- **What:** `conversation_id` became the one correlation key.
+  - ElevenLabs sends it to the webhook tools via the `system__conversation_id` dynamic variable.
+  - It is stored on `search_latency`, stamped on every JSON log line, and tagged on Sentry events.
+  - New `POST /webhooks/elevenlabs` receives the post-call webhook. It verifies the HMAC signature and fills `conversations` + `conversation_turns` (per-turn LLM TTFB, tool latency, tool errors, interruptions, eval/data-collection results). It then forwards the call's OpenTelemetry trace to Grafana Tempo.
+  - `v_conversation_timeline` merges every vantage point for one call.
+- **Other changes:**
+  - Search now records `rerank_ms`. The 384-float embedding and full RPC-response log lines were removed.
+  - `/product-details` no longer blocks the event loop; the synchronous Supabase call now runs in a thread.
+  - `/health?deep=1` checks both models and Supabase.
+  - A `system.stats` CPU/RAM/swap sampler answers the Lightsail-size question with data.
+  - The proxy forwards `X-Request-Id` and `X-Forwarded-For`, which also fixes the search per-IP rate limit.
+- **Widget:**
+  - Isolated Sentry client (no global handlers on merchant pages) plus an error boundary.
+  - New timings: click→connected/greeting (cycle 0), image paint time, `onPing` RTT, `onContextUsage` tokens.
+  - Tool errors are reported to Sentry.
+- **Verification:** `testing/observability/test_observability.py` has 8 offline tests, all passing: signature, parsing, roll-ups, drift-tolerant insert, log correlation, search + product-details + deep health. The onboarding app was smoke-booted. **The widget has not been built or tested** because there is no Node on the dev Mac; it needs `npm install && npm run build` plus a live voice smoke test.
+- **Setup:** `docs/observability-runbook.md` (credentials, setup order, RCA playbook). Grafana dashboard at `deploy/grafana/teampop-dashboard.json`, Alloy config at `deploy/alloy/config.alloy`.

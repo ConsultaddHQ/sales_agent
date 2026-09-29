@@ -594,6 +594,16 @@ def _select_prompt_for_model(llm_model: str) -> str:
     return PROMPT_GPT
 
 
+
+# Webhook body param filled by ElevenLabs at runtime from the system dynamic
+# variable — never by the LLM (same reason store_id is a constant: LLMs mangle
+# long IDs). This is the correlation key that joins search_latency, logs,
+# Sentry and the post-call `conversations` row for one shopper's call.
+CONVERSATION_ID_BODY_PARAM = {
+    "type": "string",
+    "dynamic_variable": "system__conversation_id",
+}
+
 class ElevenLabsAgentCreator:
     """Creates and configures ElevenLabs conversational agents"""
 
@@ -674,7 +684,8 @@ class ElevenLabsAgentCreator:
                             "query": {
                                 "type": "string",
                                 "description": "The user's search query — product name, description, category, or natural language request.",
-                            }
+                            },
+                            "conversation_id": CONVERSATION_ID_BODY_PARAM,
                         },
                         "required": ["store_id", "query"]
                     },
@@ -703,7 +714,8 @@ class ElevenLabsAgentCreator:
                             "product_id": {
                                 "type": "string",
                                 "description": "The unique ID of the product to fetch details for. You can find this in the results from search_products.",
-                            }
+                            },
+                            "conversation_id": CONVERSATION_ID_BODY_PARAM,
                         },
                         "required": ["store_id", "product_id"]
                     },

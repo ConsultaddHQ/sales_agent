@@ -589,3 +589,13 @@
 - **Open risk:** If xfused's agent is ever re-created (not just updated) without passing `language="hi"` explicitly, it will silently regress to the English defaults. There is no guardrail against this beyond this doc entry and the code comments at `elevenlabs_agent.py` create_agent().
 - **Status:** Active
 - **Agent/Author:** Claude
+
+---
+
+## 2026-09-29: Pilot performance & observability direction
+
+- **Decision:** Observability runs on Sentry (errors) + Grafana Cloud (Loki logs, Tempo traces from the ElevenLabs OTel export, dashboards over Supabase). ElevenLabs `conversation_id` is the single correlation key across widget, webhooks, tables and traces. The per-turn flow may be restructured so the widget performs the search and renders products directly. That removes the LLM `update_products` echo hop, and it ships behind a flag + ElevenLabs branch with the old flow kept for rollback.
+- **Context:** The user reports slow replies, a slow greeting and a slow carousel in the pilot, and there is no way to RCA a single conversation today (no correlation IDs, no error tracking, `search_latency` can't be joined to turns).
+- **Constraints set by the user:** ElevenLabs Enterprise; no Lightsail upgrade without a measured bottleneck; 30-day audio and transcript retention; BI internal only for now; alerts (Slack + email) come last.
+- **Status:** Active
+- **Agent/Author:** Claude

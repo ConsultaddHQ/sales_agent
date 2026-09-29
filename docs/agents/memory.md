@@ -1,21 +1,20 @@
 # Agent Memory — Active Work State
 
 > **Keep this file under 2KB.** It is read by every agent at session start.
-> **Last updated:** 2026-09-04
+> **Last updated:** 2026-09-30
 
 ---
 
 ## Active Tasks
 
-- **Voice latency work implemented on `cursor/voice-latency-design-bcc1`** — Tasks 1–6 of `docs/superpowers/plans/2026-09-04-xfused-voice-latency.md` are coded and unit-tested on that branch. Nothing is live yet.
-- **Blocked on human Lightsail deploy** — pull the branch on the box, rebuild the widget locally and scp `dist/`, then PATCH the Wrina agent via `update_agent` (prompt + tools only). Do **not** re-run `create_agent`; `language="hi"` must stay. Runbook: `docs/agents/handoff.md` (2026-09-04).
-- **Tasks 7–9 are STOP-gated** — do not start them until the deployed numbers from checklist A1–A10 come back. They exist to be chosen by data, not guessed.
+- **2026-09-30 — Phase 0 observability** (`perf/phase0-observability`, rebased on `release/xfused-pilot` @ 3f411ce which is live on the box). Being deployed by Claude. Runbook: `docs/observability-runbook.md`.
+- **Voice-latency Tasks 7–9** (`docs/superpowers/plans/2026-09-04-xfused-voice-latency.md`) stay STOP-gated until measured numbers exist — Phase 0 is what produces them.
 
 ---
 
 ## Files Currently Being Modified
 
-- none (branch is clean; awaiting deploy + measurement)
+- `perf/phase0-observability`: shared/observability.py, search-service/main.py, onboarding-service/{main.py,routes/webhooks.py,routes/client.py,elevenlabs_agent.py}, widget AvatarWidget.jsx/App.jsx/telemetry.js
 
 ---
 

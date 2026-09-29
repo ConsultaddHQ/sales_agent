@@ -18,6 +18,7 @@ import {
   SEARCH_FAIL_FALLBACK_MS,
   THINKING_SILENCE_MS,
 } from "../visualState.js";
+import { addBreadcrumb, reportError, reportMessage, setTelemetryContext } from "../telemetry";
 
 // Served from the widget mount (onboarding-service mounts dist/ at /widget),
 // not the page root — a bare "/image.png" 404s against the host origin.
@@ -753,6 +754,53 @@ function AvatarInner({
 
   // ── Latency instrumentation ───────────────────────────────────────────────
   const latencyRef = useRef({ userSpeechAt: null, firstAiAt: null, productsAt: null, cycle: 0 });
+  // Session-start timing (the "slow first greeting" complaint): click → connected
+  // → first agent message. Reported once per session as cycle 0.
+  const sessionStartRef = useRef({ clickAt: null, connectMs: null, sent: true });
+  const networkRttRef = useRef(null);    // latest ElevenLabs ping estimate (onPing)
+  const contextTokensRef = useRef(null); // LLM prompt size of the last agent turn (onContextUsage)
+  // A turn's sample waits (≤ IMAGE_WAIT_MS) for the main product image to paint,
+  // so "products slow" can be split into agent/tool time vs image download time.
+  const pendingTurnSampleRef = useRef(null);
+  const IMAGE_WAIT_MS = 5000;
+
+  function _sendTurnSample(sample) {
+    const apiBase = window.__TEAM_POP_API_URL__ || "";
+    fetch(`${apiBase}/api/turn-latency`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent_id: agentId,
+        conversation_id: conversationIdRef.current,
+        network_rtt_ms: networkRttRef.current,
+        context_tokens: contextTokensRef.current,
+        ...sample,
+      }),
+    }).catch((e) => console.warn("[latency] Turn sample submission failed (non-blocking):", e));
+  }
+
+  function _flushPendingTurnSample(imageMs = null) {
+    const pending = pendingTurnSampleRef.current;
+    if (!pending) return;
+    pendingTurnSampleRef.current = null;
+    clearTimeout(pending.timer);
+    if (imageMs !== null) console.log(`%c⏱ [Cycle ${pending.sample.cycle}] Main image painted: ${imageMs}ms after products`, "color: #ffb74d");
+    _sendTurnSample({ ...pending.sample, image_ms: imageMs });
+  }
+
+  function _markMainImageLoaded() {
+    const pending = pendingTurnSampleRef.current;
+    if (pending) _flushPendingTurnSample(Math.round(performance.now() - pending.productsAt));
+  }
+
+  function _markSessionGreeting() {
+    const st = sessionStartRef.current;
+    if (st.sent || !st.clickAt) return;
+    st.sent = true;
+    const greetingMs = Math.round(performance.now() - st.clickAt);
+    console.log(`%c⏱ [Session] Click→connected: ${st.connectMs ?? "?"}ms | Click→greeting: ${greetingMs}ms`, "color: #4fc3f7; font-weight: bold");
+    _sendTurnSample({ cycle: 0, connect_ms: st.connectMs, latency_first_ai_ms: greetingMs });
+  }
 
   function _startLatencyTimer(userText) {
     const now = performance.now();
@@ -761,19 +809,11 @@ function AvatarInner({
   }
 
   function _submitTurnLatency(firstAiMs, productsMs) {
-    const lc = latencyRef.current;
-    const apiBase = window.__TEAM_POP_API_URL__ || "";
-    fetch(`${apiBase}/api/turn-latency`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        agent_id: agentId,
-        conversation_id: conversationIdRef.current,
-        cycle: lc.cycle,
-        latency_first_ai_ms: firstAiMs,
-        latency_products_ms: productsMs,
-      }),
-    }).catch((e) => console.warn("[latency] Turn sample submission failed (non-blocking):", e));
+    _sendTurnSample({
+      cycle: latencyRef.current.cycle,
+      latency_first_ai_ms: firstAiMs,
+      latency_products_ms: productsMs,
+    });
   }
 
   function _markFirstAi() {
@@ -811,7 +851,14 @@ function AvatarInner({
       setSearchFailed(false);
       // First-AI is already its own row (posted by _markFirstAi), so send only the
       // products leg here — otherwise /api/latency-summary averages it twice.
-      _submitTurnLatency(null, totalMs);
+      // The row is held briefly (≤ IMAGE_WAIT_MS) so it can carry the main-image
+      // paint time, splitting "products slow" into agent/tool vs image download.
+      _flushPendingTurnSample(); // a previous turn's image never painted — send it as-is
+      pendingTurnSampleRef.current = {
+        sample: { cycle: lc.cycle, latency_products_ms: totalMs },
+        productsAt: lc.productsAt,
+        timer: setTimeout(() => _flushPendingTurnSample(), IMAGE_WAIT_MS),
+      };
     }
   }
 
@@ -900,6 +947,7 @@ function AvatarInner({
 
       if (source === "ai") {
         console.log(`[ElevenLabs] AI message received at ${Date.now()} (time since connect: ${connectedAtRef.current ? (Date.now() - connectedAtRef.current) + 'ms' : 'unknown'})`);
+        _markSessionGreeting();
         _markFirstAi();
         setAgentSubtitle(text);
         if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
@@ -918,8 +966,23 @@ function AvatarInner({
         }
       }
     },
-    onError: (error) => console.error("ElevenLabs error:", error),
+    onError: (error, context) => {
+      console.error("ElevenLabs error:", error, context);
+      reportError(error, { where: "elevenlabs", context });
+    },
+    onPing: (ping) => {
+      if (ping?.ping_ms != null) networkRttRef.current = Math.round(ping.ping_ms);
+    },
+    onContextUsage: (usage) => {
+      if (usage?.context_tokens != null) contextTokensRef.current = usage.context_tokens;
+    },
     onDisconnect: (details) => {
+      addBreadcrumb("disconnect", { reason: details?.reason, closeCode: details?.closeCode });
+      if (details?.reason === "error") {
+        reportMessage("ElevenLabs session disconnected with error", {
+          closeCode: details?.closeCode, closeReason: details?.closeReason, message: details?.message,
+        });
+      }
       console.log(
         "[ElevenLabs] Disconnected from WebSocket:",
         "reason=", details?.reason,
@@ -958,6 +1021,8 @@ function AvatarInner({
     },
     onAgentToolResponse: (res) => {
       console.log("[ElevenLabs] tool response:", res?.tool_name ?? res, "→", res?.response_type ?? "");
+      // Webhook timeouts / 5xx surface here — the first place a slow search shows up.
+      if (res?.is_error) reportMessage(`Tool error: ${res?.tool_name}`, { tool: res?.tool_name, tool_type: res?.tool_type });
     },
   });
 
@@ -969,7 +1034,13 @@ function AvatarInner({
     if (conversation.status === "connected") {
       try {
         const cid = conversation.getId?.();
-        if (cid) { conversationIdRef.current = cid; console.log("[session] conversation_id:", cid); }
+        if (cid) {
+          conversationIdRef.current = cid;
+          setTelemetryContext({ conversationId: cid });
+          console.log("[session] conversation_id:", cid);
+        }
+        const st = sessionStartRef.current;
+        if (st.clickAt && st.connectMs === null) st.connectMs = Math.round(performance.now() - st.clickAt);
       } catch (_e) {}
     }
   }, [conversation.status]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1394,6 +1465,7 @@ function AvatarInner({
     // file for the websocket-vs-webrtc audio-quality trade-offs). Currently "websocket"
     // for cleanest agent audio (raw PCM, no Opus/PLC artifacts) — the old first_message
     // drop bug that forced WebRTC is fixed in @elevenlabs/client ≥1.13.
+    sessionStartRef.current = { clickAt: performance.now(), connectMs: null, sent: false };
     conversation.startSession({
       agentId,
       connectionType: CONNECTION_TYPE,
@@ -1535,7 +1607,10 @@ function AvatarInner({
       const variants = data.variants || [];
       variantCacheRef.current.set(String(productId), variants);
       return variants;
-    } catch { return []; }
+    } catch (err) {
+      reportError(err, { where: "fetch_variants", product_id: String(productId) });
+      return [];
+    }
   }, []);
 
   // Load the shopper's existing cart on widget mount (before any voice session starts) —
@@ -1614,6 +1689,7 @@ function AvatarInner({
       return `Added ${qty > 1 ? `${qty} ` : ""}${product.name} to cart!`;
     } catch (err) {
       console.warn("[cart] /cart/add.js failed:", err);
+      reportError(err, { where: "add_to_cart", product_id: String(product.id) });
       sessionMetricsRef.current.cartAddFailures += 1;
       setCartToast("error");
       if (cartToastTimerRef.current) clearTimeout(cartToastTimerRef.current);
@@ -2040,6 +2116,7 @@ function AvatarInner({
                     src={latestProducts[safeIndex].local_image_url || latestProducts[safeIndex].image_url || DUMMY_IMAGE}
                     alt={latestProducts[safeIndex].name}
                     className="w-full h-full object-contain"
+                    onLoad={_markMainImageLoaded}
                     onError={(e) => {
                       const p = latestProducts[safeIndex];
                       if (p && e.target.src !== p.image_url && p.image_url) {

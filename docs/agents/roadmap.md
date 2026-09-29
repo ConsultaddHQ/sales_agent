@@ -24,6 +24,38 @@ These cannot be done by an agent — they require account access, credentials, o
 
 ---
 
+## ⭐ Pilot Performance & Observability Plan (2026-09-29)
+
+Agreed with the user 2026-09-29. Targets: **agent starts speaking <1s** after the user stops, **products on screen <2.5s** (stretch goal after this: <800ms). Constraints: ElevenLabs **Enterprise** plan; **no Lightsail upgrade** unless a measurement proves CPU/RAM is the bottleneck; 1 store, <50 conversations/day; audio and transcript retention **30 days**; BI dashboards are **internal only** for now. Every agent change ships through an ElevenLabs **branch at a small traffic %** and must be rollback-able.
+
+| Phase | Item | Status |
+|---|---|---|
+| 0 Measure | Confirm the 03ef0af deploy is live (`/api/turn-latency` returned 405 on 2026-09-29, so the route exists) and that `turn_latency`/`search_latency` are receiving rows | ⬜ |
+| 0 Measure | Pass `system__conversation_id` in the search/product-details webhook body; tag every log line, `search_latency` row and Sentry event with it | ✅ Coded 2026-09-29, ⬜ deploy + run `testing/monitoring/add_conversation_id_to_tools.py --apply` |
+| 0 Measure | ElevenLabs post-call webhook → `conversation_turns` table (per-turn `convai_llm_service_ttfb`, `tool_latency_secs`, eval + data-collection results); OTel export → Grafana Tempo | ✅ Coded (`routes/webhooks.py`), ⬜ configure webhook + env |
+| 0 Measure | Sentry (widget + both services), JSON structured logs → Grafana Loki, rerank timing + CPU/RAM sampling (decides the Lightsail question) | ✅ Coded, ⬜ deploy — full steps in `docs/observability-runbook.md` |
+| 0 Measure | Widget timings: click→connected/greeting (cycle 0), image paint, `onPing` RTT, `onContextUsage` tokens (`@elevenlabs/react` → ^1.16) | ✅ Coded, ⬜ build + voice smoke test (no Node on the dev Mac) |
+| 1 Quick wins | ~~India residency (`in-residency`)~~ | ❌ Not possible (user, 2026-09-30) — don't re-propose; optimize everything else |
+| 1 Quick wins | `pre_tool_speech: auto` + Immediate execution on `search_products`; `response_filter`/smaller tool payload; keep the server budget under the 5s webhook timeout | ⬜ |
+| 1 Quick wins | Caddy routes `/search` straight to :8006 (drop the onboarding proxy hop, forward X-Forwarded-For); query-embedding cache; strip full-body/embedding logging | ⬜ |
+| 1 Quick wins | Faster greeting (pre-warm the session/mic when the widget opens); images: resized WebP thumbnails + preload on search result + free CDN in front | ⬜ |
+| 2 Restructure | Behind a flag + branch: widget-side `search_products` client tool calls /search, renders the carousel immediately and returns a compact summary to the LLM. This removes the `update_products` LLM echo hop. Old flow kept for rollback | ⬜ |
+| 2 Restructure | Re-bench the LLM (Haiku 4.5 with thinking off vs newer Gemini Flash) with ElevenLabs agent tests; switch only if tool reliability stays ~100% | ⬜ |
+| 1/2 ElevenLabs new (scan 2026-09-29) | **Eleven v4 Turbo** TTS (Sep 28, ~150ms claimed TTFS). A/B vs `eleven_flash_v2_5` on a branch; Hindi/Tamil quality + model_id unverified | ⬜ High |
+| 1/2 ElevenLabs new | `enable_parallel_tool_calls` now **defaults true** (Sep 21). Verify search→`update_products` ordering and `add_to_cart` stay correct | ⬜ High |
+| 1/2 ElevenLabs new | `cascade_timeout_seconds` default 8→4 (Jul 20). We set 8 explicitly in `create_agent()`; verify the live agent's value | ⬜ Med |
+| 1/2 ElevenLabs new | `interruption_mode` per tool replaces `disable_interruptions` (Jul 6). `disable_during_tool` may stop barge-in from cancelling searches | ⬜ Med |
+| 1/2 ElevenLabs new | `vad.background_voice_detection` (Aug 3) + `merge_with_default_ignore_terms` (add Hindi fillers "haan"/"acha") for fewer false turns | ⬜ Med |
+| 1/2 ElevenLabs new | Drop deprecated `optimize_streaming_latency` from `create_agent()` (no-op since Jul 13) | ⬜ Low |
+| 3 Business intel (EL new) | Build data-collection fields on `allowed_values` (not deprecated `allowed_values_dynamic_variable`); conversation-list filters by `data_collection_ids`, `version_id`, `visited_agent_branch_ids`; `cost_fiat`; sentiment + numeric evaluation scoring | ⬜ |
+| 4 Ops (EL new) | ElevenLabs agent alerting to Slack (Sep 21) + triage tickets as an RCA queue | ⬜ |
+| 3 Business intel | Data-collection fields: unmet need, requested category, shopper terms, budget mentioned/amount, drop-off reason. Zero-result search log. Shopify `orders/create` webhook → `assisted_orders` (user can get the read_orders token) | ⬜ |
+| 3 Business intel | SQL views + Grafana dashboard: top unmet needs, most-requested products/categories, shopper vs catalog vocabulary, conversion by category, drop-off turn, price sensitivity, catalog coverage score, session→purchase lag | ⬜ |
+| 4 Ops (last) | One-command deploy with health check + rollback, deep `/health`, uptime monitor, agent tests before promoting a branch, Slack + email alerts | ⬜ |
+| Future | Brand-facing BI delivery (monthly debrief report / weekly digest / merchant page) — internal only for now | ⏭️ Deferred |
+
+---
+
 ## High Priority Improvements
 
 | Task | Owner | Status | Effort | Notes |

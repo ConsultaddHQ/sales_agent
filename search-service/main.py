@@ -24,16 +24,22 @@ _REPO_ROOT = str(Path(__file__).resolve().parent.parent)
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=LOG_LEVEL,
-    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-)
-logger = logging.getLogger("search-service")
-
-
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
+
+from shared.observability import (
+    CorrelationMiddleware,
+    bind_conversation,
+    capture_exception,
+    current_request_id,
+    init_sentry,
+    log_event,
+    run_system_stats_logger,
+    setup_logging,
+)
+
+logger = setup_logging("search-service")
+init_sentry("search-service")
 
 SEARCH_RATE_LIMIT = os.getenv("SEARCH_RATE_LIMIT", "30/minute")
 UVICORN_WORKERS = max(1, int(os.getenv("UVICORN_WORKERS", "4")))
@@ -104,11 +110,16 @@ def get_embedding_semaphore() -> asyncio.Semaphore:
 class SearchRequest(BaseModel):
     store_id: str = Field(..., examples=["c5a0c8a1-0e3a-4e0e-a5f4-4cb1f6c8a123"])
     query: str = Field(..., examples=["red sneakers under 100"])
+    # Filled by ElevenLabs from the `system__conversation_id` dynamic variable
+    # (see elevenlabs_agent._get_tool_config). Optional so older agents and
+    # direct widget calls keep working.
+    conversation_id: Optional[str] = None
 
 
 class ProductDetailsRequest(BaseModel):
     store_id: str = Field(..., examples=["c5a0c8a1-0e3a-4e0e-a5f4-4cb1f6c8a123"])
     product_id: str = Field(..., examples=["some-product-id-uuid"])
+    conversation_id: Optional[str] = None
 
 
 class ProductOut(BaseModel):
@@ -175,51 +186,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     # Expose our custom timing header so downstream services/clients can read it.
-    expose_headers=["X-Search-Duration-Ms"],
+    expose_headers=["X-Search-Duration-Ms", "X-Search-Cache", "X-Request-Id"],
 )
 
 
-# ---------------------------------------------------------------------------
-# Request logging middleware — logs every incoming request for debugging
-# ---------------------------------------------------------------------------
-from starlette.middleware.base import BaseHTTPMiddleware
+app.add_middleware(CorrelationMiddleware)
+
+# 422s were the main reason the old middleware logged every request body.
+# Log the offending body only when validation fails, not on every hot-path call.
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 
 
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Logs method, path, status, and body for every request.
-
-    This is the FIRST thing to check when debugging 400/422 errors —
-    it shows you exactly what payload the caller sent.
-    """
-
-    async def dispatch(self, request: Request, call_next):
-        body = b""
-        if request.method in ("POST", "PUT", "PATCH"):
-            body = await request.body()
-
-        # Log the incoming request
-        body_preview = body[:500].decode("utf-8", errors="replace") if body else "<empty>"
-        logger.info(
-            f"➡️  {request.method} {request.url.path} "
-            f"| client={request.client.host if request.client else '?'} "
-            f"| body={body_preview}"
-        )
-
-        response = await call_next(request)
-
-        # Log the response status
-        level = logging.WARNING if response.status_code >= 400 else logging.INFO
-        logger.log(
-            level,
-            f"⬅️  {request.method} {request.url.path} → {response.status_code}"
-        )
-        return response
-
-
-app.add_middleware(RequestLoggingMiddleware)
+@app.exception_handler(RequestValidationError)
+async def _log_validation_error(request: Request, exc: RequestValidationError):
+    log_event(
+        logger, "request.invalid", logging.WARNING,
+        path=request.url.path, errors=exc.errors(), body=str(exc.body)[:500],
+    )
+    return await request_validation_exception_handler(request, exc)
 
 from shared.config import IMAGE_SERVER_URL, RERANK_CANDIDATES, RERANK_TIMEOUT, RERANK_ENABLED, RERANK_SCORE_MARGIN
-from shared.db import get_supabase
+from shared.db import get_supabase, insert_tolerant
 from shared.embeddings import get_embedder
 from shared.parsing import strip_html
 from shared.reranker import get_reranker, rerank
@@ -250,7 +238,7 @@ async def _encode_query_embedding(query: str) -> tuple[List[float], int, int]:
         embedding_ms = int((t_now - t_acquired) * 1000)
         return embedding, queue_wait_ms, embedding_ms
     except asyncio.TimeoutError as e:
-        logger.error(f"Embedding timeout or semaphore acquisition timeout for query: {query}")
+        log_event(logger, "search.timeout", logging.ERROR, stage="embedding", query=query, timeout_s=EMBEDDING_TIMEOUT)
         raise HTTPException(
             status_code=503,
             detail="Search service overloaded. Please try again later.",
@@ -320,10 +308,9 @@ def _execute_hybrid_search_rpc(
     if max_price is not None:
         rpc_params["p_max_price"] = max_price
     
-    logger.info(f"RPC params for store_id={store_id}, query='{query}': {rpc_params}")
-    logger.info(f"Max price parsed: {max_price}")
-    logger.info(f"Query: '{query}' → Parsed max_price = {max_price} (type: {type(max_price)})")
-    
+    # Never log p_query_embedding — 384 floats per line was pure hot-path noise.
+    logger.debug(f"RPC store_id={store_id} query={query!r} limit={limit} max_price={max_price}")
+
     # 3. Call the RPC
     try:
         resp = sb.rpc("hybrid_search_products", rpc_params).execute()
@@ -347,10 +334,11 @@ def _execute_hybrid_search_rpc(
             detail="unexpected Supabase response shape"
         )
         
-    logger.info(f"RPC response: data_len={len(resp.data)}, full_resp={resp}")
-    
     if not resp.data:
-       logger.warning(f"No results from RPC for query='{query}', store_id={store_id}. Check threshold={rpc_params['p_min_score']}, max_price={max_price}")
+        log_event(
+            logger, "search.rpc_empty", logging.WARNING,
+            store_id=store_id, query=query, min_score=rpc_params["p_min_score"],
+        )
     
     # 4. Parse results (same as your original)
     results: List[ProductResult] = []
@@ -429,7 +417,7 @@ async def _hybrid_search_products(
     store_id: str,
     query: str,
     final_limit: int = 12,
-) -> tuple[List[ProductResult], int, int, int]:
+) -> tuple[List[ProductResult], int, int, int, int]:
     query_embedding, queue_wait_ms, embedding_ms = await _encode_query_embedding(query)
 
     # Stage 1: wide-net retrieval (more candidates → higher recall for reranker)
@@ -450,7 +438,7 @@ async def _hybrid_search_products(
         )
         rpc_ms = int((time.perf_counter() - t_rpc_start) * 1000)
     except asyncio.TimeoutError as e:
-        logger.error(f"Supabase RPC timeout for query: {query}")
+        log_event(logger, "search.timeout", logging.ERROR, stage="rpc", query=query, timeout_s=RPC_TIMEOUT)
         raise HTTPException(
             status_code=503,
             detail="Database query timeout. Please try again later.",
@@ -458,7 +446,9 @@ async def _hybrid_search_products(
         ) from e
 
     # Stage 2: cross-encoder rerank (graceful fallback if disabled or error)
+    rerank_ms = 0
     if RERANK_ENABLED and len(candidates) > 1:
+        t_rerank = time.perf_counter()
         try:
             docs = [_build_rerank_doc(p) for p in candidates]
             scores = await asyncio.wait_for(
@@ -476,23 +466,53 @@ async def _hybrid_search_products(
             else:
                 kept = [(s, p) for s, p in ranked if s >= top_score - RERANK_SCORE_MARGIN] or [ranked[0]]
             products = [p for _, p in kept[:final_limit]]
-            logger.info(
-                f"Reranked {len(candidates)} → kept {len(products)} for query={query!r} "
-                f"| browse={browse} | top_score={top_score:.3f} "
-                f"| kept_scores={[round(s, 2) for s, _ in kept[:final_limit]]} | rpc_ms={rpc_ms}"
+            rerank_ms = int((time.perf_counter() - t_rerank) * 1000)
+            log_event(
+                logger, "search.reranked",
+                candidates=len(candidates), kept=len(products), browse=browse,
+                top_score=round(float(top_score), 3),
+                kept_scores=[round(float(s), 2) for s, _ in kept[:final_limit]],
+                rerank_ms=rerank_ms,
             )
         except Exception as e:
-            logger.warning(f"Reranker failed (falling back to Stage-1 order): {e}")
+            rerank_ms = int((time.perf_counter() - t_rerank) * 1000)
+            log_event(logger, "search.rerank_failed", logging.WARNING, error=repr(e), rerank_ms=rerank_ms)
+            capture_exception(e, stage="rerank")
             products = candidates[:final_limit]
     else:
         products = candidates[:final_limit]
 
-    return products, queue_wait_ms, embedding_ms, rpc_ms
+    return products, queue_wait_ms, embedding_ms, rpc_ms, rerank_ms
 
 
 @app.get("/health")
-def health() -> Dict[str, str]:
-    return {"status": "ok"}
+async def health(response: Response, deep: bool = False) -> Dict[str, Any]:
+    """Liveness by default. `/health?deep=1` also checks what a real search
+    needs — both models loaded and Supabase reachable — so an uptime monitor
+    catches "process up but can't serve" (the failure mode that matters)."""
+    if not deep:
+        return {"status": "ok"}
+    from shared import embeddings as _emb, reranker as _rr
+
+    checks: Dict[str, Any] = {
+        "embedder_loaded": getattr(_emb, "_model", None) is not None,
+        "reranker_loaded": (not RERANK_ENABLED) or getattr(_rr, "_reranker", None) is not None,
+    }
+    t0 = time.perf_counter()
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(lambda: get_supabase().table("products").select("id").limit(1).execute()),
+            timeout=3.0,
+        )
+        checks["supabase"] = True
+    except Exception as e:
+        checks["supabase"] = False
+        checks["supabase_error"] = type(e).__name__
+    checks["supabase_ms"] = int((time.perf_counter() - t0) * 1000)
+    ok = checks["embedder_loaded"] and checks["reranker_loaded"] and checks["supabase"]
+    if not ok:
+        response.status_code = 503
+    return {"status": "ok" if ok else "degraded", **checks}
 
 
 def _persist_search_latency(
@@ -504,26 +524,37 @@ def _persist_search_latency(
     rpc_ms: int,
     queue_wait_ms: int,
     cache_hit: bool = False,
+    rerank_ms: int = 0,
+    conversation_id: Optional[str] = None,
+    endpoint: str = "search",
 ) -> None:
     """Fire-and-forget insert into search_latency — server-side truth for the
     timing breakdown, independent of whether the widget's own /api/turn-latency
     POST ever arrives. Never awaited by the request path; a failure here must
     never slow down or fail a search response."""
+    request_id = current_request_id()  # capture now — the request context is gone by insert time
+
     async def _do_insert() -> None:
         try:
-            sb = get_supabase()
             await asyncio.to_thread(
-                lambda: sb.table("search_latency").insert({
+                insert_tolerant,
+                "search_latency",
+                {
                     "store_id": store_id,
                     "query": query[:200],
                     "result_count": result_count,
                     "total_ms": total_ms,
                     "embedding_ms": embedding_ms,
                     "rpc_ms": rpc_ms,
+                    "rerank_ms": rerank_ms,
                     "queue_wait_ms": queue_wait_ms,
                     "cache_hit": cache_hit,
                     "config_variant": SEARCH_CONFIG_VERSION,
-                }).execute()
+                    "conversation_id": conversation_id,
+                    "request_id": request_id,
+                    "endpoint": endpoint,
+                },
+                logger,
             )
         except Exception as e:
             logger.warning(f"Failed to persist search_latency (non-blocking): {e}")
@@ -531,16 +562,16 @@ def _persist_search_latency(
     asyncio.ensure_future(_do_insert())
 
 
-async def _search_uncached(sb, store_id: str, query: str, t0: float):
+async def _search_uncached(sb, store_id: str, query: str, t0: float, conversation_id: Optional[str] = None):
     try:
-        products, queue_wait_ms, embedding_ms, rpc_ms = await _hybrid_search_products(
+        return await _hybrid_search_products(
             sb=sb, store_id=store_id, query=query, final_limit=12
         )
-        return products, queue_wait_ms, embedding_ms, rpc_ms
     except HTTPException as e:
         total_ms = int((time.perf_counter() - t0) * 1000)
-        logger.error(
-            f"⏱  Search failed: total_ms={total_ms} | store_id={store_id} | query={query!r}"
+        log_event(
+            logger, "search.failed", logging.ERROR,
+            total_ms=total_ms, status=e.status_code, store_id=store_id, query=query,
         )
         _persist_search_latency(
             store_id=store_id,
@@ -551,6 +582,8 @@ async def _search_uncached(sb, store_id: str, query: str, t0: float):
             rpc_ms=0,
             queue_wait_ms=0,
             cache_hit=False,
+            conversation_id=conversation_id,
+            endpoint="search_error",
         )
         # FastAPI builds a fresh response for HTTPException, so anything written to
         # `response` here is discarded. The timing headers only survive if they ride
@@ -573,6 +606,8 @@ async def search(
     response: Response,
     req: SearchRequest,
 ) -> SearchResponse:
+    bind_conversation(req.conversation_id)
+
     # --- Validation with clear diagnostic logging ---
     if not req.query.strip():
         logger.warning(
@@ -607,28 +642,31 @@ async def search(
         total_ms = int((time.perf_counter() - t0) * 1000)
         response.headers["X-Search-Duration-Ms"] = str(total_ms)
         response.headers["X-Search-Cache"] = "hit"
-        logger.info(
-            f"⏱  Search performance: total_ms={total_ms} | cache=hit | "
-            f"store_id={req.store_id} | query={req.query!r} | results={len(cached)}"
+        log_event(
+            logger, "search.completed",
+            total_ms=total_ms, cache="hit", store_id=req.store_id,
+            query=req.query, results=len(cached),
         )
         _persist_search_latency(
             store_id=req.store_id, query=req.query, result_count=len(cached),
             total_ms=total_ms, embedding_ms=0, rpc_ms=0, queue_wait_ms=0,
-            cache_hit=True,
+            cache_hit=True, conversation_id=req.conversation_id,
         )
         pitch = f"Found {len(cached)} products." if cached else "No matching products found."
         return SearchResponse(products=cached, pitch=pitch)
 
-    products, queue_wait_ms, embedding_ms, rpc_ms = await _search_uncached(
-        sb=sb, store_id=req.store_id, query=req.query, t0=t0
+    products, queue_wait_ms, embedding_ms, rpc_ms, rerank_ms = await _search_uncached(
+        sb=sb, store_id=req.store_id, query=req.query, t0=t0,
+        conversation_id=req.conversation_id,
     )
     total_ms = int((time.perf_counter() - t0) * 1000)
     response.headers["X-Search-Duration-Ms"] = str(total_ms)
     response.headers["X-Search-Cache"] = "miss"
-    logger.info(
-        f"⏱  Search performance: total_ms={total_ms} | queue_wait_ms={queue_wait_ms} | "
-        f"embedding_ms={embedding_ms} | rpc_ms={rpc_ms} | cache=miss | "
-        f"store_id={req.store_id} | query={req.query!r} | results={len(products)}"
+    log_event(
+        logger, "search.completed",
+        total_ms=total_ms, queue_wait_ms=queue_wait_ms, embedding_ms=embedding_ms,
+        rpc_ms=rpc_ms, rerank_ms=rerank_ms, cache="miss", store_id=req.store_id,
+        query=req.query, results=len(products),
     )
     _persist_search_latency(
         store_id=req.store_id,
@@ -639,6 +677,8 @@ async def search(
         rpc_ms=rpc_ms,
         queue_wait_ms=queue_wait_ms,
         cache_hit=False,
+        rerank_ms=rerank_ms,
+        conversation_id=req.conversation_id,
     )
 
     pitch = f"Found {len(products)} products." if products else "No matching products found."
@@ -666,6 +706,8 @@ async def get_product_details(
     request: Request,
     req: ProductDetailsRequest,
 ) -> Dict[str, Any]:
+    bind_conversation(req.conversation_id)
+
     # --- Validation ---
     try:
         uuid.UUID(req.store_id)
@@ -674,10 +716,24 @@ async def get_product_details(
         raise HTTPException(status_code=400, detail="Invalid store_id or product_id format. Must be a valid UUID.")
 
     sb = get_supabase()
-    
-    # Query the products table
+    t0 = time.perf_counter()
+
+    # Query the products table. to_thread: supabase-py is synchronous — calling
+    # it directly inside this async handler blocked the event loop, stalling
+    # every concurrent /search for the duration of the round-trip.
     try:
-        resp = sb.table("products").select("name, metadata").eq("id", req.product_id).eq("store_id", req.store_id).execute()
+        resp = await asyncio.wait_for(
+            asyncio.to_thread(
+                lambda: sb.table("products").select("name, metadata")
+                .eq("id", req.product_id).eq("store_id", req.store_id).execute()
+            ),
+            timeout=RPC_TIMEOUT,
+        )
+    except asyncio.TimeoutError as e:
+        raise HTTPException(
+            status_code=503, detail="Database query timeout. Please try again later.",
+            headers={"Retry-After": "2"},
+        ) from e
     except Exception as e:
         logger.exception("Supabase product query failed")
         raise HTTPException(status_code=500, detail=f"database query failed: {str(e)}")
@@ -695,6 +751,18 @@ async def get_product_details(
     full_html = metadata.get("full_description_html", "")
     full_text = strip_html(full_html) if full_html else ""
     
+    total_ms = int((time.perf_counter() - t0) * 1000)
+    log_event(
+        logger, "product_details.completed",
+        total_ms=total_ms, store_id=req.store_id, product_id=req.product_id,
+        variants=len(variants), description_chars=len(full_text),
+    )
+    _persist_search_latency(
+        store_id=req.store_id, query=req.product_id, result_count=1,
+        total_ms=total_ms, embedding_ms=0, rpc_ms=total_ms, queue_wait_ms=0,
+        conversation_id=req.conversation_id, endpoint="product_details",
+    )
+
     # We want to give the LLM a clean, concise representation
     return {
         "product_name": name,
@@ -753,6 +821,8 @@ async def _warmup_on_startup() -> None:
 
     # Run sync warmup in a worker thread so it doesn't block the event loop.
     await asyncio.to_thread(_warm_sync)
+    # CPU/RAM sampler — decides whether the 2 GB box is actually a bottleneck.
+    asyncio.ensure_future(run_system_stats_logger(logger))
 
 
 if __name__ == "__main__":

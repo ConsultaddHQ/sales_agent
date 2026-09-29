@@ -1,0 +1,54 @@
+// Grafana Alloy — ships tp-search + tp-onboard logs (journald) to Grafana Cloud Loki.
+//
+// Install on the Lightsail box (Ubuntu), ~60–120 MB RAM:
+//   see docs/observability-runbook.md → "Logs (Alloy)"
+// Credentials come from /etc/default/alloy (never commit them):
+//   GRAFANA_LOKI_URL=https://logs-prod-xxx.grafana.net/loki/api/v1/push
+//   GRAFANA_LOKI_USER=<numeric Loki user id>
+//   GRAFANA_LOKI_TOKEN=<access-policy token with logs:write>
+//
+// Our services log one JSON object per line (LOG_FORMAT=json). Only `service`
+// and `level` become Loki labels (low cardinality); everything else —
+// event, conversation_id, total_ms… — is queried with `| json`, e.g.
+//   {job="teampop"} | json | event="search.completed" | conversation_id="conv_..."
+
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+}
+
+loki.source.journal "teampop" {
+  // Same-field matches are OR'ed (journalctl semantics).
+  matches       = "_SYSTEMD_UNIT=tp-search.service _SYSTEMD_UNIT=tp-onboard.service"
+  relabel_rules = loki.relabel.journal.rules
+  labels        = { job = "teampop", host = "lightsail-mumbai" }
+  forward_to    = [loki.process.teampop.receiver]
+}
+
+loki.process "teampop" {
+  // Non-JSON lines (uvicorn banner, raw tracebacks) pass through unparsed.
+  stage.json {
+    expressions = { level = "level", service = "service" }
+  }
+
+  stage.labels {
+    values = { level = "", service = "" }
+  }
+
+  forward_to = [loki.write.grafana_cloud.receiver]
+}
+
+loki.write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_LOKI_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_LOKI_USER")
+      password = sys.env("GRAFANA_LOKI_TOKEN")
+    }
+  }
+}

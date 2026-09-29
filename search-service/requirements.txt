@@ -6,3 +6,5 @@ openai
 requests
 python-dotenv
 sentence-transformers
+sentry-sdk[fastapi]
+psutil

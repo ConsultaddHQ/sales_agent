@@ -1,0 +1,683 @@
+{
+  "title": "TeamPop \u2014 Voice Agent Latency & RCA",
+  "uid": "teampop-voice",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "tags": [
+    "teampop"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "loki",
+        "label": "Loki",
+        "type": "datasource",
+        "query": "loki"
+      },
+      {
+        "name": "postgres",
+        "label": "Supabase",
+        "type": "datasource",
+        "query": "grafana-postgresql-datasource"
+      },
+      {
+        "name": "conversation_id",
+        "label": "conversation_id",
+        "type": "textbox",
+        "query": ""
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Live latency \u2014 search backend (Loki)",
+      "id": 1,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Search total_ms p50 / p95",
+      "description": "Server-side time for /search. Must stay well under the 5s ElevenLabs webhook timeout; target p95 < 800ms.",
+      "id": 2,
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "quantile_over_time(0.5, {job=\"teampop\", service=\"search-service\"} | json | event=\"search.completed\" | unwrap total_ms [$__interval]) by ()",
+          "legendFormat": "p50",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "quantile_over_time(0.95, {job=\"teampop\", service=\"search-service\"} | json | event=\"search.completed\" | unwrap total_ms [$__interval]) by ()",
+          "legendFormat": "p95",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Search p95 by stage (cache misses)",
+      "description": "Where search time goes. rerank_ms high + CPU high = the box is the bottleneck.",
+      "id": 3,
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "quantile_over_time(0.95, {job=\"teampop\", service=\"search-service\"} | json | event=\"search.completed\" | cache=\"miss\" | unwrap queue_wait_ms [$__interval]) by ()",
+          "legendFormat": "queue_wait_ms",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "quantile_over_time(0.95, {job=\"teampop\", service=\"search-service\"} | json | event=\"search.completed\" | cache=\"miss\" | unwrap embedding_ms [$__interval]) by ()",
+          "legendFormat": "embedding_ms",
+          "queryType": "range"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "quantile_over_time(0.95, {job=\"teampop\", service=\"search-service\"} | json | event=\"search.completed\" | cache=\"miss\" | unwrap rpc_ms [$__interval]) by ()",
+          "legendFormat": "rpc_ms",
+          "queryType": "range"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "quantile_over_time(0.95, {job=\"teampop\", service=\"search-service\"} | json | event=\"search.completed\" | cache=\"miss\" | unwrap rerank_ms [$__interval]) by ()",
+          "legendFormat": "rerank_ms",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Search cache hit rate",
+      "description": "",
+      "id": 4,
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "sum(count_over_time({job=\"teampop\", service=\"search-service\"} | json | event=\"search.completed\" | cache=\"hit\" [$__interval])) / sum(count_over_time({job=\"teampop\", service=\"search-service\"} | json | event=\"search.completed\" [$__interval]))",
+          "legendFormat": "hit rate",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Warnings / errors by event",
+      "description": "search.timeout, proxy.error, webhook.bad_signature, conversation.store_failed\u2026 any spike = look here first.",
+      "id": 5,
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "sum by (event) (count_over_time({job=\"teampop\", level=~\"ERROR|WARNING\"} | json [$__interval]))",
+          "legendFormat": "{{event}}",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Box health \u2014 is the 2 GB Lightsail the bottleneck? (Loki)",
+      "id": 6,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU %",
+      "description": "",
+      "id": 7,
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "avg_over_time({job=\"teampop\", service=\"search-service\"} | json | event=\"system.stats\" | unwrap cpu_pct [$__interval]) by ()",
+          "legendFormat": "system cpu %",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "avg_over_time({job=\"teampop\", service=\"search-service\"} | json | event=\"system.stats\" | unwrap proc_cpu_pct [$__interval]) by ()",
+          "legendFormat": "search proc cpu %",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory",
+      "description": "Swap climbing while search p95 rises = RAM-starved. Otherwise the box is fine.",
+      "id": 8,
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decmbytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "avg_over_time({job=\"teampop\", service=\"search-service\"} | json | event=\"system.stats\" | unwrap mem_available_mb [$__interval]) by ()",
+          "legendFormat": "available MB",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "avg_over_time({job=\"teampop\", service=\"search-service\"} | json | event=\"system.stats\" | unwrap swap_used_mb [$__interval]) by ()",
+          "legendFormat": "swap used MB",
+          "queryType": "range"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "avg_over_time({job=\"teampop\", service=\"search-service\"} | json | event=\"system.stats\" | unwrap proc_rss_mb [$__interval]) by ()",
+          "legendFormat": "search RSS MB",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Voice turn latency (Supabase)",
+      "id": 9,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Widget: user \u2192 first AI / \u2192 products (p50, p95)",
+      "description": "What the shopper feels. Targets: first AI < 1000ms, products < 2500ms.",
+      "id": 10,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${postgres}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${postgres}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(created_at, 1h),\n  percentile_cont(0.5)  WITHIN GROUP (ORDER BY latency_first_ai_ms) AS \"first AI p50\",\n  percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_first_ai_ms) AS \"first AI p95\",\n  percentile_cont(0.5)  WITHIN GROUP (ORDER BY latency_products_ms) AS \"products p50\",\n  percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_products_ms) AS \"products p95\"\nFROM turn_latency WHERE $__timeFilter(created_at) AND cycle > 0 GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Greeting + images + network",
+      "description": "",
+      "id": 11,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${postgres}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${postgres}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(created_at, 1h),\n  percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_first_ai_ms) FILTER (WHERE cycle = 0) AS \"click\u2192greeting p95\",\n  percentile_cont(0.95) WITHIN GROUP (ORDER BY connect_ms)          FILTER (WHERE cycle = 0) AS \"click\u2192connected p95\",\n  percentile_cont(0.95) WITHIN GROUP (ORDER BY image_ms)            FILTER (WHERE cycle > 0) AS \"image paint p95\",\n  percentile_cont(0.5)  WITHIN GROUP (ORDER BY network_rtt_ms)                               AS \"network RTT p50\"\nFROM turn_latency WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "ElevenLabs: LLM TTFB & tool latency p95 (per call)",
+      "description": "From the post-call webhook. LLM TTFB high = model/prompt/context; tool latency high = our webhook path.",
+      "id": 12,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${postgres}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${postgres}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(started_at, 1h),\n  avg(llm_ttfb_p95_ms)     AS \"LLM TTFB p95\",\n  avg(tool_latency_p95_ms) AS \"tool latency p95\"\nFROM conversations WHERE $__timeFilter(started_at) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Context tokens per turn (p95)",
+      "description": "Prompt size grows as products are echoed through the LLM; bigger context = slower TTFB.",
+      "id": 13,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${postgres}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${postgres}"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(created_at, 1h),\n  percentile_cont(0.95) WITHIN GROUP (ORDER BY context_tokens) AS \"context tokens p95\"\nFROM turn_latency WHERE $__timeFilter(created_at) AND context_tokens IS NOT NULL GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Recent conversations",
+      "description": "Copy a conversation_id into the RCA variable at the top.",
+      "id": 14,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${postgres}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${postgres}"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT started_at, conversation_id, duration_secs AS dur_s, call_successful, user_turns,\n  llm_ttfb_p95_ms, tool_latency_p95_ms, tool_error_count AS tool_errs, interruptions, termination_reason, transcript_summary\nFROM conversations WHERE $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 100"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "RCA \u2014 one conversation (set the conversation_id variable)",
+      "id": 15,
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Timeline: turns + searches + widget timings",
+      "description": "",
+      "id": 16,
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${postgres}"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 53
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${postgres}"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT at, source, kind, detail, llm_ttfb_ms, duration_ms, is_error, extra\nFROM v_conversation_timeline WHERE conversation_id = '${conversation_id}' ORDER BY at"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Server logs for this conversation",
+      "id": 17,
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 65
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "{job=\"teampop\"} | json | conversation_id=\"${conversation_id}\"",
+          "queryType": "range"
+        }
+      ]
+    }
+  ]
+}
