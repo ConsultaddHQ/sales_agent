@@ -7,14 +7,14 @@
 
 ## Active Tasks
 
-- **2026-09-30 — Phase 0 observability** (`perf/phase0-observability`, rebased on `release/xfused-pilot` @ 3f411ce which is live on the box). Being deployed by Claude. Runbook: `docs/observability-runbook.md`.
+- **2026-09-30 — Phase 0 observability DEPLOYED** — box on `perf/phase0-observability`. Handed to the human for a final voice test on the real store. Next: Phase 1 quick wins, with numbers from the dashboard (see handoff.md 2026-09-30).
 - **Voice-latency Tasks 7–9** (`docs/superpowers/plans/2026-09-04-xfused-voice-latency.md`) stay STOP-gated until measured numbers exist — Phase 0 is what produces them.
 
 ---
 
 ## Files Currently Being Modified
 
-- `perf/phase0-observability`: shared/observability.py, search-service/main.py, onboarding-service/{main.py,routes/webhooks.py,routes/client.py,elevenlabs_agent.py}, widget AvatarWidget.jsx/App.jsx/telemetry.js
+- none
 
 ---
 

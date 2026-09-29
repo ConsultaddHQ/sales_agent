@@ -599,3 +599,13 @@
 - **Constraints set by the user:** ElevenLabs Enterprise; no Lightsail upgrade without a measured bottleneck; 30-day audio and transcript retention; BI internal only for now; alerts (Slack + email) come last.
 - **Status:** Active
 - **Agent/Author:** Claude
+
+---
+
+## 2026-09-30: Post-call webhook attached per-agent, never workspace-wide
+
+- **Decision:** Our post-call webhook is attached via each agent's `platform_settings.workspace_overrides.webhooks.post_call_webhook_id`, not the workspace setting.
+- **Context:** The ElevenLabs workspace is shared with other products (Loro). The workspace-level post-call webhook belongs to one of them.
+- **Consequences:** Every new TeamPop agent needs the override set (webhook `1e82aa83da704fd7a058f000bacc40b6`). Otherwise its calls silently won't reach `conversations`.
+- **Status:** Active
+- **Agent/Author:** Claude

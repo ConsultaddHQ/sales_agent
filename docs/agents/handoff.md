@@ -6,6 +6,42 @@
 
 ---
 
+## Handoff — 2026-09-30 (Phase 0 observability deployed)
+
+**From:** Claude Code · **To:** human (final test), then any agent for Phase 1
+
+### State
+- The box runs `perf/phase0-observability`, rebased on `3f411ce` (Cursor's SEARCH_FAIL/latency work, kept intact).
+- Deployed: migration, backend, widget, Alloy, post-call webhook (Wrina only), `conversation_id` on the live agent tools.
+- Rollback steps are in `docs/observability-runbook.md` → "Live setup".
+
+### Verified
+- A real WebSocket conversation `conv_3001m3qepcw0fwa8tgpd802cm8j2`:
+  - Search logs, the proxy, `search_latency`, `conversations` and `conversation_turns` are all joined by `conversation_id`.
+  - Its trace was forwarded to Tempo.
+  - A backend Sentry test event was accepted.
+  - The widget renders on the demo page, with no merchant-page noise sent to Sentry.
+- Tests pass: 8 observability, 3 upstream Python, 8 widget.
+
+### Baseline (one call, cold after restart)
+| Stage | Time |
+|---|---|
+| User → products | 5.6s |
+| LLM TTFB | 555ms |
+| search_products tool as ElevenLabs saw it | 2,062ms |
+| Our search | 1,288ms (embedding 380, RPC 426, rerank 480) |
+| Warm search | 269ms |
+| LLM re-typing products into update_products | ~2.5–3s |
+
+ElevenLabs calls the webhook from GCP US (34.59.x); residency can't be changed.
+
+### Open items for the human
+- Grafana UI: add the PostgreSQL data source (details in runbook "Live setup") and import `deploy/grafana/teampop-dashboard.json`. Claude has no Grafana API token.
+- Optional: a dedicated Loki `logs:write` token.
+- Confirm where the widget is live. The goxfused.com homepage shows no widget, and the demo page uses the old agent `agent_8601…`.
+
+---
+
 ## Handoff Template
 
 Copy this block and fill it in when handing off:

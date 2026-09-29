@@ -30,16 +30,16 @@ Agreed with the user 2026-09-29. Targets: **agent starts speaking <1s** after th
 
 | Phase | Item | Status |
 |---|---|---|
-| 0 Measure | Confirm the 03ef0af deploy is live (`/api/turn-latency` returned 405 on 2026-09-29, so the route exists) and that `turn_latency`/`search_latency` are receiving rows | ⬜ |
-| 0 Measure | Pass `system__conversation_id` in the search/product-details webhook body; tag every log line, `search_latency` row and Sentry event with it | ✅ Coded 2026-09-29, ⬜ deploy + run `testing/monitoring/add_conversation_id_to_tools.py --apply` |
-| 0 Measure | ElevenLabs post-call webhook → `conversation_turns` table (per-turn `convai_llm_service_ttfb`, `tool_latency_secs`, eval + data-collection results); OTel export → Grafana Tempo | ✅ Coded (`routes/webhooks.py`), ⬜ configure webhook + env |
-| 0 Measure | Sentry (widget + both services), JSON structured logs → Grafana Loki, rerank timing + CPU/RAM sampling (decides the Lightsail question) | ✅ Coded, ⬜ deploy — full steps in `docs/observability-runbook.md` |
-| 0 Measure | Widget timings: click→connected/greeting (cycle 0), image paint, `onPing` RTT, `onContextUsage` tokens (`@elevenlabs/react` → ^1.16) | ✅ Coded, ⬜ build + voice smoke test (no Node on the dev Mac) |
+| 0 Measure | ✅ Confirmed 2026-09-30 — box was on 3f411ce. Confirm the 03ef0af deploy is live (`/api/turn-latency` returned 405 on 2026-09-29, so the route exists) and that `turn_latency`/`search_latency` are receiving rows | ⬜ |
+| 0 Measure | Pass `system__conversation_id` in the search/product-details webhook body; tag every log line, `search_latency` row and Sentry event with it | ✅ Deployed 2026-09-30 (live agent tools patched) |
+| 0 Measure | ElevenLabs post-call webhook → `conversation_turns` table (per-turn `convai_llm_service_ttfb`, `tool_latency_secs`, eval + data-collection results); OTel export → Grafana Tempo | ✅ Deployed 2026-09-30 — verified with a real conversation |
+| 0 Measure | Sentry (widget + both services), JSON structured logs → Grafana Loki, rerank timing + CPU/RAM sampling (decides the Lightsail question) | ✅ Deployed 2026-09-30 (Sentry, Alloy→Loki, system.stats) |
+| 0 Measure | Widget timings: click→connected/greeting (cycle 0), image paint, `onPing` RTT, `onContextUsage` tokens (`@elevenlabs/react` → ^1.16) | ✅ Deployed 2026-09-30, ⬜ human voice test on the real store |
 | 1 Quick wins | ~~India residency (`in-residency`)~~ | ❌ Not possible (user, 2026-09-30) — don't re-propose; optimize everything else |
 | 1 Quick wins | `pre_tool_speech: auto` + Immediate execution on `search_products`; `response_filter`/smaller tool payload; keep the server budget under the 5s webhook timeout | ⬜ |
 | 1 Quick wins | Caddy routes `/search` straight to :8006 (drop the onboarding proxy hop, forward X-Forwarded-For); query-embedding cache; strip full-body/embedding logging | ⬜ |
 | 1 Quick wins | Faster greeting (pre-warm the session/mic when the widget opens); images: resized WebP thumbnails + preload on search result + free CDN in front | ⬜ |
-| 2 Restructure | Behind a flag + branch: widget-side `search_products` client tool calls /search, renders the carousel immediately and returns a compact summary to the LLM. This removes the `update_products` LLM echo hop. Old flow kept for rollback | ⬜ |
+| 2 Restructure | **Evidence 2026-09-30:** in a real call, ~2.5–3s of the 5.6s user→products went to the LLM re-typing products into `update_products`. Behind a flag + branch: widget-side `search_products` client tool calls /search, renders the carousel immediately and returns a compact summary to the LLM. This removes the `update_products` LLM echo hop. Old flow kept for rollback | ⬜ |
 | 2 Restructure | Re-bench the LLM (Haiku 4.5 with thinking off vs newer Gemini Flash) with ElevenLabs agent tests; switch only if tool reliability stays ~100% | ⬜ |
 | 1/2 ElevenLabs new (scan 2026-09-29) | **Eleven v4 Turbo** TTS (Sep 28, ~150ms claimed TTFS). A/B vs `eleven_flash_v2_5` on a branch; Hindi/Tamil quality + model_id unverified | ⬜ High |
 | 1/2 ElevenLabs new | `enable_parallel_tool_calls` now **defaults true** (Sep 21). Verify search→`update_products` ordering and `add_to_cart` stay correct | ⬜ High |

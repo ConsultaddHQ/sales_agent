@@ -3,6 +3,15 @@
 > Phase 0 of the 2026-09-29 pilot plan (see `docs/agents/roadmap.md`).
 > Goal: for any shopper complaint, paste one `conversation_id` and see the whole call.
 
+## Live setup (deployed 2026-09-30)
+
+- Box runs branch `perf/phase0-observability`. **Rollback:** `git checkout release/xfused-pilot` (was `3f411ce`), restore `~/backups/pre-phase0-*/{onboarding,search}.env` + `widget.js`, `sudo systemctl restart tp-search tp-onboard`.
+- **Post-call webhook:** workspace webhook "TeamPop Wrina (Xfused) post-call" (`1e82aa83da704fd7a058f000bacc40b6`), attached **only to the Wrina agent** via `platform_settings.workspace_overrides.webhooks`. The ElevenLabs workspace is **shared with other products (Loro)**. Never change the workspace-level post-call webhook.
+- **Traces:** the box's `ELEVENLABS_API_KEY` can't read conversations (401), so `ELEVENLABS_OTEL_API_KEY` holds a key that can.
+- **Loki:** the push URL must end in `/loki/api/v1/push`. The token needs `logs:write`. The originally supplied Loki token lacked that scope, so Alloy currently uses the OTLP token, which has it. Alloy uses about 200 MB of RAM.
+- **Grafana Postgres:** user `grafana_ro.jchigqerypjwmszslzke`, host `aws-1-ap-south-1.pooler.supabase.com:5432`, db `postgres`, SSL `require`. The password is `GRAFANA_PG_RO_PASSWORD` in the local `onboarding-service/.env`.
+- **Demo page** `api.teampop.com/demo/test_9cec7cd0.html` loads the old agent `agent_8601…`, not Wrina v2 (`agent_4901…`). Test Wrina on the real storefront or theme preview.
+
 ## How it fits together
 
 | Signal | Source | Lands in |
