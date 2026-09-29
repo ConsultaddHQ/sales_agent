@@ -81,9 +81,11 @@ def main() -> int:
 
     changed_any = False
 
-    # 1) Inline tools
+    # 1) Inline tools — only for agents that don't use standalone tools. When
+    # tool_ids is set, the GET echoes the resolved tools inline too; PATCHing
+    # that list would duplicate/convert them, so patch the tool objects instead.
     inline = prompt.get("tools") or []
-    if inline:
+    if inline and not prompt.get("tool_ids"):
         new_tools = copy.deepcopy(inline)
         changed = [t["name"] for t in new_tools if _patch_tool_config(t)]
         if changed:
