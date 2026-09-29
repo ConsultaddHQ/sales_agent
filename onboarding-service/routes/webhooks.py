@@ -20,7 +20,8 @@ tools and Sentry carry — that's what makes per-conversation RCA possible.
 
 Env vars:
   ELEVENLABS_WEBHOOK_SECRET  HMAC secret shown when the webhook is created (required)
-  ELEVENLABS_API_KEY         used to fetch the OTel trace
+  ELEVENLABS_OTEL_API_KEY    key used to fetch the OTel trace (needs conversation read
+                             access); falls back to ELEVENLABS_API_KEY
   ELEVENLABS_API_BASE        default https://api.elevenlabs.io/v1 (change for residency)
   GRAFANA_OTLP_ENDPOINT      e.g. https://otlp-gateway-prod-ap-south-1.grafana.net/otlp
   GRAFANA_OTLP_INSTANCE_ID   Grafana Cloud OTLP instance ID (numeric)
@@ -225,7 +226,7 @@ def _forward_otel_trace(conversation_id: str) -> None:
     endpoint = os.getenv("GRAFANA_OTLP_ENDPOINT", "").rstrip("/")
     instance = os.getenv("GRAFANA_OTLP_INSTANCE_ID", "")
     token = os.getenv("GRAFANA_OTLP_TOKEN", "")
-    api_key = os.getenv("ELEVENLABS_API_KEY", "")
+    api_key = os.getenv("ELEVENLABS_OTEL_API_KEY") or os.getenv("ELEVENLABS_API_KEY", "")
     if not (endpoint and instance and token and api_key):
         return
     api_base = os.getenv("ELEVENLABS_API_BASE", "https://api.elevenlabs.io/v1").rstrip("/")
