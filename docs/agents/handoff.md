@@ -6,6 +6,31 @@
 
 ---
 
+## Handoff — 2026-10-02 (Phases 0–4 done; awaiting human voice test + credentials)
+
+**From:** Claude Code · **To:** human, then any agent
+
+### Live now (box on `perf/phase0-observability` @ 8603b35)
+- Observability: Sentry, Loki (via Alloy), Tempo traces, post-call webhook (Wrina only), data collection (9 fields), evaluation criteria (5), 30-day retention.
+- Keep-warm loops, `vm.swappiness=10`, MIC_BLOCKED widget state.
+- Business views `v_bi_*` and `assisted_orders`.
+- `deploy/deploy.sh` and `deploy/rollback.sh`, both tested for real: deploy, rollback, redeploy.
+- Test data removed from the tables: 51 conversations.
+
+### Waiting on the human
+1. Voice test the fast flow on the store: `https://goxfused.com/?preview_theme_id=162382872829&tp_branch=agtbrch_6201m3w3rckgf5rs3sp40es9snrk` (Haiku). The GPT-5.4-mini variant is `tp_branch=agtbrch_2201m3w5j0smf1y8za5t7yydnf1y`. A branch test forces websocket transport.
+2. On approval, deploy the chosen branch at 100% via the ElevenLabs deployments API. Rollback means Main back to 100%.
+3. Credentials still needed:
+   - **Grafana stack URL:** to import both dashboards and the alert rules with GRAFANA_SERVICE_TOKEN.
+   - **Slack webhook URL + alert email:** for Grafana contact points and the GitHub uptime secret.
+   - **Shopify Admin token + app client secret:** for `register_shopify_order_webhook.py` and SHOPIFY_WEBHOOK_SECRET.
+
+### Notes
+- Typed-text benchmarks make Haiku answer English in Hindi. Real voice calls from August were fine. The `language_match` evaluation now tracks this on real traffic.
+- The `fast-v1` filler soft_timeout is 0.8s (Main is 1.2s).
+
+---
+
 ## Handoff — 2026-09-30 (Phase 0 observability deployed)
 
 **From:** Claude Code · **To:** human (final test), then any agent for Phase 1

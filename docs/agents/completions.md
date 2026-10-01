@@ -652,3 +652,15 @@ Configured in `elevenlabs_agent.py:728-731` via `client_events`:
   - Tool errors are reported to Sentry.
 - **Verification:** `testing/observability/test_observability.py` has 8 offline tests, all passing: signature, parsing, roll-ups, drift-tolerant insert, log correlation, search + product-details + deep health. The onboarding app was smoke-booted. **The widget has not been built or tested** because there is no Node on the dev Mac; it needs `npm install && npm run build` plus a live voice smoke test.
 - **Setup:** `docs/observability-runbook.md` (credentials, setup order, RCA playbook). Grafana dashboard at `deploy/grafana/teampop-dashboard.json`, Alloy config at `deploy/alloy/config.alloy`.
+
+
+---
+
+## 2026-10-01/02 — Phases 1–4: fast flow, cold-start fix, business metrics, ops
+
+- **Fast flow:** client-side search and details, built on ElevenLabs branches and benchmarked. Products on screen 4.2s → 1.2s. Tooling: `testing/latency/setup_fast_branch.py` and `benchmark_flows.py`.
+- **Cold-start 504 RCA:** found with the new tracing. Search-service had 427 MB swapped out. Fixed with swappiness 10 plus keep-warm loops.
+- **Mic blocked:** a "Retry" in the Shopify theme editor turned out to be its iframe having no mic permission. Fixed with a MIC_BLOCKED state and info-level Sentry reporting.
+- **Business metrics:** data collection + evaluation configured (`configure_agent_analysis.py`), `create_business_metrics.sql` (8 metrics as views, validated on embedded Postgres and live), Shopify orders webhook, business dashboard JSON.
+- **Ops:** deploy/rollback scripts tested live (deploy 61–67s; rollback ~60s), Grafana alert rules + contact points YAML, uptime check + GitHub Actions cron.
+- **Tests:** 13 observability/business (pytest), 3 upstream Python, 12 widget (node --test). Widget lint is unchanged from the baseline.

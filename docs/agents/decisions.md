@@ -609,3 +609,25 @@
 - **Consequences:** Every new TeamPop agent needs the override set (webhook `1e82aa83da704fd7a058f000bacc40b6`). Otherwise its calls silently won't reach `conversations`.
 - **Status:** Active
 - **Agent/Author:** Claude
+
+---
+
+## 2026-10-01: Fast flow — the widget runs search/details as client tools
+
+- **Decision:** The `search_products` and `get_product_details` tools become CLIENT tools, run by the widget against our Mumbai API.
+  - The widget paints the carousel itself and returns a compact summary to the LLM.
+  - `update_products` is dropped. The carousel follows the voice by matching product names in the audio alignment.
+  - It ships as ElevenLabs branches. Main keeps the webhook flow, and the same widget serves both.
+- **Evidence:** Medians from `testing/latency/benchmark_flows.py`:
+  - Products on screen: 4.2s → 1.2s.
+  - Turn complete: 6.4s → 2.9s.
+  - Search-first: 6/6 after the guardrail fix.
+  - In the old flow, the LLM re-typing products into `update_products` cost about 2.5–3s per turn.
+- **Rejected alternatives:**
+  - `pre_tool_speech: force` hung 1 run in 4.
+  - Eleven v4 Turbo showed no first-audio gain.
+  - Gemini 3.8 Flash was slow and verbose.
+  - GPT-5.4-mini is a viable alternative (follow-ups 1.3s vs 3.1s, better language matching), left to the user's voice test.
+- **Also:** The cold-after-idle 504s came from model pages in swap, not from RAM size. Fixed with `vm.swappiness=10` and keep-warm loops. No Lightsail upgrade.
+- **Status:** Active (branches at 0% until the human voice test)
+- **Agent/Author:** Claude
