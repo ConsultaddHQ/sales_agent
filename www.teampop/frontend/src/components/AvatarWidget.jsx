@@ -123,7 +123,22 @@ async function syncThemeCartBadge(cart) {
 //   ?transport=websocket|webrtc  (URL param, wins)
 //   window.__TEAM_POP_TRANSPORT__ = "websocket"|"webrtc"  (embed global)
 // websocket trades AEC for cleaner raw-PCM audio on stable wired networks.
+// ElevenLabs branch override for testing a branch before it gets live traffic:
+//   ?tp_branch=agtbrch_...  (URL param)  or  window.__TEAM_POP_BRANCH__
+// Normal shoppers never set this — ElevenLabs' own deployment % routes them.
+const AGENT_BRANCH = (() => {
+  try {
+    const p = new URLSearchParams(window.location.search).get("tp_branch");
+    if (p && /^agtbrch_[a-z0-9]+$/i.test(p)) return p;
+  } catch { /* SSR/no-window */ }
+  const g = typeof window !== "undefined" ? window.__TEAM_POP_BRANCH__ : null;
+  return g && /^agtbrch_[a-z0-9]+$/i.test(g) ? g : null;
+})();
+
 const CONNECTION_TYPE = (() => {
+  // Branch routing via the agent-id query string is verified on the websocket
+  // transport only, so a branch test always uses websocket.
+  if (AGENT_BRANCH) return "websocket";
   try {
     const p = new URLSearchParams(window.location.search).get("transport");
     if (p === "websocket" || p === "webrtc") return p;
@@ -1309,16 +1324,19 @@ function AvatarInner({
     }
   }, [fireFocusItem]);
 
-  const enqueueCarouselFocus = useCallback((idx, needle) => {
+  const enqueueCarouselFocus = useCallback((idx, needle, { fallback = true } = {}) => {
     const s = speechSyncRef.current;
     const item = { idx, needle, scheduled: false, alignTimer: null, fallbackTimer: null };
     // Fallback: staggered ~one-product-summary apart, so even with no alignment
-    // match the walk advances at a natural speaking cadence.
-    const fallbackDelay = CAROUSEL_FOCUS_FALLBACK_GAP_MS * (s.pending.length + 1);
-    item.fallbackTimer = setTimeout(() => {
-      console.log(`[speech-sync] fallback timer fired for index ${item.idx}`);
-      fireFocusItem(item);
-    }, fallbackDelay);
+    // match the walk advances at a natural speaking cadence. Auto-follow items
+    // (client-side search) skip it: they should only move when the name is spoken.
+    if (fallback) {
+      const fallbackDelay = CAROUSEL_FOCUS_FALLBACK_GAP_MS * (s.pending.length + 1);
+      item.fallbackTimer = setTimeout(() => {
+        console.log(`[speech-sync] fallback timer fired for index ${item.idx}`);
+        fireFocusItem(item);
+      }, fallbackDelay);
+    }
     s.pending.push(item);
     trySchedulePendingFocus(); // the name may already be in the buffered audio text
   }, [fireFocusItem, trySchedulePendingFocus]);
@@ -1360,12 +1378,9 @@ function AvatarInner({
     };
   }, [handleAudioAlignment, clearPendingCarouselFocus]);
 
-  // ── Tool: update_products ─────────────────────────────────────────────────
-  useConversationClientTool("update_products", (parameters) => {
-    isToolPendingRef.current = true;
-    console.log("Update tool called : ", parameters);
-    const products = Array.isArray(parameters?.products) ? parameters.products : [];
-
+  // Render a result set in the carousel. Shared by the LLM-driven update_products
+  // tool (Main branch) and the widget-side search_products client tool (fast flow).
+  function showProducts(products, { autoFollowVoice = false } = {}) {
     _markProductsArrived(products.length);
     sessionMetricsRef.current.productsShown += products.length;
     sessionMetricsRef.current.searches += 1;
@@ -1375,11 +1390,86 @@ function AvatarInner({
     setActiveView("PRODUCTS");
     clearPendingCarouselFocus(); // new result set — drop any queued focus from the old one
     applyCarouselFocus(0);
+    if (autoFollowVoice) {
+      // Carousel follows the voice by itself: each product is focused when its
+      // name is reached in the spoken audio — no per-product LLM tool calls.
+      products.slice(1).forEach((p, i) => enqueueCarouselFocus(i + 1, productNameNeedle(p?.name), { fallback: false }));
+    }
     setAgentSubtitle(`Found ${products.length} products for you`);
     if (subtitleTimerRef.current) clearTimeout(subtitleTimerRef.current);
     subtitleTimerRef.current = setTimeout(() => setAgentSubtitle(""), 3000);
+  }
+
+  // ── Tool: update_products ─────────────────────────────────────────────────
+  useConversationClientTool("update_products", (parameters) => {
+    isToolPendingRef.current = true;
+    console.log("Update tool called : ", parameters);
+    const products = Array.isArray(parameters?.products) ? parameters.products : [];
+    showProducts(products);
     isToolPendingRef.current = false;
     return "UI updated successfully";
+  });
+
+  // ── Fast flow (Phase 2): search + details run in the widget ───────────────
+  // The LLM calls these as CLIENT tools. The widget hits our Mumbai API directly,
+  // paints the carousel immediately and hands the LLM only a compact summary —
+  // removing the LLM re-typing every product into update_products (~2.5–3s/turn)
+  // and the ElevenLabs(US)→Mumbai webhook hop. Only agents/branches configured
+  // with these client tools use them; Main's webhook tools never reach here.
+  async function postApi(path, body) {
+    const apiBase = window.__TEAM_POP_API_URL__ || "";
+    const r = await fetch(`${apiBase}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ store_id: window.__TEAM_POP_STORE_ID__, conversation_id: conversationIdRef.current, ...body }),
+    });
+    if (!r.ok) throw new Error(`${path} HTTP ${r.status}`);
+    return r.json();
+  }
+
+  useConversationClientTool("search_products", async (parameters) => {
+    const query = String(parameters?.query || "").trim();
+    if (!query) return "Error: empty query — ask the shopper what they are looking for.";
+    try {
+      const data = await postApi("/search", { query });
+      const products = Array.isArray(data?.products) ? data.products : [];
+      if (products.length === 0) return JSON.stringify({ count: 0, products: [] });
+      showProducts(products, { autoFollowVoice: true });
+      return JSON.stringify({
+        count: products.length,
+        note: "Already shown on screen; the carousel follows your voice when you say each product's name.",
+        products: products.map((p, i) => ({
+          index: i,
+          id: String(p.id),
+          name: p.name,
+          price: p.price,
+          about: p.description ? String(p.description).slice(0, 110) : undefined,
+        })),
+      });
+    } catch (err) {
+      reportError(err, { where: "client_search", query });
+      setSearchFailed(true);
+      return "Error: product search failed (server error). Apologise briefly and ask the shopper to try again.";
+    }
+  });
+
+  useConversationClientTool("get_product_details", async (parameters) => {
+    const productId = String(parameters?.product_id || "");
+    if (!productId) return "Error: product_id is required.";
+    // Focus the product being discussed — replaces the extra update_carousel_main_view hop.
+    const idx = latestProductsRef.current.findIndex((p) => String(p.id) === productId);
+    if (idx >= 0) {
+      clearPendingCarouselFocus();
+      applyCarouselFocus(idx);
+    }
+    try {
+      const data = await postApi("/product-details", { product_id: productId });
+      if (Array.isArray(data?.variants)) variantCacheRef.current.set(productId, data.variants);
+      return JSON.stringify({ ...data, shown_on_screen: idx >= 0 });
+    } catch (err) {
+      reportError(err, { where: "client_product_details", product_id: productId });
+      return "Error: could not load product details. Say the details aren't available right now and point to Shop Now.";
+    }
   });
 
   useConversationClientTool("show_search_error", () => {
@@ -1495,7 +1585,9 @@ function AvatarInner({
     // drop bug that forced WebRTC is fixed in @elevenlabs/client ≥1.13.
     sessionStartRef.current = { clickAt: performance.now(), connectMs: null, sent: false };
     conversation.startSession({
-      agentId,
+      // The SDK appends agentId to the connect URL verbatim, so a branch rides along
+      // as an extra query param (ElevenLabs honours `branch_id`).
+      agentId: AGENT_BRANCH ? `${agentId}&branch_id=${AGENT_BRANCH}` : agentId,
       connectionType: CONNECTION_TYPE,
       dynamicVariables: { session_context: sessionContextText },
     });

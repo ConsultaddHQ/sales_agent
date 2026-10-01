@@ -124,6 +124,23 @@ async def _init_search_proxy_client() -> None:
     )
     logger.info(f"Search proxy client initialized (target={SEARCH_SERVICE_URL})")
     asyncio.ensure_future(run_system_stats_logger(logger))
+    asyncio.ensure_future(_keep_proxy_warm())
+
+
+async def _keep_proxy_warm() -> None:
+    """Ping search-service through the pooled client every minute so this
+    process's proxy path (and its pages) stay resident — a cold proxy added
+    ~700ms to the first search after idle (2026-10-01). 0 disables."""
+    interval = float(os.getenv("KEEPWARM_INTERVAL_SECONDS", "60"))
+    if interval <= 0:
+        return
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            if _search_proxy_client is not None:
+                await _search_proxy_client.get(f"{SEARCH_SERVICE_URL}/health", timeout=5)
+        except Exception as e:
+            log_event(logger, "keepwarm.failed", logging.WARNING, error=repr(e))
 
 
 @app.on_event("shutdown")

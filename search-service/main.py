@@ -823,6 +823,41 @@ async def _warmup_on_startup() -> None:
     await asyncio.to_thread(_warm_sync)
     # CPU/RAM sampler — decides whether the 2 GB box is actually a bottleneck.
     asyncio.ensure_future(run_system_stats_logger(logger))
+    asyncio.ensure_future(_keep_warm_loop())
+
+
+KEEPWARM_INTERVAL_SECONDS = float(os.getenv("KEEPWARM_INTERVAL_SECONDS", "60"))
+
+
+async def _keep_warm_loop() -> None:
+    """Keep the hot path hot between shoppers.
+
+    Measured 2026-10-01: after a quiet period the kernel had swapped ~430 MB of
+    this process (the models) to disk, so the first real search took 3.2s
+    (embedding 1.1s, RPC 1.5s) and ElevenLabs' 5s webhook timeout fired — the
+    shopper heard "technical issue". A tiny embed + rerank + Supabase ping every
+    minute keeps model pages resident and the HTTPS connection open.
+    0 disables.
+    """
+    if KEEPWARM_INTERVAL_SECONDS <= 0:
+        return
+
+    def _touch() -> int:
+        t0 = time.perf_counter()
+        get_embedder().encode("keep warm", normalize_embeddings=True)
+        if RERANK_ENABLED:
+            rerank("keep warm", ["warm document"])
+        get_supabase().table("products").select("id").limit(1).execute()
+        return int((time.perf_counter() - t0) * 1000)
+
+    while True:
+        await asyncio.sleep(KEEPWARM_INTERVAL_SECONDS)
+        try:
+            ms = await asyncio.to_thread(_touch)
+            # Slow keep-warm = something was cold anyway (swap, network): worth seeing.
+            log_event(logger, "keepwarm", logging.WARNING if ms > 1000 else logging.DEBUG, duration_ms=ms)
+        except Exception as e:
+            log_event(logger, "keepwarm.failed", logging.WARNING, error=repr(e))
 
 
 if __name__ == "__main__":
