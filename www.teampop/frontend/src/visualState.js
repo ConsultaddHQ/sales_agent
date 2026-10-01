@@ -13,8 +13,12 @@ export function getVisualState({
   isPressActive,
   vadSubState,
   searchFailed = false,
+  micBlocked = false,
 }) {
   if (status === "connecting") return "CONNECTING";
+  // Mic refused (browser "Block", or the Shopify theme-editor iframe, which has
+  // no microphone permission) — a distinct, explainable state, not a generic error.
+  if (micBlocked && status !== "connected") return "MIC_BLOCKED";
   if (status === "error") return "ERROR";
 
   if (status === "connected") {
@@ -53,7 +57,20 @@ export function getStatusLabel(visualState, connectingMessageIndex = 0) {
       return "Listening";
     case "ERROR":
       return "Retry";
+    case "MIC_BLOCKED":
+      return "Allow mic to talk";
     default:
       return "";
   }
+}
+
+/** True when an ElevenLabs/getUserMedia error means the microphone was refused. */
+export function isMicPermissionError(error) {
+  const text = String(error?.name || "") + " " + String(error?.message || error || "");
+  return /NotAllowedError|Permission denied|permission dismissed|not allowed/i.test(text);
+}
+
+/** Shopify sets Shopify.designMode inside the theme editor, whose iframe can't use the mic. */
+export function isShopifyThemeEditor(win = typeof window !== "undefined" ? window : undefined) {
+  return Boolean(win?.Shopify?.designMode);
 }

@@ -15,6 +15,8 @@ import {
   CONNECTING_MESSAGE_INTERVAL_MS,
   getStatusLabel,
   getVisualState,
+  isMicPermissionError,
+  isShopifyThemeEditor,
   SEARCH_FAIL_FALLBACK_MS,
   THINKING_SILENCE_MS,
 } from "../visualState.js";
@@ -375,6 +377,21 @@ function PanelSessionScreen({ visualState }) {
 
   // Connected, but no products shown yet — invite the shopper to speak so the
   // window doesn't feel dead between connect and the first search result.
+  if (visualState === "MIC_BLOCKED") {
+    const inEditor = isShopifyThemeEditor();
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-900 pointer-events-auto pt-16">
+        <div className="panel-session-orb mb-8" aria-hidden="true" />
+        <h2 className="text-xl font-bold text-amber-300 mb-3 tracking-wide">Microphone is blocked</h2>
+        <p className="text-gray-300 text-sm max-w-[260px] mx-auto leading-relaxed">
+          {inEditor
+            ? "The Shopify theme editor can't use the microphone. Open the store preview (or the live store) to talk to me."
+            : "Allow microphone access for this site — tap the lock icon next to the address, turn the microphone on, then tap “Allow mic to talk”."}
+        </p>
+      </div>
+    );
+  }
+
   if (visualState === "SEARCH_FAIL") {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-900 pointer-events-auto pt-16">
@@ -462,6 +479,7 @@ function OrbDock({
     CONNECTING:    "bg-amber-500/30 text-amber-300 border-amber-400/70 shadow-[0_0_14px_rgba(245,158,11,0.4)] status-pill-connecting",
     PTT_HOLDING:   "bg-green-500/20 text-green-400 border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.2)]",
     SEARCH_FAIL: "bg-rose-500/20 text-rose-400 border-rose-500/30 shadow-[0_0_10px_rgba(244,63,94,0.2)]",
+    MIC_BLOCKED: "bg-amber-500/20 text-amber-300 border-amber-500/40",
   };
   const pillStyle = PILL_STYLES[visualState] || "bg-zinc-800/80 text-gray-400 border-white/5";
   const isConnecting = visualState === "CONNECTING";
@@ -695,6 +713,7 @@ function AvatarInner({
   const [vadSubState, setVadSubState] = useState("LISTENING");
   const vadSubStateRef = useRef("LISTENING");
   const [searchFailed, setSearchFailed] = useState(false);
+  const [micBlocked, setMicBlocked] = useState(false);
   const searchFailTimerRef = useRef(null);
   const wasAgentSpeakingRef = useRef(false);
   const wasConnectedRef = useRef(false);
@@ -968,6 +987,13 @@ function AvatarInner({
     },
     onError: (error, context) => {
       console.error("ElevenLabs error:", error, context);
+      if (isMicPermissionError(error)) {
+        // Shopper (or the theme-editor iframe) refused the mic — expected, not a
+        // bug: explain it on screen and log at info so it doesn't page anyone.
+        setMicBlocked(true);
+        reportMessage("Microphone permission denied", { where: "mic", themeEditor: isShopifyThemeEditor() }, "info");
+        return;
+      }
       reportError(error, { where: "elevenlabs", context });
     },
     onPing: (ping) => {
@@ -1217,6 +1243,7 @@ function AvatarInner({
     isPressActive: ptt.isPressActiveRef.current,
     vadSubState,
     searchFailed,
+    micBlocked,
   });
 
   // ── Carousel focus speech-sync ────────────────────────────────────────────
@@ -1416,6 +1443,7 @@ function AvatarInner({
 
   // ── VAD session helpers ───────────────────────────────────────────────────
   const startVoiceSession = useCallback(() => {
+    setMicBlocked(false);
     setAgentSubtitle("");
     setHighlightPrice(false);
     // Open the full panel immediately so the connecting state is unmissable
@@ -2183,7 +2211,7 @@ function AvatarInner({
                 </div>
               </div>
             </>
-          ) : visualState === "CONNECTING" || isConnected ? (
+          ) : visualState === "CONNECTING" || visualState === "MIC_BLOCKED" || isConnected ? (
             <PanelSessionScreen visualState={visualState} />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-900 pointer-events-auto pt-16">

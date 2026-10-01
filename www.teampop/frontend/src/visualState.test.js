@@ -8,7 +8,30 @@ import {
   getStatusLabel,
   THINKING_SILENCE_MS,
   SEARCH_FAIL_FALLBACK_MS,
+  isMicPermissionError,
+  isShopifyThemeEditor,
 } from "./visualState.js";
+
+describe("mic blocked", () => {
+  it("shows MIC_BLOCKED instead of a generic error when the mic was refused", () => {
+    assert.equal(getVisualState({ status: "error", interactionMode: "vad", micBlocked: true }), "MIC_BLOCKED");
+    assert.equal(getVisualState({ status: "disconnected", interactionMode: "vad", micBlocked: true }), "MIC_BLOCKED");
+    assert.equal(getStatusLabel("MIC_BLOCKED"), "Allow mic to talk");
+  });
+  it("lets a new connection attempt and a live session override MIC_BLOCKED", () => {
+    assert.equal(getVisualState({ status: "connecting", interactionMode: "vad", micBlocked: true }), "CONNECTING");
+    assert.equal(getVisualState({ status: "connected", interactionMode: "vad", vadSubState: "LISTENING", micBlocked: true }), "LISTENING");
+  });
+  it("recognises browser mic-permission errors", () => {
+    assert.ok(isMicPermissionError("Permission denied"));
+    assert.ok(isMicPermissionError({ name: "NotAllowedError", message: "x" }));
+    assert.ok(!isMicPermissionError("WebSocket closed"));
+  });
+  it("detects the Shopify theme editor", () => {
+    assert.ok(isShopifyThemeEditor({ Shopify: { designMode: true } }));
+    assert.ok(!isShopifyThemeEditor({ Shopify: {} }));
+  });
+});
 
 describe("getVisualState", () => {
   it("returns SEARCH_FAIL when connected VAD and searchFailed, even if THINKING", () => {
