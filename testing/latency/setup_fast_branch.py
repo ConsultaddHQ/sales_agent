@@ -57,7 +57,10 @@ def search_tool(pre_tool_speech: str) -> dict:
         "name": "search_products",
         "description": (
             "Search the store's product catalog AND show the matching products on the shopper's "
-            "screen in one step. Returns JSON: {count, products: [{index, id, name, price, about}]}. "
+            "screen in one step. ALWAYS call this before naming any product, price, variant or "
+            "availability — even if you think you already know the answer from the store summary; the "
+            "shopper can only see products this tool returns. Returns JSON: "
+            "{count, products: [{index, id, name, price, about}]}. "
             "Expand vague queries: 'something for dry skin' → 'moisturiser dry skin', 'show me stuff' "
             "→ 'bestseller products', 'a gift' → 'gift set'. If count is 0, follow the No results rule. "
             "If the result starts with 'Error:', call show_search_error and apologise briefly."
@@ -165,7 +168,10 @@ PROMPT_EDITS = [
     ),
     (
         "- Never describe product options before search_products + update_products.",
-        "- Never describe product options before search_products returns.",
+        "- Never describe product options before search_products returns. Any product request — "
+        "\"what X do you have\", \"show me X\", \"do you have X\" — means call search_products FIRST, "
+        "even when the Categories/Prices line already seems to answer it: the shopper sees nothing "
+        "on screen until search_products runs. Reply in the language the shopper is using. This step is important.",
     ),
     (
         "call search_products + update_products as usual.",

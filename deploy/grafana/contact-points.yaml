@@ -1,0 +1,38 @@
+# Slack + email contact point and notification policy (Grafana file provisioning).
+# Set SLACK_WEBHOOK_URL and ALERT_EMAIL (comma/semicolon separated) in Grafana's environment.
+# NOTE: a policy file replaces the org's notification policy tree.
+apiVersion: 1
+contactPoints:
+- orgId: 1
+  name: teampop-oncall
+  receivers:
+  - uid: tp-slack
+    type: slack
+    settings:
+      url: ${SLACK_WEBHOOK_URL}
+      title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.severity }})'
+      text: '{{ range .Alerts }}{{ .Annotations.summary }}
+
+        First step: {{ .Annotations.first_step }}
+
+        {{ end }}'
+  - uid: tp-email
+    type: email
+    settings:
+      addresses: ${ALERT_EMAIL}
+      singleEmail: true
+policies:
+- orgId: 1
+  receiver: teampop-oncall
+  group_by:
+  - alertname
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+  - receiver: teampop-oncall
+    object_matchers:
+    - - severity
+      - =~
+      - critical|warning
+    repeat_interval: 2h

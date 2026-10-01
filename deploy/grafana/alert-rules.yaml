@@ -1,0 +1,497 @@
+# Grafana unified-alerting file provisioning (apiVersion 1).
+# Datasource uid: replace ${LOKI_UID} with the uid of the Grafana Cloud Loki data source
+# (Connections -> Data sources -> grafanacloud-<stack>-logs -> uid in the URL), or export
+# LOKI_UID in Grafana's environment (provisioning files expand ${ENV_VARS}).
+# Self-hosted: place in /etc/grafana/provisioning/alerting/. Grafana Cloud has no file
+# provisioning: import via API (POST /api/v1/provisioning/alert-rules, one per rule) or
+# recreate in the UI using the expr/threshold of each rule. See docs/observability-runbook.md.
+# Notes: label `level` is a Loki stream label; `event`, numeric fields come from `| json`.
+apiVersion: 1
+groups:
+- orgId: 1
+  name: teampop-critical
+  folder: TeamPop
+  interval: 1m
+  rules:
+  - uid: tp-search-errors
+    title: Search timeout/failed/proxy error
+    condition: C
+    for: 5m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: critical
+      team: teampop
+    annotations:
+      summary: Shopper-facing search failure in the last 5m
+      description: Shopper-facing search failure in the last 5m
+      runbook: docs/observability-runbook.md#ops-deploy-rollback-alerts
+      first_step: 'Loki: {job="teampop"} | json | event=~"search.timeout|search.failed|proxy.error"; check Sentry + system.stats (swap/mem) at that time.'
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 300
+        to: 0
+      datasourceUid: ${LOKI_UID}
+      model:
+        refId: A
+        expr: sum(count_over_time({job="teampop"} | json | event=~"search.timeout|search.failed|proxy.error" [5m]))
+        queryType: instant
+        editorMode: code
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 300
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 300
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+  - uid: tp-search-down
+    title: No search-service logs for 10m
+    condition: C
+    for: 0s
+    noDataState: Alerting
+    execErrState: Error
+    labels:
+      severity: critical
+      team: teampop
+    annotations:
+      summary: search-service silent for 10m (down, or Alloy not shipping)
+      description: search-service silent for 10m (down, or Alloy not shipping)
+      runbook: docs/observability-runbook.md#ops-deploy-rollback-alerts
+      first_step: 'ssh box: systemctl status tp-search alloy; journalctl -u tp-search -n 100; run deploy/rollback.sh if after a deploy.'
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: ${LOKI_UID}
+      model:
+        refId: A
+        expr: absent_over_time({job="teampop",service="search-service"}[10m])
+        queryType: instant
+        editorMode: code
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+- orgId: 1
+  name: teampop-warning
+  folder: TeamPop
+  interval: 1m
+  rules:
+  - uid: tp-search-p95
+    title: Search p95 total_ms > 1500 (15m)
+    condition: C
+    for: 5m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+      team: teampop
+    annotations:
+      summary: search p95 above 1.5s over 15m
+      description: search p95 above 1.5s over 15m
+      runbook: docs/observability-runbook.md#ops-deploy-rollback-alerts
+      first_step: 'Open dashboard: split embedding_ms / rpc_ms / rerank_ms; rerank high -> CPU, rpc high -> Supabase.'
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: ${LOKI_UID}
+      model:
+        refId: A
+        expr: max(quantile_over_time(0.95, {job="teampop",service="search-service"} | json | event="search.completed" | unwrap total_ms [15m]))
+        queryType: instant
+        editorMode: code
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 1500
+  - uid: tp-keepwarm-slow
+    title: Keep-warm slow (>2 in 15m)
+    condition: C
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+      team: teampop
+    annotations:
+      summary: Keep-warm pings slow repeatedly
+      description: Keep-warm pings slow repeatedly
+      runbook: docs/observability-runbook.md#ops-deploy-rollback-alerts
+      first_step: Cold models / CPU steal; check system.stats cpu_pct and recent restarts.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: ${LOKI_UID}
+      model:
+        refId: A
+        expr: sum(count_over_time({job="teampop"} | json | event="keepwarm" | duration_ms > 1000 [15m]))
+        queryType: instant
+        editorMode: code
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 2
+  - uid: tp-keepwarm-failed
+    title: Keep-warm failed
+    condition: C
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+      team: teampop
+    annotations:
+      summary: Keep-warm request failed
+      description: Keep-warm request failed
+      runbook: docs/observability-runbook.md#ops-deploy-rollback-alerts
+      first_step: Search or ElevenLabs path unreachable; curl localhost:8006/health?deep=1 on the box.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: ${LOKI_UID}
+      model:
+        refId: A
+        expr: sum(count_over_time({job="teampop"} | json | event="keepwarm.failed" [15m]))
+        queryType: instant
+        editorMode: code
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+  - uid: tp-webhook-bad
+    title: Webhook misconfigured / bad signature (>5 in 15m)
+    condition: C
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+      team: teampop
+    annotations:
+      summary: ElevenLabs post-call webhook rejected repeatedly
+      description: ElevenLabs post-call webhook rejected repeatedly
+      runbook: docs/observability-runbook.md#ops-deploy-rollback-alerts
+      first_step: 'Check ELEVENLABS_WEBHOOK_SECRET in onboarding-service/.env vs the ElevenLabs workspace webhook (shared workspace: do not edit the workspace-level one).'
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: ${LOKI_UID}
+      model:
+        refId: A
+        expr: sum(count_over_time({job="teampop"} | json | event=~"webhook.misconfigured|webhook.bad_signature" [15m]))
+        queryType: instant
+        editorMode: code
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 5
+  - uid: tp-store-failed
+    title: conversation.store_failed
+    condition: C
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+      team: teampop
+    annotations:
+      summary: Conversation could not be stored in Supabase
+      description: Conversation could not be stored in Supabase
+      runbook: docs/observability-runbook.md#ops-deploy-rollback-alerts
+      first_step: Check Supabase status / service key and the log line's error; data is lost for that call unless re-fetched from ElevenLabs.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: ${LOKI_UID}
+      model:
+        refId: A
+        expr: sum(count_over_time({job="teampop"} | json | event="conversation.store_failed" [15m]))
+        queryType: instant
+        editorMode: code
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 900
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+  - uid: tp-swap
+    title: Swap used > 600 MB (10m avg)
+    condition: C
+    for: 5m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+      team: teampop
+    annotations:
+      summary: Box swapping heavily
+      description: Box swapping heavily
+      runbook: docs/observability-runbook.md#ops-deploy-rollback-alerts
+      first_step: Check proc_rss_mb; alloy ~200MB + models ~600MB. Restart tp-search if leaking; consider bigger box only with this evidence.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: ${LOKI_UID}
+      model:
+        refId: A
+        expr: max(avg_over_time({job="teampop",service="search-service"} | json | event="system.stats" | unwrap swap_used_mb [10m]))
+        queryType: instant
+        editorMode: code
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 600
+  - uid: tp-mem-low
+    title: mem_available_mb < 250 (10m avg)
+    condition: C
+    for: 5m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+      team: teampop
+    annotations:
+      summary: Box low on memory (OOM risk)
+      description: Box low on memory (OOM risk)
+      runbook: docs/observability-runbook.md#ops-deploy-rollback-alerts
+      first_step: free -m; ps aux --sort=-rss | head; look for OOM kills in journalctl -k.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: ${LOKI_UID}
+      model:
+        refId: A
+        expr: min(avg_over_time({job="teampop",service="search-service"} | json | event="system.stats" | unwrap mem_available_mb [10m]))
+        queryType: instant
+        editorMode: code
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: reduce
+        expression: A
+        reducer: last
+        settings:
+          mode: dropNN
+    - refId: C
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 250

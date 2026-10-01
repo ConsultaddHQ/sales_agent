@@ -125,3 +125,75 @@ each DSN from Project → Settings → Client Keys.
 `search.timeout` · `proxy.error` · `conversation.store_failed` · `webhook.bad_signature` ·
 `webhook.misconfigured` · `search.rerank_failed` · p95 of `search.completed.total_ms` > 1500 ·
 `system.stats.swap_used_mb` rising · Sentry `Tool error:` issues.
+
+## Ops: deploy, rollback, alerts
+
+### Deploy (from the dev Mac)
+
+```bash
+deploy/deploy.sh --branch perf/phase0-observability --widget   # --widget builds + uploads widget.js
+deploy/deploy.sh --dry-run                                     # print remote steps only
+```
+
+Needs a clean, pushed branch. `SSH_KEY` and `HOST` env vars override the defaults. The script
+backs up the current commit, `widget.js` and both `.env` files to `~/backups/deploy-<ts>/` on the
+box, fast-forwards the branch, runs `pip install` only if a requirements file changed, sets
+`RELEASE=<sha>` in both `.env` files (Sentry release tag), restarts `tp-search` (waits up to 120s for
+`/health?deep=1`), then `tp-onboard`, then checks the public `/health`. Any failure triggers an
+automatic rollback and a non-zero exit.
+
+### Rollback
+
+```bash
+deploy/rollback.sh              # latest backup: commit + widget.js + .env files
+deploy/rollback.sh <commit>     # a specific commit (code only)
+```
+
+The box is left on a detached HEAD at that commit. The next deploy checks the branch out again.
+
+### Alerts
+
+Rules live in `deploy/grafana/alert-rules.yaml`, contact points and routing in
+`deploy/grafana/contact-points.yaml`. Grafana Cloud has no file provisioning: create the rules in
+the UI (Alerting, New alert rule, Loki data source, paste the `expr`) or POST each to
+`/api/v1/provisioning/alert-rules`. Replace `${LOKI_UID}`, `${SLACK_WEBHOOK_URL}` and `${ALERT_EMAIL}`.
+
+| Alert | Severity | Meaning | First step |
+|---|---|---|---|
+| Search timeout/failed/proxy error | critical | A shopper search failed in the last 5m | Loki for the event, then `system.stats` at that time |
+| No search-service logs 10m | critical | Service down or Alloy not shipping | `systemctl status tp-search alloy`; roll back if just deployed |
+| Search p95 > 1500ms | warning | Slow searches | Dashboard stage split: rerank means CPU, rpc means Supabase |
+| Keep-warm slow / failed | warning | Models cold or search unreachable | CPU and recent restarts; curl deep health |
+| Webhook misconfigured / bad signature | warning | Post-call webhook rejected | Check `ELEVENLABS_WEBHOOK_SECRET` |
+| conversation.store_failed | warning | Call data not saved | Supabase status and key |
+| Swap > 600MB / mem < 250MB | warning | OOM risk | `free -m`, top RSS processes |
+
+### External uptime
+
+`.github/workflows/uptime.yml` runs `testing/monitoring/uptime_check.py` every 5 minutes
+(`/health` plus a fixed `POST /search`). Add the repo secret `SLACK_WEBHOOK_URL`. Run it locally with
+`python testing/monitoring/uptime_check.py`.
+
+## Business metrics (Phase 3)
+
+Product/market intelligence derived from the same conversations. Dashboard: `deploy/grafana/teampop-business-dashboard.json` (uid `teampop-business`). Brand-facing delivery (reports/exports per merchant) is future work; today this is an internal view.
+
+| Metric | Meaning | Source |
+|---|---|---|
+| Catalog coverage score | % of product-seeking conversations where `need_met` was true, per ISO week | `data_collection.need_met` |
+| Top unmet needs | Normalised `unmet_need` values plus zero-result searches | `data_collection.unmet_need`, `search_latency` (`result_count = 0`) |
+| Requested categories / products | Category mix; products most detailed or added | `product_category`, `conversation_turns.tool_calls` joined to `products` |
+| Vocabulary gap | Shopper words (`shopper_terms`, search queries) found in no product name/description. Catalog is treated as one corpus across stores | `data_collection.shopper_terms`, `search_latency.query`, `products` |
+| Conversion by category | Cart-add and `go_to_cart` rates per category (cart add counts only if the tool did not error) | `conversation_turns` |
+| Drop-off turn / reason | Shopper turns before leaving without a cart add; `drop_off_reason` split | `user_turns`, `data_collection.drop_off_reason` |
+| Price sensitivity | Budget-mentioned and price-objection rates, stated-budget buckets | `budget_mentioned`, `budget_amount_inr`, `price_objection` |
+| Purchase lag / assisted revenue | Hours from conversation start to Shopify order (<1h, 1-24h, 1-7d, >7d); revenue of tagged orders | `assisted_orders` (Shopify webhook) |
+
+Setup:
+1. Run `create_business_metrics.sql` in the Supabase SQL editor (idempotent; needs role `grafana_ro`).
+2. Configure the ElevenLabs agent data-collection ids exactly: `shopper_need`, `product_category`, `need_met`, `unmet_need`, `shopper_terms`, `budget_mentioned`, `budget_amount_inr`, `price_objection`, `drop_off_reason`. Missing ids just yield NULLs.
+3. Set `SHOPIFY_WEBHOOK_SECRET` in `onboarding-service/.env` (the signing secret of the app that owns the webhook) and restart the service.
+4. `SHOPIFY_SHOP=... SHOPIFY_ADMIN_TOKEN=... python testing/monitoring/register_shopify_order_webhook.py` (dry run), then add `--apply`. It skips if the subscription already exists.
+5. Grafana: Dashboards, Import, upload the JSON, pick the Supabase datasource.
+
+Orders are stored only when the cart carries a `TeamPop Conversation` (or `TeamPop Assisted = yes`) note attribute. Log events: `shopify.order_received`, `shopify.order_stored`, `shopify.bad_signature`.
