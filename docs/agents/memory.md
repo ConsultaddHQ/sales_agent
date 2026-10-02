@@ -7,7 +7,7 @@
 
 ## Active Tasks
 
-- **2026-10-02 — Phases 0–4 deployed** on branch `perf/phase0-observability` (box). Fast flow built on ElevenLabs branches `fast-v1` (Haiku) and `fast-v2-gpt54mini` at 0% live — **waiting on the human voice test**, then deploy %. Waiting on the human for: Grafana stack URL, Slack webhook URL, alert email, Shopify admin token + app secret. See handoff.md 2026-10-02.
+- **2026-10-02 — Fast flow ready:** voice-test bugs fixed + deployed. Branches at 0%: `fast-v1` (Haiku, recommended, 28/28) and `fast-gemini35lite` (runner-up). Waiting on the human to ear-test both and pick one → deploy %. Still needed: Grafana stack URL (not the Loki URL), Slack webhook, alert email. Shopify token deferred.
 - **Voice-latency Tasks 7–9** (`docs/superpowers/plans/2026-09-04-xfused-voice-latency.md`) stay STOP-gated until measured numbers exist — Phase 0 is what produces them.
 
 ---

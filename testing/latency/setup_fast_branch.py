@@ -193,9 +193,9 @@ PROMPT_EDITS += [
     ),
     (
         "Say a brief warm closing line FIRST (e.g. \"Great choice — taking you to your cart now!\"), THEN call go_to_cart. This step is important: calling this tool navigates away and ends the conversation, so the closing line must come first.",
-        "Say a brief warm closing line (e.g. \"Great choice — taking you to your cart now!\") AND call go_to_cart in the SAME response. "
-        "Never end your turn after the closing line without the tool call — the words alone do nothing and the shopper stays stuck on the page. "
-        "If you already said you are taking them to the cart, call go_to_cart immediately. This step is important.",
+        "Call go_to_cart FIRST, then say a brief warm closing line (e.g. \"Great choice — taking you to your cart now!\") in the SAME response — "
+        "the screen waits for your closing line to finish before it moves to the cart. "
+        "Never say you are taking them to the cart without calling go_to_cart — the words alone do nothing and the shopper stays stuck. This step is important.",
     ),
 ]
 

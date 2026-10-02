@@ -631,3 +631,16 @@
 - **Also:** The cold-after-idle 504s came from model pages in swap, not from RAM size. Fixed with `vm.swappiness=10` and keep-warm loops. No Lightsail upgrade.
 - **Status:** Active (branches at 0% until the human voice test)
 - **Agent/Author:** Claude
+
+---
+
+## 2026-10-02: Sessions start in English; Haiku stays the LLM for the fast flow
+
+- **Decision:** The widget passes `overrides.agent.language="en"` on every session.
+  - Base `agent.language` stays `hi`, because ElevenLabs rejects an English base with `eleven_flash_v2_5`.
+  - Hindi and Tamil switch via `language_detection`.
+  - The English preset was aligned with the base greeting and given an English filler.
+- **Why:** With base `hi`, Haiku answered English shoppers in Hindi (voice test, conv_4501m3ye0v…). With the English start override, the scenario test passed 28/28.
+- **LLM:** Haiku 4.5 scored 28/28 on the scenario test at ~1.1s to products. Gemini 3.5 Flash Lite is a close runner-up (15/16; occasionally skips go_to_cart). The others are disqualified on tool reliability or language (see roadmap).
+- **Status:** Active
+- **Agent/Author:** Claude
