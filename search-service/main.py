@@ -457,10 +457,15 @@ async def _hybrid_search_products(
             )
             ranked = sorted(zip(scores, candidates), key=lambda x: x[0], reverse=True)
             top_score = ranked[0][0]
-            # Browse/broad intent → return the full ranked set (no trim). Specific
-            # queries → keep only results within RERANK_SCORE_MARGIN of the top score,
-            # so "moisturizer" drops the irrelevant tail. Always keep at least the top 1.
-            browse = _is_browse_query(query) or top_score < 0
+            # Explicit browse intent ("show me everything") → return the full ranked
+            # set. Everything else → keep only results within RERANK_SCORE_MARGIN of
+            # the top score, so "moisturizer" drops the irrelevant tail. Always keep
+            # at least the top 1.
+            # A low top score alone is NOT browse intent: "Xiaomi face wash" (brand
+            # not carried) scored top=-1.2 and used to return all 6 products incl.
+            # lip balms at -9.7 (2026-10-02, conv_1701m3ye21ytepvbz6318g2vgem1);
+            # the margin keeps just the two face washes.
+            browse = _is_browse_query(query)
             if browse:
                 kept = ranked
             else:

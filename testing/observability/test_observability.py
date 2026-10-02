@@ -323,3 +323,18 @@ def test_product_details_and_deep_health(search_app, fake_sb):
         h = client.get("/health?deep=1")
         assert h.status_code == 200 and h.json()["supabase"] is True
         assert client.get("/health").json() == {"status": "ok"}
+
+
+def test_low_confidence_query_is_trimmed_not_browsed(search_app, fake_sb, monkeypatch):
+    """Unknown brand + product type: top rerank score < 0 must still apply the margin
+    cutoff (only explicit browse phrases return everything)."""
+    import asyncio
+    rows = [dict(fake_sb.rpc_rows[0], id=f"{i}" * 8 + "-1111-1111-1111-111111111111", name=n)
+            for i, n in enumerate(["Drench Facewash", "Detox Face Wash", "Soothe Lip Balm", "Dwell Moisturiser"], 1)]
+    fake_sb.rpc_rows = rows
+    scores = {"Drench Facewash": -1.2, "Detox Face Wash": -1.6, "Soothe Lip Balm": -9.7, "Dwell Moisturiser": -10.9}
+    monkeypatch.setattr(search_app, "rerank", lambda q, docs: [next(v for k, v in scores.items() if d.startswith(k)) for d in docs])
+    products, *_ = asyncio.run(search_app._hybrid_search_products(fake_sb, "s", "xiaomi face wash"))
+    assert [p.name for p in products] == ["Drench Facewash", "Detox Face Wash"]
+    browse, *_ = asyncio.run(search_app._hybrid_search_products(fake_sb, "s", "show me everything"))
+    assert len(browse) == 4

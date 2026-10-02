@@ -1590,6 +1590,11 @@ function AvatarInner({
       agentId: AGENT_BRANCH ? `${agentId}&branch_id=${AGENT_BRANCH}` : agentId,
       connectionType: CONNECTION_TYPE,
       dynamicVariables: { session_context: sessionContextText },
+      // Start in English. The agent's base language is "hi" (needed for the
+      // multilingual flash_v2_5 voice), which made the LLM answer English shoppers
+      // in Hindi (2026-10-02 voice test). Hindi/Tamil still switch via the
+      // language_detection tool. Embed can override: __TEAM_POP_START_LANGUAGE__.
+      overrides: { agent: { language: window.__TEAM_POP_START_LANGUAGE__ || "en" } },
     });
   }, [conversation, agentId, refreshCartState, setActiveView]);
 

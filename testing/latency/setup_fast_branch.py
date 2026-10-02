@@ -180,6 +180,26 @@ PROMPT_EDITS = [
 ]
 
 
+# 2026-10-02 voice-test fixes (conv_4501m3ye0v…: Haiku answered English in Hindi;
+# conv_6301m3ye4x…: GPT said "taking you to your cart now!" twice without calling
+# go_to_cart, and answered a Hindi request in English).
+PROMPT_EDITS += [
+    (
+        "English is the DEFAULT. Greet in English and stay in English unless the customer clearly speaks another language.",
+        "English is the DEFAULT. Greet in English and stay in English unless the customer clearly speaks another language. "
+        "Decide the reply language from the shopper's LAST message only: if its meaningful words are English, reply in English — "
+        "never answer an English sentence in Hindi or Devanagari, even though the voice is configured for Hindi. "
+        "If its meaningful words include Hindi/Hinglish, you MUST call language_detection with \"hi\" in that same turn and reply in Hinglish. This step is important.",
+    ),
+    (
+        "Say a brief warm closing line FIRST (e.g. \"Great choice — taking you to your cart now!\"), THEN call go_to_cart. This step is important: calling this tool navigates away and ends the conversation, so the closing line must come first.",
+        "Say a brief warm closing line (e.g. \"Great choice — taking you to your cart now!\") AND call go_to_cart in the SAME response. "
+        "Never end your turn after the closing line without the tool call — the words alone do nothing and the shopper stays stuck on the page. "
+        "If you already said you are taking them to the cart, call go_to_cart immediately. This step is important.",
+    ),
+]
+
+
 def rewrite_prompt(prompt: str) -> str:
     for old, new in PROMPT_EDITS:
         n = prompt.count(old)
@@ -195,6 +215,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--branch-id", required=True)
     ap.add_argument("--pre-tool-speech", default="auto", choices=["auto", "force", "off"])
+    ap.add_argument("--filler", default="off", choices=["off", "on"],
+                    help="ElevenLabs soft-timeout filler lines ('Let me see'); off for the fast flow (2026-10-02 voice test)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -229,10 +251,15 @@ def main() -> int:
         print(f"tool {name}: {cache[name]}")
     TOOL_CACHE.write_text(json.dumps(cache, indent=2) + "\n")
 
-    body = {"conversation_config": {"agent": {"prompt": {
-        "prompt": new_prompt,
-        "tool_ids": [cache["search_products"], cache["get_product_details"], *kept_ids],
-    }}}}
+    soft = dict(main_agent.json()["conversation_config"]["turn"].get("soft_timeout_config") or {})
+    soft["timeout_seconds"] = -1 if args.filler == "off" else 0.8
+    body = {"conversation_config": {
+        "agent": {"prompt": {
+            "prompt": new_prompt,
+            "tool_ids": [cache["search_products"], cache["get_product_details"], *kept_ids],
+        }},
+        "turn": {"soft_timeout_config": soft},
+    }}
     r = requests.patch(f"{API}/convai/agents/{AGENT_ID}", headers=h, params={"branch_id": args.branch_id}, json=body, timeout=60)
     if not r.ok:
         sys.exit(f"branch PATCH: HTTP {r.status_code} {r.text[:400]}")
@@ -241,7 +268,9 @@ def main() -> int:
     bp = check["conversation_config"]["agent"]["prompt"]
     names = [requests.get(f"{API}/convai/tools/{t}", headers=h, timeout=30).json()["tool_config"]["name"] for t in bp["tool_ids"]]
     print("branch tools:", names)
-    print("branch prompt has update_products:", "update_products" in bp["prompt"])
+    print("branch prompt has update_products:", "update_products" in bp["prompt"],
+          "| filler timeout:", check["conversation_config"]["turn"]["soft_timeout_config"]["timeout_seconds"],
+          "| llm:", bp.get("llm"))
     main_after = requests.get(f"{API}/convai/agents/{AGENT_ID}", headers=h, timeout=30).json()
     print("Main untouched:", main_after["conversation_config"]["agent"]["prompt"]["prompt"] == main_prompt["prompt"])
     return 0
